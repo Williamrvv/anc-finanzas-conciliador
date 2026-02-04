@@ -1,0 +1,17 @@
+services:
+  app:
+    container_name: anc_finanzas_app
+    build: .
+    ports:
+      - "${WEB_PORT}:80"
+      - "${WEB_PORT_SSL}:443"
+    volumes:
+      - ./src:/var/www/html
+    networks:
+      - anc_finanzas_network
+    env_file:
+      - .env
+
+networks:
+  anc_finanzas_network:
+    name: anc_finanzas_net

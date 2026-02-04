@@ -1,0 +1,10 @@
+RewriteEngine On
+RewriteBase /
+
+# Si es un archivo o directorio real, sírvelo directamente (ej: css, js, router.php)
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Todo lo demás, mándalo a index.php
+RewriteRule ^ index.php [QSA,L]

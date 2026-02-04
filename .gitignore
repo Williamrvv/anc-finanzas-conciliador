@@ -1,0 +1,16 @@
+# Seguridad (CRÍTICO)
+.env
+auth.json
+
+# Sistema Operativo
+.DS_Store
+Thumbs.db
+
+# Docker / Logs
+docker-compose.override.yml
+*.log
+/logs/
+
+# Dependencias (si usáramos composer/npm en el futuro)
+/vendor/
+/node_modules/
