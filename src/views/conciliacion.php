@@ -66,7 +66,7 @@
                     </button>
                     <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(TF)</span>
                     <span id="sum-depositos" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
-                </div>
+                </div> 
             </div>
 
             <!-- Tabla Central BAC -->
