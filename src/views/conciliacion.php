@@ -18,13 +18,21 @@
 
     <!-- ÁREA DE CONTENIDO -->
     <div class="flex-grow relative mt-2">
-
+        
         <!-- ==================== WORKSPACE BAC ==================== -->
+         <!-- Instrucciones -->
+        <div class="text-center pb-2">
+            <p class="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                <span class="inline-block animate-bounce mr-1">👇</span>
+                Arrastra los documentos del banco para iniciar la consolidación automática
+            </p>
+        </div>
         <div id="workspace-bac" class="flex flex-col h-full gap-4">
             
-            <!-- Panel Control BAC -->
+            <!-- PANEL DE CONTROL BAC -->
             <div class="grid grid-cols-12 gap-3 h-32 shrink-0">
-                <!-- Drop Detalle -->
+                
+                <!-- 1. Drop Detalle (2 Cols) -->
                 <div id="drop-bac-detalle" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50">
                     <svg class="w-8 h-8 text-slate-300 group-hover:text-red-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 9h1.5a1.5 1.5 0 010 3H10m0 3h.5a.5.5 0 00.5-.5V9"></path></svg>
                     <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Arrastra<br>Detallado BAC</span>
@@ -32,15 +40,18 @@
                     <span id="status-bac-detalle" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
                 </div>
 
-                <!-- Tarjeta Detalle -->
-                <div id="card-bac-detalle" class="col-span-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-lg p-2 relative hidden shadow-sm cursor-pointer group transition-all" onclick="window.ConciliacionFunctions.openPopup('detalle')">
-                    <div class="absolute top-2 right-2 p-1 bg-blue-50 dark:bg-blue-900 rounded-full text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110">
+                <!-- 2. Tarjeta Detalle (6 Cols - AHORA MÁS ANCHA) -->
+                <div id="card-bac-detalle" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-lg p-2 relative hidden shadow-sm group transition-all overflow-hidden" onclick="window.ConciliacionFunctions.openPopup('detalle')">
+                    <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('detalle')" class="absolute top-1 right-1 p-1 text-slate-400 hover:text-blue-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-white/80 dark:bg-slate-800/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                    </button>
+                    <!-- Contenedor con Scroll Horizontal -->
+                    <div class="overflow-x-auto h-full w-full">
+                        <div id="bac-summary-container" class="h-full flex items-center min-w-[450px] w-full"></div>
                     </div>
-                    <div id="bac-summary-container" class="h-full flex items-center justify-center"></div>
                 </div>
 
-                <!-- Drop Pagado -->
+                <!-- 3. Drop Pagado (2 Cols) -->
                 <div id="drop-bac-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50">
                     <svg class="w-8 h-8 text-slate-300 group-hover:text-green-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 9l-3 6m0-6l3 6"></path></svg>
                     <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Arrastra<br>Pagado BAC</span>
@@ -48,13 +59,13 @@
                     <span id="status-bac-pagado" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
                 </div>
 
-                <!-- Tarjeta Pagado -->
-                <div id="card-bac-pagado" class="col-span-4 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden shadow-sm cursor-pointer group transition-all" onclick="window.ConciliacionFunctions.openPopup('pagado')">
-                    <div class="absolute top-2 right-2 p-1 bg-green-100 dark:bg-green-800 rounded-full text-green-600 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110">
+                <!-- 4. Tarjeta Pagado (2 Cols) -->
+                <div id="card-bac-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden shadow-sm group transition-all cursor-pointer" onclick="window.ConciliacionFunctions.openPopup('pagado')">
+                    <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('pagado')" class="absolute top-1 right-1 p-1 text-green-600/50 hover:text-green-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-green-50/80 dark:bg-green-900/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                    </div>
-                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1">Total Banco (TF)</span>
-                    <span id="sum-depositos" class="text-2xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
+                    </button>
+                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(TF)</span>
+                    <span id="sum-depositos" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
                 </div>
             </div>
 
@@ -104,7 +115,7 @@
                     <div class="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800/30 rounded-xl p-4 shadow-sm">
                         <h4 class="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase mb-3 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                            Pendientes en Detalle
+                            Excepciones detalle BAC
                         </h4>
                         <!-- max-h-96 pone un límite sano (384px) pero permite crecer hasta ahí -->
                         <div id="audit-list-bac-detalle" class="max-h-96 overflow-y-auto pr-2 space-y-1"></div>
@@ -114,7 +125,7 @@
                     <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/30 rounded-xl p-4 shadow-sm">
                         <h4 class="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase mb-3 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Pendientes en Banco
+                            Excepciones pagado BAC 
                         </h4>
                         <div id="audit-list-bac-pagado" class="max-h-96 overflow-y-auto pr-2 space-y-1"></div>
                     </div>
@@ -138,11 +149,15 @@
                 </div>
 
                 <!-- Tarjeta Detalle -->
-                <div id="card-scotia-detalle" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-400 dark:hover:border-red-500 rounded-lg p-2 relative hidden flex-col group cursor-pointer transition-all" onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')">
-                    <div class="absolute top-2 right-2 p-1 bg-red-50 dark:bg-red-900 rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110 z-20">
+                <div id="card-scotia-detalle" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-400 dark:hover:border-red-500 rounded-lg p-2 relative hidden flex-col group transition-all overflow-hidden">
+                    <button onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')" class="absolute top-1 right-1 p-1 text-slate-400 hover:text-red-600 opacity-50 group-hover:opacity-100 transition-opacity z-20 bg-white/80 dark:bg-slate-800/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                    </button>
+                    <!-- Contenedor con Scroll Horizontal -->
+                    <div class="overflow-x-auto h-full w-full">
+                        <!-- Ancho Mínimo Fijo para la tabla de 3 filas -->
+                        <div id="scotia-summary-container" class="h-full flex items-center justify-center min-w-[500px]"></div>
                     </div>
-                    <div id="scotia-summary-container" class="h-full w-full flex items-center justify-center px-1"></div>
                 </div>
 
                 <!-- Drop Pagado -->
@@ -209,7 +224,7 @@
                     <div class="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800/30 rounded-xl p-4 shadow-sm">
                         <h4 class="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase mb-3 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                            Pendientes en Detalle
+                            Excepciones detalle Scotiabank
                         </h4>
                         <div id="audit-list-scotia-detalle" class="max-h-96 overflow-y-auto pr-2 space-y-1"></div>
                     </div>
@@ -218,7 +233,7 @@
                     <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/30 rounded-xl p-4 shadow-sm">
                         <h4 class="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase mb-3 flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Pendientes en Banco
+                            Excepciones pagado Scotiabank
                         </h4>
                         <div id="audit-list-scotia-pagado" class="max-h-96 overflow-y-auto pr-2 space-y-1"></div>
                     </div>

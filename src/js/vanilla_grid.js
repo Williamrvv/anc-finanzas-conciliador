@@ -223,6 +223,7 @@ class VanillaGrid {
             newScrollEl.scrollLeft = savedScrollX;
             newScrollEl.scrollTop = savedScrollY;
         }
+        
     }
 
     createRow(row, idx) {
@@ -727,6 +728,18 @@ class VanillaGrid {
         console.log(`5. Motor actualizando [${key}] a: ${value} y repintando.`);
         this.options[key] = value;
         this.render(); // <--- OBLIGATORIO: Borra y vuelve a dibujar la tabla
+    }
+
+    // Método para actualizar datos sin perder estado (filtros, sort, scroll)
+    updateData(newData) {
+        // 1. Actualizar fuente de datos
+        this.originalData = newData;
+        
+        // 2. Re-aplicar filtros y ordenamiento actuales
+        this.applyFilters(); 
+        
+        // El método applyFilters ya llama a render(), y render() ya restaura el scroll.
+        // Así que el usuario no notará el parpadeo.
     }
 
 }

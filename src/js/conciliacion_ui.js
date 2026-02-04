@@ -315,10 +315,14 @@ window.ConciliacionLogic = {
         const thresholdInput = document.getElementById('threshold-bac'); // <--- ID NUEVO
         const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
 
-        this.grids.scotia = new VanillaGrid("#table-result-scotia", tableData, columns, {
-            threshold: currentThreshold,
-            searchInputId: "search-scotia"
-        });
+        if (this.grids.scotia) {
+            this.grids.scotia.updateData(tableData);
+        } else {
+            this.grids.scotia = new VanillaGrid("#table-result-scotia", tableData, columns, {
+                threshold: currentThreshold,
+                searchInputId: "search-scotia"
+            });
+        }
         // 5. Renderizar Auditoría
         this.renderAudit('scotia');
     },
@@ -450,21 +454,38 @@ window.ConciliacionLogic = {
         const fmt = this.formatMoney;
 
         // Tabla Horizontal Compacta para BAC
+        // Diseño Estructurado (Grid 3 Columnas)
         const html = `
-            <div class="flex items-center justify-around w-full gap-4">
-                <div class="text-center">
-                    <div class="text-[9px] text-slate-400 uppercase font-bold">Ventas</div>
-                    <div class="font-mono font-bold text-slate-700 dark:text-slate-200">${fmt(s.v)}</div>
+            <div class="grid grid-cols-12 gap-4 items-center w-full h-full px-2">
+                
+                <!-- COL 1: VENTAS (3 cols) -->
+                <div class="col-span-3 flex flex-col justify-center border-r border-slate-100 dark:border-slate-700 pr-2">
+                    <span class="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1">Ventas Totales</span>
+                    <span class="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm truncate" title="${fmt(s.v)}">${fmt(s.v)}</span>
                 </div>
-                <div class="text-2xl text-slate-300 dark:text-slate-600 font-light">-</div>
-                <div class="text-center">
-                    <div class="text-[9px] text-red-400 uppercase font-bold">Deducciones</div>
-                    <div class="font-mono text-red-500" title="Comisión + Retenciones">-${fmt(s.c + s.rv + s.rr)}</div>
+
+                <!-- COL 2: DEDUCCIONES (5 cols) -->
+                <div class="col-span-5 flex flex-col justify-center text-[10px] space-y-1 border-r border-slate-100 dark:border-slate-700 pr-2">
+                    <div class="flex justify-between">
+                        <span class="text-red-400">Comisión</span>
+                        <span class="font-mono text-red-500 font-bold">-${fmt(s.c)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-orange-400">Ret. Ventas (5.31%)</span>
+                        <span class="font-mono text-orange-500">-${fmt(s.rv)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-orange-400">Ret. Renta (1.76%)</span>
+                        <span class="font-mono text-orange-500">-${fmt(s.rr)}</span>
+                    </div>
                 </div>
-                <div class="text-2xl text-slate-300 dark:text-slate-600 font-light">=</div>
-                <div class="text-center bg-blue-50 dark:bg-blue-900/30 rounded px-3 py-1">
-                    <div class="text-[9px] text-blue-500 uppercase font-bold">Neto Esperado</div>
-                    <div class="font-mono font-bold text-blue-700 dark:text-blue-300 text-sm">${fmt(s.n)}</div>
+
+                <!-- COL 3: NETO (4 cols) -->
+                <div class="col-span-4 flex flex-col justify-center items-end pl-2">
+                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-lg px-3 py-2 w-full text-center border border-blue-100 dark:border-blue-800">
+                        <span class="text-[9px] text-blue-500 uppercase font-bold block mb-1">Neto Esperado</span>
+                        <span class="font-mono font-bold text-blue-700 dark:text-blue-300 text-base block truncate">${fmt(s.n)}</span>
+                    </div>
                 </div>
             </div>
         `;
@@ -627,9 +648,17 @@ window.ConciliacionLogic = {
     // Nueva función auxiliar para procesar (separada de la configuración)
     handleFileProcessing: function(file, dropId, type) {
         console.log(`⚙️ Procesando: ${file.name} (${type})`);
+        
         const statusId = dropId.replace('drop-', 'status-');
         const statusEl = document.getElementById(statusId);
-        if(statusEl) statusEl.innerText = "Procesando...";
+        
+        // 1. Mostrar estado "Procesando" inmediatamente
+        if(statusEl) {
+            statusEl.innerText = "Procesando...";
+            statusEl.classList.remove('hidden'); // <--- CRÍTICO: Hacer visible el span
+            statusEl.classList.remove('text-red-500'); // Limpiar errores previos
+            statusEl.classList.add('text-blue-500', 'animate-pulse'); // Feedback visual
+        }
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -639,17 +668,26 @@ window.ConciliacionLogic = {
                 else if(type === 'scotia_pagado') this.processScotiabankPagado(e.target.result);
                 else this.processExcel(e.target.result);
                 
-                if(statusEl) statusEl.innerText = file.name;
+                // 2. Éxito: Mostrar nombre de archivo
+                if(statusEl) {
+                    statusEl.innerText = file.name;
+                    statusEl.classList.remove('text-blue-500', 'animate-pulse');
+                    statusEl.classList.add('text-green-600', 'font-bold');
+                }
             } catch (err) {
                 console.error(err);
-                if(statusEl) statusEl.innerText = "Error";
+                if(statusEl) {
+                    statusEl.innerText = "Error formato";
+                    statusEl.classList.remove('text-blue-500', 'animate-pulse');
+                    statusEl.classList.add('text-red-500');
+                }
             }
         };
         
         if(type === 'csv') reader.readAsText(file, 'ISO-8859-1'); 
         else reader.readAsArrayBuffer(file);
     },
-
+    
     processCSV: function(text) {
         // 1. Parsing manual
         const rows = text.split(/\r\n|\n/).map(l => {
@@ -667,7 +705,22 @@ window.ConciliacionLogic = {
         this.data.headers.detalle = headerRow;
 
         // 3. Procesar Filas
-        const cleanNum = (val) => parseFloat(String(val).replace(/["'\s]/g,'')) || 0;
+        // Lógica "Smart Parse" para detectar formato (Miles con punto vs Decimal con punto)
+        const cleanNum = (val) => {
+            if(!val) return 0;
+            let clean = String(val).replace(/["'\s]/g, '');
+            
+            // Si tiene coma, es formato tico/europeo (1.000,50)
+            if(clean.includes(',')) {
+                clean = clean.replace(/\./g, '').replace(',', '.');
+            } 
+            // Si solo tiene puntos, verificar si son miles
+            else if((clean.match(/\./g) || []).length > 1) {
+                clean = clean.replace(/\./g, '');
+            }
+            
+            return parseFloat(clean) || 0;
+        };
 
         this.data.detalle = rows.slice(1).map(row => {
             return {
@@ -875,10 +928,16 @@ window.ConciliacionLogic = {
         const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
 
         // Instanciar BAC
-        this.grids.bac = new VanillaGrid("#table-result-bac", tableData, columns, {
-            threshold: currentThreshold,
-            searchInputId: "search-bac" 
-        });
+        if (this.grids.bac) {
+            // Si ya existe, solo actualizamos los datos
+            this.grids.bac.updateData(tableData);
+        } else {
+            // Si es la primera vez, creamos la instancia
+            this.grids.bac = new VanillaGrid("#table-result-bac", tableData, columns, {
+                threshold: currentThreshold,
+                searchInputId: "search-bac"
+            });
+        }
         
         // Auto-switch tab si es la primera carga
         if(this.activeTab !== 'bac') this.switchTab('bac');
