@@ -8,7 +8,9 @@
             <nav class="flex space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                 <button onclick="window.ConciliacionFunctions.switchTab('bac')" id="tab-bac" class="px-4 py-1.5 text-sm font-bold rounded shadow bg-white text-red-600 dark:bg-slate-700 dark:text-white transition-all">BAC Credomatic</button>
                 <button onclick="window.ConciliacionFunctions.switchTab('scotia')" id="tab-scotia" class="px-4 py-1.5 text-sm font-medium rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 transition-all">Scotiabank</button>
-                <button disabled class="px-4 py-1.5 text-sm font-medium rounded text-slate-300 cursor-not-allowed">Consolidado TSD</button>
+                <button onclick="window.ConciliacionFunctions.switchTab('tsd')" id="tab-tsd" class="px-4 py-1.5 text-sm font-medium rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 transition-all">
+                    Consolidado TSD
+                </button>
             </nav>
         </div>
         <div class="flex items-center gap-3">
@@ -21,7 +23,7 @@
         
         <!-- ==================== WORKSPACE BAC ==================== -->
          <!-- Instrucciones -->
-        <div class="text-center pb-2">
+        <div class="text-left pb-2">
             <p class="text-xs text-slate-400 dark:text-slate-500 font-medium">
                 <span class="inline-block animate-bounce mr-1">👇</span>
                 Arrastra los documentos del banco para iniciar la consolidación automática
@@ -149,7 +151,7 @@
                 </div>
 
                 <!-- Tarjeta Detalle -->
-                <div id="card-scotia-detalle" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-400 dark:hover:border-red-500 rounded-lg p-2 relative hidden flex-col group transition-all overflow-hidden">
+                <div id="card-scotia-detalle" onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-400 dark:hover:border-red-500 rounded-lg p-2 relative hidden flex-col group transition-all overflow-hidden">
                     <button onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')" class="absolute top-1 right-1 p-1 text-slate-400 hover:text-red-600 opacity-50 group-hover:opacity-100 transition-opacity z-20 bg-white/80 dark:bg-slate-800/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                     </button>
@@ -242,5 +244,82 @@
             </div>
         </div>
 
+        <!-- ==================== WORKSPACE TSD (CONSOLIDADO FINAL) ==================== -->
+        <div id="workspace-tsd" class="flex flex-col h-full gap-4 hidden">
+            
+            <!-- Panel Control TSD -->
+            <div class="grid grid-cols-12 gap-3 h-32 shrink-0">
+                <!-- Drop TSD -->
+                <div id="drop-tsd" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-purple-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50">
+                    <svg class="w-8 h-8 text-slate-300 group-hover:text-purple-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Cargar<br>Reporte TSD</span>
+                    <input type="file" id="file-tsd" class="hidden pointer-events-auto" accept=".xlsx, .xls">
+                    <span id="status-tsd" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
+                </div>
+
+                <!-- Tarjeta Resumen TSD -->
+                <div id="card-tsd" onclick="window.ConciliacionFunctions.openPopup('tsd')" class="col-span-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 hidden shadow-sm flex flex-col justify-center relative group">
+                    <button onclick="window.ConciliacionFunctions.openPopup('tsd')" class="absolute top-2 right-2 p-1 text-slate-300 hover:text-purple-600 opacity-50 group-hover:opacity-100 transition-opacity" title="Ver Datos TSD">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                    </button>
+                    <div class="grid grid-cols-4 gap-4 text-center">
+                        <div>
+                            <span class="text-[10px] text-slate-400 uppercase font-bold">Total TSD</span>
+                            <div id="tsd-total" class="text-xl font-bold text-purple-600 font-mono">0</div>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-400 uppercase font-bold">Conciliado BAC</span>
+                            <div id="tsd-match-bac" class="text-xl font-bold text-green-600 font-mono">0</div>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-400 uppercase font-bold">Conciliado Scotia</span>
+                            <div id="tsd-match-scotia" class="text-xl font-bold text-red-600 font-mono">0</div>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-400 uppercase font-bold">Sin Match</span>
+                            <div id="tsd-unmatched" class="text-xl font-bold text-orange-500 font-mono">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TABLA CENTRAL TSD -->
+            <div class="flex flex-col border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm overflow-hidden h-[600px] shrink-0">
+                <div class="px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+                    <span class="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-purple-600"></span> Consolidación Maestra
+                    </span>
+                    <div class="flex items-center gap-3">
+                        <!-- Tipo de Cambio -->
+                        <div class="flex items-center bg-purple-50 dark:bg-purple-900/30 rounded border border-purple-200 dark:border-purple-800 px-2 py-1" title="Tipo de Cambio Compra BCCR">
+                            <span class="text-[10px] font-bold text-purple-600 dark:text-purple-300 mr-2 uppercase">TC Venta:</span>
+                            <span class="text-purple-600 font-bold text-xs mr-1">₡</span>
+                            <input type="number" id="tsd-exchange-rate" value="515" step="1.0" 
+                                   oninput="window.ConciliacionFunctions.updateExchangeRate(this.value)" 
+                                   class="w-16 bg-transparent border-none text-xs font-bold text-right outline-none p-0 text-purple-700 dark:text-white">
+                        </div>
+                        
+                    </div>
+                    <div class="relative w-64">
+                        <input type="text" id="search-tsd" class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:ring-1 focus:ring-purple-500 outline-none transition-all dark:bg-slate-900 dark:border-slate-600" placeholder="Buscar transacción...">
+                    </div>
+                </div>
+                <div id="table-result-tsd" class="flex-grow overflow-hidden relative">
+                    <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-300">
+                        <span class="text-xs">Carga el reporte TSD para cruzar con Bancos...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Auditoría TSD -->
+            <div id="audit-tsd" class="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800/30 rounded-xl p-4 shadow-sm hidden">
+                <h4 class="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase mb-3 flex items-center gap-2">
+                    ⚠️ Transacciones TSD No Encontradas en Bancos (Pendientes de Cobro)
+                </h4>
+                <div id="audit-list-tsd" class="max-h-60 overflow-y-auto pr-2 space-y-1 text-[10px]"></div>
+            </div>
+        </div>
+
     </div>
 </div>
+

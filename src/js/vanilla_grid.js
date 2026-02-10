@@ -700,29 +700,39 @@ class VanillaGrid {
     getGroupedData() {
         return this.displayData.reduce((a,i)=>{ const k=i[this.groupByField]||'Otros'; if(!a[k])a[k]=[]; a[k].push(i); return a; }, {});
     }
+
     formatMoney(val) {
-        // Asegurar que sea número
         const num = parseFloat(val);
         if(isNaN(num)) return val;
 
-        // Formato Base
+        // Formato Personalizado: "2 737 233,99" (Espacio miles, Coma decimal)
+        // Usamos 'fr-FR' como base porque usa espacios para miles, y luego ajustamos si hace falta.
+        // O mejor: Usamos Intl con opciones específicas.
+        
         let formatted = new Intl.NumberFormat('es-CR', {
             style: 'currency', 
             currency: 'CRC', 
-            minimumFractionDigits: 2
-        }).format(Math.abs(num)); // Formateamos el absoluto
+            minimumFractionDigits: 2,
+            useGrouping: true
+        }).format(Math.abs(num));
 
-        // UX Financiero: Negativos en Rojo y con menos claro (o paréntesis)
+        // HACK UX: Reemplazar el separador de miles (que puede ser punto o coma según OS) por espacio
+        // Detectamos si hay un caracter no numérico que no sea la coma decimal final
+        // Esto es complejo de hacer universal. 
+        // Mejor opción: Si es-CR da "₡2.737.233,99", reemplazamos puntos por espacios.
+        
+        // Si el navegador usa punto para miles (común en es-CR):
+        if (formatted.includes('.') && formatted.includes(',')) {
+             formatted = formatted.replace(/\./g, ' '); 
+        }
+
+        // Negativos Rojos
         if (num < 0) {
-            // Opción A: Estándar Contable (Rojo + Paréntesis) -> (₡ 5.000,00)
-            // return `<span class="text-red-600 font-bold">(${formatted})</span>`;
-            
-            // Opción B: Estándar Moderno (Rojo + Signo Menos) -> -₡ 5.000,00
             return `<span class="text-red-600 font-bold">-${formatted}</span>`;
         }
-        
         return formatted;
     }
+
     // Método público para actualizar opciones y repintar
     updateOption(key, value) {
         console.log(`5. Motor actualizando [${key}] a: ${value} y repintando.`);
@@ -737,9 +747,6 @@ class VanillaGrid {
         
         // 2. Re-aplicar filtros y ordenamiento actuales
         this.applyFilters(); 
-        
-        // El método applyFilters ya llama a render(), y render() ya restaura el scroll.
-        // Así que el usuario no notará el parpadeo.
     }
 
 }

@@ -5,25 +5,38 @@ window.ConciliacionLogic = {
 
     switchTab: function(tab) {
         this.activeTab = tab;
-        const bacTab = document.getElementById('tab-bac');
-        const scTab = document.getElementById('tab-scotia');
-        const bacWS = document.getElementById('workspace-bac');
-        const scWS = document.getElementById('workspace-scotia');
+        
+        const tabs = {
+            bac: document.getElementById('tab-bac'),
+            scotia: document.getElementById('tab-scotia'),
+            tsd: document.getElementById('tab-tsd')
+        };
+        const workspaces = {
+            bac: document.getElementById('workspace-bac'),
+            scotia: document.getElementById('workspace-scotia'),
+            tsd: document.getElementById('workspace-tsd')
+        };
 
-        const activeClass = "shadow bg-white text-red-600 dark:bg-slate-700 dark:text-white font-bold";
-        const inactiveClass = "text-slate-500 hover:text-slate-700 dark:text-slate-400 font-medium";
+        // Blindaje
+        if (!tabs.bac || !tabs.scotia || !tabs.tsd) return;
 
-        if(tab === 'bac') {
-            bacTab.className = `px-4 py-1.5 text-sm rounded transition-all ${activeClass}`;
-            scTab.className = `px-4 py-1.5 text-sm rounded transition-all ${inactiveClass}`;
-            bacWS.classList.remove('hidden');
-            scWS.classList.add('hidden');
-        } else {
-            scTab.className = `px-4 py-1.5 text-sm rounded transition-all ${activeClass}`;
-            bacTab.className = `px-4 py-1.5 text-sm rounded transition-all ${inactiveClass}`;
-            scWS.classList.remove('hidden');
-            bacWS.classList.add('hidden');
-        }
+        const activeClass = "bg-white text-purple-600 shadow-sm dark:bg-slate-700 dark:text-white font-bold";
+        // Ajustamos color según el tab activo (Rojo BAC, Rojo Scotia, Morado TSD)
+        const getActiveColor = (t) => t === 'bac' ? 'text-red-600' : (t === 'scotia' ? 'text-slate-800 dark:text-white' : 'text-purple-600');
+        
+        const inactiveClass = "text-slate-500 hover:text-slate-700 dark:text-slate-400 font-medium hover:bg-slate-200 dark:hover:bg-slate-800";
+
+        // Reset y Activar
+        Object.keys(tabs).forEach(k => {
+            const isActive = k === tab;
+            // Quitamos clases viejas
+            tabs[k].className = `px-4 py-1.5 text-sm rounded transition-all ${isActive ? "bg-white shadow-sm font-bold dark:bg-slate-700 " + getActiveColor(k) : inactiveClass}`;
+            
+            if (workspaces[k]) {
+                if (isActive) workspaces[k].classList.remove('hidden');
+                else workspaces[k].classList.add('hidden');
+            }
+        });
     },
 
     // Genera listas de items excluidos (Checkboxes desmarcados)
@@ -135,367 +148,21 @@ window.ConciliacionLogic = {
         }
     },
 
-    processScotiabankPagado: function(buf) {
-        const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json(ws, {header: 1});
-
-        // 1. Buscar cabecera
-        let headerIdx = -1;
-        for(let i=0; i<Math.min(rawRows.length, 20); i++) {
-            const s = JSON.stringify(rawRows[i]).toLowerCase();
-            if(s.includes('descripci') && s.includes('monto')) { headerIdx = i; break; }
-        }
-        if(headerIdx === -1) return alert("No se encontraron columnas Descripción/Monto.");
-
-        // Guardar Headers
-        this.data.headers = this.data.headers || {};
-        const headers = rawRows[headerIdx].map(h => h ? String(h).trim() : `Col_${Math.random()}`);
-        this.data.headers.scotia_pagado = headers;
-
-        const iDesc = headers.findIndex(h => h.toLowerCase().includes('descripci'));
-        const iMonto = headers.findIndex(h => h.toLowerCase().includes('monto'));
-
-        let total = 0;
-        const processed = [];
-
-        // 2. Procesar Datos
-        for(let i = headerIdx + 1; i < rawRows.length; i++) {
-            const row = rawRows[i];
-            if(!row || !row.length) continue;
-
-            const first = String(row[0]||'').toLowerCase();
-            if(first.includes('total') || first.includes('resumen')) break;
-
-            let m = row[iMonto];
-            if(typeof m === 'string') m = parseFloat(m.replace(/\s/g,'').replace(',','.')) || 0;
-            else if (typeof m !== 'number') m = 0;
-            
-            if (m !== 0) {
-                total += m;
-                
-                const desc = String(row[iDesc] || '');
-                const parts = desc.trim().replace(/\s+/g, ' ').split(' ');
-                const extractedID = parts.length >= 4 ? parts[3] : "SIN_ID";
-
-                const rowObj = {
-                    _enabled: true,
-                    _monto: m,
-                    _extractedId: extractedID, 
-                    _desc: desc
-                };
-                
-                // GUARDADO CRÍTICO: Usar índice string ("0", "1")
-                headers.forEach((h, idx) => rowObj[String(idx)] = row[idx]);
-                
-                processed.push(rowObj);
-            }
-        }
-
-        // 3. ASIGNACIÓN CRÍTICA AL ESTADO GLOBAL
-        this.data.scotia_pagado = processed;
-        
-        // UI
-        document.getElementById('sc-total-pagado').innerText = this.formatMoney(total);
-        document.getElementById('card-scotia-pagado').classList.remove('hidden');
-        
-        // Ejecutar Cruce y mostrar estado
-        if(this.runMatchScotiabank) {
-            if(this.switchTab) this.switchTab('scotia');
-            this.runMatchScotiabank();
-        }
-        
-        // Feedback Dropzone
-        const dropzone = document.getElementById('drop-scotia-pagado');
-        if(dropzone) {
-            dropzone.classList.remove('border-slate-300', 'hover:border-green-500');
-            dropzone.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
-            const status = document.getElementById('status-scotia-pagado');
-            if(status) { 
-                status.innerText = `Cargado: ${processed.length} filas`; 
-                status.classList.remove('hidden');
-                status.classList.add('text-green-600', 'font-bold'); 
-            }
-        }
-        this.data.scotia_pagado = processed;
-    },
-
-    runMatchScotiabank: function() {
-        // Validación Visual de Estado
-        const hasDetalle = this.data.scotia_detalle && this.data.scotia_detalle.length > 0;
-        const hasPagado = this.data.scotia_pagado && this.data.scotia_pagado.length > 0;
-
-        if (!hasDetalle || !hasPagado) {
-            console.log("Scotia: Esperando archivos complementarios...");
-            const container = document.getElementById('table-result-scotia');
-            if(container) {
-                // UI: Estado "Esperando"
-                container.innerHTML = `
-                    <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
-                        <div class="animate-pulse flex flex-col items-center">
-                            <svg class="w-10 h-10 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            <span class="text-xs font-bold">Esperando archivos Scotia...</span>
-                        </div>
-                        <div class="flex gap-4 mt-4 text-[10px] font-mono">
-                            <span class="flex items-center gap-1 ${hasDetalle ? 'text-green-500' : 'text-slate-500'}">
-                                <span class="w-2 h-2 rounded-full ${hasDetalle ? 'bg-green-500' : 'bg-slate-300'}"></span> Detalle
-                            </span>
-                            <span class="flex items-center gap-1 ${hasPagado ? 'text-green-500' : 'text-slate-500'}">
-                                <span class="w-2 h-2 rounded-full ${hasPagado ? 'bg-green-500' : 'bg-slate-300'}"></span> Banco
-                            </span>
-                        </div>
-                    </div>
-                `;
-            }
-            return;
-        }
-
-        console.log("Iniciando Cruce Scotiabank Completo...");
-
-        // ... (Aquí sigue la lógica de agrupación y cruce que ya tenías)
-        // Copia el resto de la función anterior desde "const detGroup = {};" hacia abajo.
-        
-        const detGroup = {};
-        const pagGroup = {};
-
-        // 1. Agrupar Detalle
-        const headersDet = this.data.headers.scotia_detalle || [];
-        const iMerID = headersDet.findIndex(h => h && h.toLowerCase().includes('merid'));
-        
-        if (iMerID === -1) return alert("Error: No se encuentra la columna MerID.");
-
-        this.data.scotia_detalle.forEach(r => {
-            if(!r._enabled) return;
-            const id = String(r[String(iMerID)] || 'DESCONOCIDO').trim();
-            if(!detGroup[id]) detGroup[id] = { count: 0, neto: 0 };
-            detGroup[id].count++;
-            detGroup[id].neto += r._neto; 
-        });
-
-        // 2. Agrupar Pagado
-        this.data.scotia_pagado.forEach(r => {
-            if(!r._enabled) return;
-            const id = String(r._extractedId).trim();
-            if(!pagGroup[id]) pagGroup[id] = 0;
-            pagGroup[id] += r._monto;
-        });
-
-        // 3. Unificar
-        const allIds = new Set([...Object.keys(detGroup), ...Object.keys(pagGroup)]);
-        const tableData = [];
-        const timeKey = Date.now();
-
-        allIds.forEach(id => {
-            if(!id || id === 'SIN_ID' || id === 'undefined') return;
-            const det = detGroup[id] || { count:0, neto:0 };
-            const pag = pagGroup[id] || 0;
-            const diff = det.neto - pag;
-
-            tableData.push({
-                uuid: `${timeKey}-${id}`,
-                id: id,
-                count: det.count,
-                neto: det.neto,
-                pagado: pag,
-                diff: diff
-            });
-        });
-
-        // 4. Renderizar
-        const columns = [
-            { title: "ID Ref", field: "uuid", visible: false },
-            { title: "MerID / Comercio", field: "id", headerFilter: true, width: 150 },
-            { title: "Trans.", field: "count", hozAlign: "center", bottomCalc: "sum" },
-            { title: "Neto Esperado", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Depositado", field: "pagado", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", bottomCalc: "sum" }
-        ];
-
-        // Leer umbral BAC específico
-        const thresholdInput = document.getElementById('threshold-bac'); // <--- ID NUEVO
-        const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
-
-        if (this.grids.scotia) {
-            this.grids.scotia.updateData(tableData);
-        } else {
-            this.grids.scotia = new VanillaGrid("#table-result-scotia", tableData, columns, {
-                threshold: currentThreshold,
-                searchInputId: "search-scotia"
-            });
-        }
-        // 5. Renderizar Auditoría
-        this.renderAudit('scotia');
-    },
-
-    // Función auxiliar para dibujar la tabla resumen HTML
-    updateScotiaCard: function() {
-        // Blindaje: Si no hay datos, salir o usar array vacío
-        const data = this.data.scotia_detalle || [];
-        if (data.length === 0) return; // Opcional: Ocultar tarjeta si no hay datos
-
-        const sums = {
-            pos: { bruto:0, com:0, iva:0, isr:0, neto:0 },
-            neg: { bruto:0, com:0, iva:0, isr:0, neto:0 },
-            tot: { bruto:0, com:0, iva:0, isr:0, neto:0 }
-        };
-
-        const headers = this.data.headers.scotia_detalle || [];
-        const getIdx = (name) => headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
-        
-        const idxs = {
-            bruto: getIdx('Monto Bruto'),
-            com: getIdx('Monto Comisión'),
-            iva: getIdx('Retención IVA'),
-            isr: getIdx('Retención IS'),
-            neto: getIdx('Monto Neto')
-        };
-
-        this.data.scotia_detalle.forEach(row => {
-            if (!row._enabled) return;
-
-            const netVal = row._neto;
-            const isNeg = netVal < 0;
-            const target = isNeg ? sums.neg : sums.pos;
-
-            // Helper para leer del índice guardado "1", "5", etc.
-            const getAbsVal = (idx) => {
-                if(idx === -1) return 0;
-                return Math.abs(row[String(idx)] || 0);
-            };
-
-            target.bruto += getAbsVal(idxs.bruto);
-            target.com += getAbsVal(idxs.com);
-            target.iva += getAbsVal(idxs.iva);
-            target.isr += getAbsVal(idxs.isr);
-            target.neto += Math.abs(netVal);
-        });
-
-        // Totales Netos
-        Object.keys(sums.tot).forEach(k => sums.tot[k] = sums.pos[k] - sums.neg[k]);
-
-        // Generar HTML Limpio
-        const fmt = (n) => this.formatMoney(n);
-        const thStyle = "px-3 py-2 text-left text-slate-500 dark:text-slate-400 font-bold uppercase text-[10px] tracking-wider";
-        const tdBase = "px-3 py-2 font-mono text-slate-700 dark:text-slate-300";
-        const negClass = "text-red-500 dark:text-red-400";
-
-        // HTML Tabla 3 Filas (Estilo Solicitado)
-        const htmlTable = `
-            <table class="w-full text-xs text-right border-collapse">
-                <!-- Header con fondo suave -->
-                <thead class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                    <tr>
-                        <th class="px-2 py-1.5 text-left w-1/5">Concepto</th>
-                        <th class="px-2 py-1.5 w-1/5">Bruto</th>
-                        <th class="px-2 py-1.5 w-1/5">Comis.</th>
-                        <th class="px-2 py-1.5 w-1/5">Retenc.</th>
-                        <th class="px-2 py-1.5 w-1/5 text-slate-600 dark:text-slate-300">Neto</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-600 dark:text-slate-300 font-mono">
-                    <!-- Acreditados -->
-                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td class="px-2 py-1.5 text-left font-sans font-bold text-green-600 dark:text-green-400">
-                            Acreditados (+)
-                        </td>
-                        <td class="px-2">${fmt(sums.pos.bruto)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.pos.com)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.pos.iva + sums.pos.isr)}</td>
-                        <td class="px-2 font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 rounded-sm">
-                            ${fmt(sums.pos.neto)}
-                        </td>
-                    </tr>
-
-                    <!-- Rebajados -->
-                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td class="px-2 py-1.5 text-left font-sans font-bold text-red-500 dark:text-red-400">
-                            Rebajados (-)
-                        </td>
-                        <td class="px-2 text-red-400 dark:text-red-300">-${fmt(sums.neg.bruto)}</td>
-                        <td class="px-2 text-red-400 dark:text-red-300/80">-${fmt(sums.neg.com)}</td>
-                        <td class="px-2 text-red-400 dark:text-red-300/80">-${fmt(sums.neg.iva + sums.neg.isr)}</td>
-                        <td class="px-2 font-bold text-red-500 dark:text-red-400 bg-red-50/50 dark:bg-red-900/10 rounded-sm">
-                            -${fmt(sums.neg.neto)}
-                        </td>
-                    </tr>
-
-                    <!-- Total Final -->
-                    <tr class="bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-600 font-bold text-slate-800 dark:text-white">
-                        <td class="px-2 py-2 text-left font-sans">TOTAL FINAL</td>
-                        <td class="px-2">${fmt(sums.tot.bruto)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.tot.com)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.tot.iva + sums.tot.isr)}</td>
-                        <td class="px-2 text-sm text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-600">
-                            ${fmt(sums.tot.neto)}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        `;
-        
-        document.getElementById('scotia-summary-container').innerHTML = htmlTable;
-        document.getElementById('card-scotia-detalle').classList.remove('hidden');
-    },
-
     data: { detalle: [], pagado: [] },
     table: null,
 
     init: function() {
+        // --- MIXINS: Fusión de Lógica Modular ---
+        if(window.BACLogic) Object.assign(this, window.BACLogic); 
+        if(window.ScotiaLogic) Object.assign(this, window.ScotiaLogic);
+        if(window.TSDLogic) Object.assign(this, window.TSDLogic);
+        
         console.log("Sistema Conciliación Iniciado");
         this.setupUploads();
-        // this.setupSearch(); // <--- IMPORTANTE
+        this.fetchExchangeRate();
     },
 
-    recalculateDetalle: function() {
-        let s = { v:0, c:0, rv:0, rr:0, n:0 };
-        this.data.detalle.forEach(r => {
-            if(r._enabled) { s.v+=r._venta; s.c+=r._comision; s.rv+=r._retV; s.rr+=r._retR; s.n+=r._neto; }
-        });
-        const fmt = this.formatMoney;
-
-        // Tabla Horizontal Compacta para BAC
-        // Diseño Estructurado (Grid 3 Columnas)
-        const html = `
-            <div class="grid grid-cols-12 gap-4 items-center w-full h-full px-2">
-                
-                <!-- COL 1: VENTAS (3 cols) -->
-                <div class="col-span-3 flex flex-col justify-center border-r border-slate-100 dark:border-slate-700 pr-2">
-                    <span class="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1">Ventas Totales</span>
-                    <span class="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm truncate" title="${fmt(s.v)}">${fmt(s.v)}</span>
-                </div>
-
-                <!-- COL 2: DEDUCCIONES (5 cols) -->
-                <div class="col-span-5 flex flex-col justify-center text-[10px] space-y-1 border-r border-slate-100 dark:border-slate-700 pr-2">
-                    <div class="flex justify-between">
-                        <span class="text-red-400">Comisión</span>
-                        <span class="font-mono text-red-500 font-bold">-${fmt(s.c)}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-orange-400">Ret. Ventas (5.31%)</span>
-                        <span class="font-mono text-orange-500">-${fmt(s.rv)}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-orange-400">Ret. Renta (1.76%)</span>
-                        <span class="font-mono text-orange-500">-${fmt(s.rr)}</span>
-                    </div>
-                </div>
-
-                <!-- COL 3: NETO (4 cols) -->
-                <div class="col-span-4 flex flex-col justify-center items-end pl-2">
-                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-lg px-3 py-2 w-full text-center border border-blue-100 dark:border-blue-800">
-                        <span class="text-[9px] text-blue-500 uppercase font-bold block mb-1">Neto Esperado</span>
-                        <span class="font-mono font-bold text-blue-700 dark:text-blue-300 text-base block truncate">${fmt(s.n)}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        document.getElementById('bac-summary-container').innerHTML = html;
-        document.getElementById('card-bac-detalle').classList.remove('hidden');
-        
-        document.getElementById('card-bac-detalle')?.classList.remove('hidden');
-        this.runMatch();
-    },
+    
 
     // --- 1. CONFIGURACIÓN TABULATOR ---
     getTableConfig: function(data, columns) {
@@ -589,7 +256,8 @@ window.ConciliacionLogic = {
             'drop-bac-detalle': { input: 'file-bac-detalle', type: 'csv' },
             'drop-bac-pagado': { input: 'file-bac-pagado', type: 'excel' },
             'drop-scotia-detalle': { input: 'file-scotia-detalle', type: 'scotia_detalle' },
-            'drop-scotia-pagado': { input: 'file-scotia-pagado', type: 'scotia_pagado' }
+            'drop-scotia-pagado': { input: 'file-scotia-pagado', type: 'scotia_pagado' },
+            'drop-tsd': { input: 'file-tsd', type: 'tsd' }
         };
 
         // 1. CLICK DELEGADO (Atrapa clicks en cualquier parte del documento)
@@ -666,6 +334,7 @@ window.ConciliacionLogic = {
                 if(type === 'csv') this.processCSV(e.target.result);
                 else if(type === 'scotia_detalle') this.processScotiabankDetalle(e.target.result);
                 else if(type === 'scotia_pagado') this.processScotiabankPagado(e.target.result);
+                else if(type === 'tsd') this.processTSD(e.target.result);
                 else this.processExcel(e.target.result);
                 
                 // 2. Éxito: Mostrar nombre de archivo
@@ -687,265 +356,6 @@ window.ConciliacionLogic = {
         if(type === 'csv') reader.readAsText(file, 'ISO-8859-1'); 
         else reader.readAsArrayBuffer(file);
     },
-    
-    processCSV: function(text) {
-        // 1. Parsing manual
-        const rows = text.split(/\r\n|\n/).map(l => {
-            if(!l.trim()) return null;
-            let r=[], q=false, b=''; 
-            for(let c of l){ 
-                if(c=='"') q=!q; else if(c==',' && !q){ r.push(b); b=''; } else b+=c; 
-            } 
-            r.push(b); return r;
-        }).filter(r => r && r.length > 5);
-
-        // 2. Guardar Encabezados
-        const headerRow = rows[0].map(h => h.replace(/["']/g, '').trim());
-        this.data.headers = this.data.headers || {};
-        this.data.headers.detalle = headerRow;
-
-        // 3. Procesar Filas
-        // Lógica "Smart Parse" para detectar formato (Miles con punto vs Decimal con punto)
-        const cleanNum = (val) => {
-            if(!val) return 0;
-            let clean = String(val).replace(/["'\s]/g, '');
-            
-            // Si tiene coma, es formato tico/europeo (1.000,50)
-            if(clean.includes(',')) {
-                clean = clean.replace(/\./g, '').replace(',', '.');
-            } 
-            // Si solo tiene puntos, verificar si son miles
-            else if((clean.match(/\./g) || []).length > 1) {
-                clean = clean.replace(/\./g, '');
-            }
-            
-            return parseFloat(clean) || 0;
-        };
-
-        this.data.detalle = rows.slice(1).map(row => {
-            return {
-                _raw: row, 
-                _id: row[0],
-                _venta: cleanNum(row[8]),
-                _comision: cleanNum(row[9]),
-                _retV: cleanNum(row[10]),
-                _retR: cleanNum(row[11]),
-                _neto: cleanNum(row[12]),
-                _enabled: true, 
-                // Propiedades dinámicas
-                ...headerRow.reduce((acc, h, idx) => {
-                    acc[String(idx)] = row[idx];
-                    return acc;
-                }, {})
-            };
-        });
-        
-        // 4. Actualizar UI y Calcular
-        // recalculateDetalle se encarga de dibujar el HTML y llamar a runMatch
-        this.recalculateDetalle();
-        
-        // Feedback visual en el Dropzone
-        const dropzone = document.getElementById('drop-bac-detalle');
-        if(dropzone) {
-            dropzone.classList.remove('border-slate-300', 'hover:border-red-500');
-            dropzone.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
-            const status = document.getElementById('status-bac-detalle');
-            if(status) { 
-                // CORRECCIÓN: Mostrar conteo real
-                status.innerText = `Cargado: ${this.data.detalle.length} filas`; 
-                status.classList.add('text-green-600', 'font-bold'); 
-            }
-            if(status) { status.innerText = "Cargado"; status.classList.add('text-green-600', 'font-bold'); }
-        }
-    },
-
-    processExcel: function(buf) {
-        const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json(ws, {header: 1});
-
-        // 1. ENCONTRAR CABECERA
-        let startRowIdx = -1;
-        for(let i = 0; i < Math.min(rawRows.length, 30); i++) {
-            const rowStr = JSON.stringify(rawRows[i] || []).toLowerCase();
-            if(rowStr.includes('código') && rowStr.includes('descripci') && rowStr.includes('crédito')) {
-                startRowIdx = i;
-                break;
-            }
-        }
-
-        if(startRowIdx === -1) return alert("No se encontró la fila de encabezados (Código/Descripción/Créditos).");
-
-        const headers = rawRows[startRowIdx];
-        const iCodigo = headers.findIndex(h => h && String(h).toLowerCase().includes('código'));
-        const iDesc = headers.findIndex(h => h && String(h).toLowerCase().includes('descripci'));
-        const iCredito = headers.findIndex(h => h && String(h).toLowerCase().includes('crédito'));
-
-        if(iCodigo === -1) return alert("No se encontró la columna 'Código'.");
-
-        // 2. PROCESAR DATOS
-        const cleanData = [];
-        let totalCreditosTF = 0;
-
-        for(let i = startRowIdx + 1; i < rawRows.length; i++) {
-            const row = rawRows[i];
-            if(!row || row.length === 0) continue;
-
-            const firstCell = String(row[0] || '').toLowerCase();
-            if(firstCell.includes('total') || firstCell.includes('saldo final') || firstCell.includes('resumen')) break;
-
-            const codigo = String(row[iCodigo] || '').toUpperCase();
-            if(!codigo.includes('TF')) continue; 
-
-            const montoRaw = row[iCredito];
-            let m = 0;
-            if(typeof montoRaw === 'number') m = montoRaw;
-            else if(typeof montoRaw === 'string') m = parseFloat(m.replace(/\s/g,'').replace(',','.')) || 0;
-
-            if(m > 0) totalCreditosTF += m;
-
-            const rowObj = {
-                _desc: String(row[iDesc] || ''),
-                _monto: m,
-                _enabled: true, 
-                ...headers.reduce((acc, h, idx) => {
-                    const key = h || `Col_${idx}`; 
-                    acc[key] = row[idx];
-                    return acc;
-                }, {})
-            };
-            cleanData.push(rowObj);
-        }
-
-        this.data.headers = this.data.headers || {};
-        this.data.headers.pagado = headers;
-        this.data.pagado = cleanData;
-
-        // UI: Actualizar Tarjeta y Totales
-        const elTotal = document.getElementById('sum-depositos');
-        if(elTotal) elTotal.innerText = this.formatMoney(totalCreditosTF);
-        
-        // Mostrar la tarjeta (si estaba oculta)
-        const card = document.getElementById('card-bac-pagado');
-        if(card) card.classList.remove('hidden');
-
-        // Feedback Dropzone
-        const dropzone = document.getElementById('drop-bac-pagado');
-        if(dropzone) {
-            dropzone.classList.remove('border-slate-300', 'hover:border-green-500');
-            dropzone.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
-            const status = document.getElementById('status-bac-pagado');
-            if(status) { status.innerText = "Cargado: " + cleanData.length + " filas"; status.classList.add('text-green-600', 'font-bold'); }
-        }
-        
-        // Cambiar pestaña de forma segura
-        if(typeof this.switchTab === 'function') this.switchTab('bac');
-        
-        // Intentar cruce (runMatch validará internamente si tiene ambos archivos)
-        this.runMatch();
-    },
-
-    runMatch: function() {
-        // Validación de Datos: Si falta alguno, no hacemos el cruce, pero no damos error.
-        const hasDetalle = this.data.detalle && this.data.detalle.length > 0;
-        const hasPagado = this.data.pagado && this.data.pagado.length > 0;
-
-        if (!hasDetalle || !hasPagado) {
-            const container = document.getElementById('table-result-bac');
-            if(container) {
-                // Estado: Cargando / Esperando
-                container.innerHTML = `
-                    <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 animate-pulse">
-                        <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="text-xs font-bold">Esperando archivo complementario...</span>
-                        <div class="flex gap-4 mt-2 text-[10px]">
-                            <span class="${hasDetalle ? 'text-green-500' : 'text-slate-300'}">● Detalle</span>
-                            <span class="${hasPagado ? 'text-green-500' : 'text-slate-300'}">● Banco</span>
-                        </div>
-                    </div>
-                `;
-            }
-            return;
-        }
-
-        // 1. Agrupar Detalle (Esperado)
-        const det = {}, pag = {};
-        this.data.detalle.forEach(r => {
-            if(!r._enabled) return; // <--- Respetar Checkbox
-
-            // Usamos las propiedades procesadas en processCSV
-            const id = r._id;
-            const net = r._neto;
-            
-            if(!det[id]) det[id]={id, count:0, sumNeto:0};
-            det[id].count++; det[id].sumNeto+=net;
-        });
-
-        // 2. Agrupar Pagado (Banco) - Respetando Checkboxes (_enabled)
-        this.data.pagado.forEach(r => {
-            if(!r._enabled) return; // Solo si el usuario lo marcó
-            const d = r._desc || ""; 
-            const id = d.length > 3 ? d.split(' ')[0].substring(3) : ""; 
-            if(id) { 
-                if(!pag[id]) pag[id] = 0; 
-                pag[id] += r._monto; 
-            }
-        });
-
-        // 3. GENERADOR DE ID ÚNICO (Algoritmo Cronológico)
-        // Formato: YYYYMMDDHHMMSS-AFILIADO
-        // Esto garantiza ordenamiento temporal en SQL Server (Cluster Index Friendly)
-        const now = new Date();
-        const timeKey = now.getFullYear() +
-            String(now.getMonth()+1).padStart(2,'0') +
-            String(now.getDate()).padStart(2,'0') +
-            String(now.getHours()).padStart(2,'0') +
-            String(now.getMinutes()).padStart(2,'0') +
-            String(now.getSeconds()).padStart(2,'0');
-
-        // 4. Construir Tabla Final
-        const tableData = Object.values(det).map(i => ({
-            uuid: `${timeKey}-${i.id}`, // <--- ID ÚNICO GENERADO
-            id: i.id, 
-            count: i.count, 
-            neto: i.sumNeto,
-            pagado: pag[i.id]||0, 
-            diff: i.sumNeto-(pag[i.id]||0)
-        }));
-
-        const columns = [
-            // Columna oculta o visible pequeña para el ID (opcional visualmente)
-            { title: "ID Ref", field: "uuid", width: 140, headerFilter: true, visible: false }, 
-            { title: "Afiliado", field: "id", headerFilter: true, width: 100 }, 
-            { title: "Trans.", field: "count", hozAlign: "center", bottomCalc: "sum" },
-            { title: "Neto Esperado", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Depositado", field: "pagado", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", bottomCalc: "sum" }
-        ];
-
-        // Leer umbral Scotia específico
-        const thresholdInput = document.getElementById('threshold-scotia'); // <--- ID NUEVO
-        const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
-
-        // Instanciar BAC
-        if (this.grids.bac) {
-            // Si ya existe, solo actualizamos los datos
-            this.grids.bac.updateData(tableData);
-        } else {
-            // Si es la primera vez, creamos la instancia
-            this.grids.bac = new VanillaGrid("#table-result-bac", tableData, columns, {
-                threshold: currentThreshold,
-                searchInputId: "search-bac"
-            });
-        }
-        
-        // Auto-switch tab si es la primera carga
-        if(this.activeTab !== 'bac') this.switchTab('bac');
-        
-        console.log("Grid BAC inicializado:", this.grids.bac);
-        // 5. Renderizar Auditoría
-        this.renderAudit('bac');
-    },
 
     // Función auxiliar para buscar en todas las columnas
     matchAny: function(data, filterParams) {
@@ -966,6 +376,8 @@ window.ConciliacionLogic = {
         }
         // Ya vienen con formato de Grid (llaves "0", "1"...) y no necesitan conversión.
         if (type === 'scotia_detalle') return this.data.scotia_detalle;
+
+        if (type === 'tsd') return this.data.tsd;
 
         const isDet = type === 'detalle';
         const rawData = isDet ? this.data.detalle : this.data.pagado;
@@ -1009,22 +421,21 @@ window.ConciliacionLogic = {
     },
 
     openPopup: function(type) {
-        // DEFINICIÓN CRÍTICA DE VARIABLES
+        // 1. Variables y Datos
         const isDet = type === 'detalle';
         const isScotia = type === 'scotia_detalle';
         
-        // Selección de datos
         let rawData;
         if (isDet) rawData = this.data.detalle;
         else if (isScotia) rawData = this.data.scotia_detalle;
-        else if (type === 'scotia_pagado') rawData = this.data.scotia_pagado; // <--- ¿ESTÁ ESTA LÍNEA?
+        else if (type === 'scotia_pagado') rawData = this.data.scotia_pagado; 
+        else if (type === 'tsd') rawData = this.data.tsd; 
         else rawData = this.data.pagado;
-        
         
         if (!rawData || !rawData.length) return alert("Sin datos para mostrar");
 
-        // Configurar Columnas
-        let columns = [];
+        // 2. DECLARACIÓN (Aquí debe nacer la variable)
+        let columns = []; 
         if(isDet) {
             const sample = rawData[0];
             // Recuperamos headers reales
@@ -1034,17 +445,13 @@ window.ConciliacionLogic = {
                 // Columna Checkbox
                 { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
                 
-                // Columnas de datos (Mapeadas por índice '0', '1', etc.)
-                ...realHeaders.map((h, idx) => {
-                    const isMoney = /monto|neto|comisi|retenci|importe/i.test(h);
-                    return {
-                        title: h || `Col ${idx}`,
-                        field: String(idx),
-                        headerFilter: true,
-                        hozAlign: isMoney ? "right" : "left",
-                        formatter: isMoney ? "money" : undefined
-                    };
-                })
+                // CORRECCIÓN: Mapear por índice numérico
+                ...realHeaders.map((h, idx) => ({
+                    title: h, 
+                    field: String(idx), // <--- Coincide con rowObj["0"]
+                    headerFilter: true, 
+                    width: 120
+                }))
             ];
         } else if (isScotia) {
              const realHeaders = this.data.headers.scotia_detalle || [];
@@ -1076,23 +483,62 @@ window.ConciliacionLogic = {
                      hozAlign: (h.toLowerCase().includes('monto')) ? 'right' : 'left'
                  }))
              ];
+        } else if (type === 'tsd') {
+             // Configuración TSD
+             const realHeaders = this.data.headers.tsd || [];
+             
+             // Columnas Fijas
+             columns = [
+                 { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
+                 { title: "Auth", field: "_auth", headerFilter: true, width: 100, cssClass: "font-bold bg-purple-50" },
+                 { title: "Monto Original", field: "_monto_usd", formatter: "money", hozAlign: "right" },
+                 { title: "Monto CRC", field: "_monto", formatter: "money", hozAlign: "right", cssClass: "text-purple-700" }
+             ];
+             
+             // Columnas Dinámicas (Defensivo contra huecos en headers)
+             // Usamos forEach para asegurar que 'idx' sea el índice real del array original
+             realHeaders.forEach((h, idx) => {
+                 // Solo agregamos la columna si el header tiene texto (evita columnas fantasmas/null)
+                 if (h && String(h).trim() !== '') {
+                     columns.push({
+                         title: h, 
+                         field: String(idx), // Mantenemos el índice original como llave de datos
+                         headerFilter: true, 
+                         width: 120
+                     });
+                 }
+             });
+
         } else {
-            // EXCEL: Agregamos columna de Control al inicio
-            const rawCols = Object.keys(rawData[0]).filter(k => !k.startsWith('_'));
+            // EXCEL GENÉRICO (BAC PAGADO): Usar headers reales si existen
+            const realHeaders = this.data.headers.pagado || [];
             
-            columns = [
-                // Columna Checkbox
-                { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
+            if (realHeaders.length > 0) {
+                 columns = [
+                    { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false }
+                ];
                 
-                // Resto de columnas
-                ...rawCols.map(k => ({
-                    title: k, 
-                    field: k, 
-                    headerFilter: true,
-                    formatter: (k.toLowerCase().match(/monto|crédito|débito|saldo|importe/)) ? 'money' : undefined,
-                    hozAlign: (k.toLowerCase().match(/monto|crédito|débito|saldo|importe/)) ? 'right' : 'left'
-                }))
-            ];
+                // Mapeo defensivo
+                realHeaders.forEach((h, idx) => {
+                    if (h && String(h).trim() !== '') {
+                        columns.push({
+                            title: h, 
+                            field: String(idx), // Índice real
+                            headerFilter: true,
+                            formatter: (String(h).toLowerCase().match(/monto|crédito|débito|saldo|importe/)) ? 'money' : undefined,
+                            hozAlign: (String(h).toLowerCase().match(/monto|crédito|débito|saldo|importe/)) ? 'right' : 'left'
+                        });
+                    }
+                });
+
+            } else {
+                // Fallback (solo si algo falla en la carga de headers)
+                const rawCols = Object.keys(rawData[0]).filter(k => !k.startsWith('_'));
+                columns = [
+                    { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
+                    ...rawCols.map(k => ({ title: k, field: k, headerFilter: true }))
+                ];
+            }
         }
 
         const w = 1200, h = 800;
@@ -1173,31 +619,9 @@ window.ConciliacionLogic = {
                                     // Callback REACTIVO en tiempo real
                                     onCheckboxChange: (row, field, val) => {
                                         if(window.opener && window.opener.ConciliacionLogic) {
-                                            const logic = window.opener.ConciliacionLogic;
-                                            
-                                            // 1. SCOTIA DETALLE (Tarjeta Grande + Tabla Central)
-                                            if ('${type}' === 'scotia_detalle') {
-                                                logic.updateScotiaCard(); // Actualiza HTML Tarjeta
-                                                logic.runMatchScotiabank(); // Actualiza Tabla Central
-                                            } 
-                                            // 2. SCOTIA PAGADO (Tarjeta Verde + Tabla Central)
-                                            else if ('${type}' === 'scotia_pagado') {
-                                                // Asegurarse de tener la función de recálculo simple
-                                                if(logic.recalculateScotiaPagado) {
-                                                    logic.recalculateScotiaPagado();
-                                                } else {
-                                                    // Fallback si no existe la función dedicada
-                                                    logic.runMatchScotiabank();
-                                                }
-                                            }
-                                            // 3. BAC DETALLE
-                                            else if('${type}' === 'detalle') {
-                                                logic.recalculateDetalle();
-                                            } 
-                                            // 4. BAC PAGADO
-                                            else {
-                                                logic.recalculate(); 
-                                            }
+                                            // Llamamos al orquestador para que todo el sistema se sincronice
+                                            // (BAC afecta a TSD, Scotia afecta a TSD, etc.)
+                                            window.opener.ConciliacionLogic.updateAll();
                                         }
                                     }
                                 });
@@ -1253,112 +677,6 @@ window.ConciliacionLogic = {
         this.runMatch();
     },
 
-    processScotiabankDetalle: function(buf) {
-        const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rawRows = XLSX.utils.sheet_to_json(ws, {header: 1});
-
-        // 1. Escanear cabeceras
-        const headerIndices = [];
-        rawRows.forEach((row, idx) => {
-            const str = JSON.stringify(row).toLowerCase();
-            if(str.includes('monto neto') && str.includes('fuente')) headerIndices.push(idx);
-        });
-
-        if(!headerIndices.length) return alert("No se encontraron encabezados de Scotiabank.");
-
-        const headers = rawRows[headerIndices[0]].map(h => h ? String(h).trim() : `Col_${Math.random()}`);
-        this.data.headers = this.data.headers || {};
-        this.data.headers.scotia_detalle = headers;
-
-        const getIdx = (name) => headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
-        const cols = {
-            bruto: getIdx('Monto Bruto'),
-            comTot: getIdx('Monto Comisión Total'),
-            retIva: getIdx('Monto Retención IVA'),
-            retIsr: getIdx('Monto Retención IS'),
-            neto: getIdx('Monto Neto')
-        };
-
-        const parseNum = (val) => {
-            if (typeof val === 'number') return val;
-            if (typeof val === 'string') {
-                return parseFloat(val.replace(/\s/g, '').replace(',', '.')) || 0;
-            }
-            return 0;
-        };
-
-        const processedData = [];
-
-        // 2. Procesar Bloques
-        headerIndices.forEach((startRow, blockIdx) => {
-            const isNegative = blockIdx > 0; 
-            const sign = isNegative ? -1 : 1;
-
-            for(let i = startRow + 1; i < rawRows.length; i++) {
-                const row = rawRows[i];
-                if(!row || !row.length) continue;
-
-                const first = String(row[0]||'').toLowerCase();
-                if(first.includes('subtotales') || first.includes('agrupado')) {
-                    if(headerIndices.includes(i)) break; 
-                    if(first.includes('subtotales')) break; 
-                    continue;
-                }
-
-                const vBruto = Math.abs(parseNum(row[cols.bruto]));
-                const vNeto = Math.abs(parseNum(row[cols.neto]));
-
-                if(vNeto === 0 && vBruto === 0) continue;
-
-                // Guardar Fila
-                const rowObj = {
-                    _enabled: true,
-                    _neto: vNeto * sign,
-                };
-
-                // GUARDADO CORREGIDO: Iteramos headers para llenar rowObj
-                headers.forEach((h, idx) => {
-                    let cellVal = row[idx];
-                    
-                    // Aplicar signo a columnas monetarias
-                    if([cols.bruto, cols.comTot, cols.retIva, cols.retIsr, cols.neto].includes(idx)) {
-                        cellVal = parseNum(cellVal) * sign;
-                    }
-                    
-                    // Usamos el índice como llave ("0", "1")
-                    rowObj[String(idx)] = cellVal; 
-                });
-                
-                processedData.push(rowObj);
-            }
-        });
-
-        // 1. PRIMERO: Guardar los datos procesados en el estado global
-        // Si no hacemos esto, updateScotiaCard intentará leer 'undefined' y fallará.
-        this.data.scotia_detalle = processedData;
-
-        // 2. SEGUNDO: Actualizar la Tarjeta de Resumen (Ahora sí hay datos)
-        this.updateScotiaCard();
-        
-        // 3. TERCERO: Cambiar Tab y Correr Match (Para mostrar "Esperando..." o resultados)
-        if(this.switchTab) this.switchTab('scotia');
-        this.runMatchScotiabank();
-
-        // Feedback Dropzone
-        const dropzone = document.getElementById('drop-scotia-detalle');
-        if(dropzone) {
-            dropzone.classList.remove('border-slate-300', 'hover:border-red-500');
-            dropzone.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
-            const status = document.getElementById('status-scotia-detalle');
-            if(status) { 
-                status.innerText = `Cargado: ${processedData.length} filas`; 
-                status.classList.remove('hidden');
-                status.classList.add('text-green-600', 'font-bold'); 
-            }
-        }
-    },
-
     // Actualiza el umbral en el grid específico
     updateThreshold: function(val, bank) {
         const num = (val === '' || val === null) ? 0 : parseFloat(val);
@@ -1374,23 +692,51 @@ window.ConciliacionLogic = {
         }
     },
 
-    // Recálculo reactivo para Pagado Scotiabank
-    recalculateScotiaPagado: function() {
-        let total = 0;
-        if(this.data.scotia_pagado) {
-            this.data.scotia_pagado.forEach(r => {
-                if(r._enabled) total += r._monto;
+    // Retorna un Set con todos los IDs normalizados de los bancos
+    getBankAuths: function() {
+        const auths = new Set();
+        
+        // BAC Detalle (Columna Referencia/Auth)
+        if(this.data.detalle) {
+            // Asumimos que la col 11 (o busca 'autoriza') es la clave
+            const h = this.data.headers.detalle || [];
+            const idx = h.findIndex(s => s && s.toLowerCase().includes('autoriza')) || 11;
+            this.data.detalle.forEach(r => {
+                if(r._enabled && r[idx]) auths.add(String(r[idx]).trim().replace(/[^a-zA-Z0-9]/g, ''));
             });
         }
-        // Actualizar UI
-        const el = document.getElementById('sc-total-pagado');
-        if(el) el.innerText = this.formatMoney(total);
+
+        // Scotia Detalle
+        if(this.data.scotia_detalle) {
+            const h = this.data.headers.scotia_detalle || [];
+            const idx = h.findIndex(s => s && s.toLowerCase().includes('autoriza'));
+            this.data.scotia_detalle.forEach(r => {
+                if(r._enabled) {
+                    const val = r[String(idx)];
+                    if(val) auths.add(String(val).trim().replace(/[^a-zA-Z0-9]/g, ''));
+                }
+            });
+        }
+        return auths;
+    },
+
+    // ORQUESTADOR MAESTRO DE ACTUALIZACIÓN
+    updateAll: function() {
+        console.log("🔄 Recalculando Sistema Completo...");
+
+        // 1. Recalcular Bancos (Actualiza sus tablas y sus totales en memoria)
+        // Nota: Estas funciones ya actualizan sus propias tarjetas y grids
+        this.recalculateDetalle(); // BAC Detalle -> Tabla BAC
+        this.recalculate(); // BAC Pagado -> Tabla BAC
         
-        // Actualizar Tabla Central
-        this.runMatchScotiabank();
-        // Actualizar Tabla Central y Auditoría
-        this.runMatchScotiabank(); 
-        // Nota: runMatchScotiabank ya llama a renderAudit('scotia'), así que estamos cubiertos.
+        this.updateScotiaCard(); // Scotia Detalle (Tarjeta)
+        this.recalculateScotiaPagado(); // Scotia Pagado (Tarjeta) -> Tabla Scotia (runMatchScotiabank)
+
+        // 2. Recalcular TSD (Depende de los datos frescos de los bancos)
+        // Si hay datos TSD cargados, corremos su cruce.
+        if (this.data.tsd && this.data.tsd.length > 0) {
+            this.runMatchTSD();
+        }
     },
 };
 
@@ -1428,5 +774,11 @@ window.ConciliacionFunctions = {
     
     exportToExcel: function() { 
         alert("Exportar pendiente."); 
+    },
+
+    updateExchangeRate: function(v) {
+        if(window.ConciliacionLogic && window.ConciliacionLogic.updateExchangeRate) {
+            window.ConciliacionLogic.updateExchangeRate(v);
+        }
     }
 };

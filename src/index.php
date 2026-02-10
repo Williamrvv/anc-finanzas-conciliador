@@ -106,7 +106,7 @@ session_start();
 
     <!-- BARRA ESTADO TIPO EXCEL (Fija abajo) -->
     <div id="global-table-stats" class="fixed bottom-0 left-0 w-full bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-700 py-1 px-4 flex justify-end items-center gap-6 text-xs font-mono hidden z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div class="text-slate-500 dark:text-blue">SELECCIÓN ACTUAL:</div>
+        <div class="text-slate-500 dark:text-blue-400">SELECCIÓN ACTUAL:</div>
         <div class="flex gap-2">
             <span class="text-slate-500 dark:text-blue">RECUENTO:</span>
             <span id="gst-count" class="font-bold text-slate-800 dark:text-white">0</span>
@@ -123,6 +123,10 @@ session_start();
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Lógica Negocio -->
     <script src="js/conciliacion_ui.js"></script>
+    <!-- Lógica Modular de conciliaciones -->
+    <script src="js/bac_logic.js"></script>
+    <script src="js/scotia_logic.js"></script>
+    <script src="js/tsd_logic.js"></script>
     <!-- JS SPA -->
     <script src="js/app.js"></script>
 </body>
