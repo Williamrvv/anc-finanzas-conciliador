@@ -382,10 +382,17 @@ window.ConciliacionLogic = {
                 }
             } catch (err) {
                 console.error(err);
-                if(statusEl) {
-                    statusEl.innerText = "Error formato";
+                // Solo mostrar error visual si NO hay archivos cargados previamente
+                // Si ya hay archivos, asumimos que el usuario quiere seguir viendo su lista
+                if(statusEl && !statusEl.innerHTML.includes('svg')) {
+                    statusEl.innerText = "Error lectura";
                     statusEl.classList.remove('text-blue-500', 'animate-pulse');
                     statusEl.classList.add('text-red-500');
+                } else {
+                    // Restaurar estado visual (volver a pintar la lista verde)
+                    // Esto requiere volver a llamar a updateFileList desde el contexto adecuado, 
+                    // pero como catch es genérico, simplemente quitamos la animación de carga.
+                    if(statusEl) statusEl.classList.remove('animate-pulse');
                 }
             }
         };

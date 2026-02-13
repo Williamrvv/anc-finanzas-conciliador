@@ -33,7 +33,10 @@ window.BACLogic = {
         // Debe tener al menos Neto y Comisión para ser un reporte válido de BAC
         if (!strHeaders.includes('neto') || !strHeaders.includes('comis')) {
             alert("⛔ Error de Formato:\n\nEl archivo no parece ser un reporte detallado de BAC.\nFaltan columnas clave ('Monto Neto' o 'Comisión').");
-            return; // Detener proceso
+            
+            // RESTAURAR ESTADO VISUAL SI YA HABÍA ARCHIVOS
+            this.updateFileList('bac_detalle'); 
+            return; // Salir sin tocar nada más
         }
         this.data.headers = this.data.headers || {};
         this.data.headers.detalle = headerRow;
@@ -141,6 +144,9 @@ window.BACLogic = {
 
         if(missing.length > 0) {
             alert(`⛔ Archivo Inválido:\n\nFaltan las siguientes columnas obligatorias:\n- ${missing.join('\n- ')}`);
+            
+            // RESTAURAR ESTADO VISUAL
+            this.updateFileList('bac_pagado');
             return;
         }
 
@@ -401,21 +407,32 @@ window.BACLogic = {
             </div>
         `).join('');
 
+        // Diseño UX Robusto (Anti-Flicker)
         status.innerHTML = `
-            <div class="font-bold text-[10px] ${colorText} cursor-help flex items-center gap-1">
+            <div class="font-bold text-[10px] ${colorText} cursor-help flex items-center gap-1 relative z-20">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 ${count} Archivo${count !== 1 ? 's' : ''}
             </div>
             
-            <!-- LISTA FLOTANTE MEJORADA -->
-            <div class="hidden group-hover:block absolute top-full left-0 mt-1 w-48 bg-slate-800 rounded shadow-xl border border-slate-600 p-1 z-[100]">
-                <div class="text-[9px] font-bold text-slate-400 border-b border-slate-600 pb-1 mb-1 px-1">Archivos Cargados:</div>
-                <div class="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar">
-                    ${listItems}
+            <!-- LISTA FLOTANTE -->
+            <div class="hidden group-hover:block absolute left-0 top-full pt-2 z-[100] min-w-[200px]">
+                <!-- Flecha decorativa -->
+                <div class="absolute top-1 left-4 w-2 h-2 bg-slate-800 rotate-45"></div>
+                
+                <!-- Contenedor Real -->
+                <div class="bg-slate-800 text-white rounded shadow-xl border border-slate-600 p-1">
+                    <div class="text-[9px] font-bold text-slate-400 border-b border-slate-600 pb-1 mb-1 px-1 flex justify-between items-center">
+                        <span>Archivos Cargados:</span>
+                        <span class="text-[8px] bg-slate-700 px-1 rounded">${count}</span>
+                    </div>
+                    <div class="flex flex-col gap-1 max-h-40 overflow-y-auto custom-scrollbar">
+                        ${listItems}
+                    </div>
                 </div>
             </div>
         `;
-        status.parentElement.classList.add('group', 'relative');
+        // Asegurar clases necesarias en el padre para que el absolute funcione
+        status.parentElement.classList.add('group', 'relative'); 
         status.classList.remove('hidden');
     }
 };
