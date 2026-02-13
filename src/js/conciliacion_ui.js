@@ -1,5 +1,18 @@
 window.ConciliacionLogic = {
-    data: { detalle: [], pagado: [], scotia_detalle: [], scotia_pagado: [] },
+    data: { 
+        detalle: [], 
+        pagado: [], 
+        scotia_detalle: [], 
+        scotia_pagado: [], 
+        // NUEVO: Registro de Archivos Cargados para la conciliación
+        files: {
+            bac_detalle: [],
+            bac_pagado: [],
+            scotia_detalle: [],
+            scotia_pagado: [],
+            tsd: []
+        }
+    },
     grids: { bac: null, scotia: null }, // <--- Almacén de instancias
     activeTab: 'bac', // Estado actual
 
@@ -152,12 +165,13 @@ window.ConciliacionLogic = {
     table: null,
 
     init: function() {
-        // --- MIXINS: Fusión de Lógica Modular ---
-        if(window.BACLogic) Object.assign(this, window.BACLogic); 
+        // Fusión de Lógica Modular
+        if(window.BACLogic) Object.assign(this, window.BACLogic);
         if(window.ScotiaLogic) Object.assign(this, window.ScotiaLogic);
         if(window.TSDLogic) Object.assign(this, window.TSDLogic);
         
-        console.log("Sistema Conciliación Iniciado");
+        console.log("Sistema Conciliación Iniciado", this.processCSV ? "con BAC" : "SIN BAC");
+        
         this.setupUploads();
         this.fetchExchangeRate();
     },
@@ -322,26 +336,49 @@ window.ConciliacionLogic = {
         
         // 1. Mostrar estado "Procesando" inmediatamente
         if(statusEl) {
-            statusEl.innerText = "Procesando...";
-            statusEl.classList.remove('hidden'); // <--- CRÍTICO: Hacer visible el span
-            statusEl.classList.remove('text-red-500'); // Limpiar errores previos
-            statusEl.classList.add('text-blue-500', 'animate-pulse'); // Feedback visual
+            // Si ya hay contenido (lista de archivos), no lo borramos, solo mostramos carga
+            if(!statusEl.innerHTML.includes('svg')) {
+                statusEl.innerText = "Procesando...";
+            }
+            statusEl.classList.remove('hidden');
+            statusEl.classList.remove('text-red-500'); 
+            statusEl.classList.add('text-blue-500', 'animate-pulse'); 
         }
 
         const reader = new FileReader();
+        
+        // CRÍTICO: Asegurarse de recibir (e) aquí
         reader.onload = (e) => {
             try {
-                if(type === 'csv') this.processCSV(e.target.result);
-                else if(type === 'scotia_detalle') this.processScotiabankDetalle(e.target.result);
-                else if(type === 'scotia_pagado') this.processScotiabankPagado(e.target.result);
-                else if(type === 'tsd') this.processTSD(e.target.result);
-                else this.processExcel(e.target.result);
+                // DETECCIÓN DE FORMATO Y ENVÍO A LÓGICA ESPECÍFICA
+                // Se pasa e.target.result (contenido) y file.name (nombre)
                 
-                // 2. Éxito: Mostrar nombre de archivo
+                if(type === 'csv') {
+                    // BAC Detalle
+                    this.processCSV(e.target.result, file.name);
+                } 
+                else if(type === 'scotia_detalle') {
+                    // Scotia Detalle (Aún no adaptado para multi-archivo, pasamos solo contenido por ahora)
+                    this.processScotiabankDetalle(e.target.result, file.name);
+                } 
+                else if(type === 'scotia_pagado') {
+                    // Scotia Pagado
+                    this.processScotiabankPagado(e.target.result, file.name);
+                } 
+                else if(type === 'tsd') {
+                    // TSD (Reporte Maestro)
+                    this.processTSD(e.target.result);
+                } 
+                else {
+                    // Excel Genérico (BAC Pagado por defecto en la config actual)
+                    this.processExcel(e.target.result, file.name);
+                }
+                
+                // 2. Éxito: Quitar animación de carga del status
                 if(statusEl) {
-                    statusEl.innerText = file.name;
                     statusEl.classList.remove('text-blue-500', 'animate-pulse');
                     statusEl.classList.add('text-green-600', 'font-bold');
+                    // Nota: El texto exacto lo actualiza la función process... específica
                 }
             } catch (err) {
                 console.error(err);
@@ -353,6 +390,7 @@ window.ConciliacionLogic = {
             }
         };
         
+        // Leer según tipo
         if(type === 'csv') reader.readAsText(file, 'ISO-8859-1'); 
         else reader.readAsArrayBuffer(file);
     },
@@ -397,7 +435,7 @@ window.ConciliacionLogic = {
                         if(parts.length === 3) {
                             // Si es YYYY-MM-DD
                             if(parts[0].length === 4) finalVal = `${parts[2]}/${parts[1]}/${parts[0]}`;
-                            // Si es MM/DD/YYYY (común en CSVs gringos)
+                            // Si es MM/DD/YYYY (común en CSVs )
                             else if(parts[2].length === 4) finalVal = `${parts[1]}/${parts[0]}/${parts[2]}`;
                         }
                     }
@@ -436,23 +474,65 @@ window.ConciliacionLogic = {
 
         // 2. DECLARACIÓN (Aquí debe nacer la variable)
         let columns = []; 
-        if(isDet) {
-            const sample = rawData[0];
-            // Recuperamos headers reales
+        if (isDet) {
             const realHeaders = this.data.headers && this.data.headers.detalle ? this.data.headers.detalle : [];
             
             columns = [
-                // Columna Checkbox
-                { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
-                
-                // CORRECCIÓN: Mapear por índice numérico
-                ...realHeaders.map((h, idx) => ({
-                    title: h, 
-                    field: String(idx), // <--- Coincide con rowObj["0"]
-                    headerFilter: true, 
-                    width: 120
-                }))
+                { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false }
             ];
+
+            let aciAdded = false; // Bandera de control
+
+            realHeaders.forEach((h, idx) => {
+                const headerStr = String(h).trim();
+                const upper = headerStr.toUpperCase();
+                
+                // REGLAS DE FORMATO:
+                // 1. Liquidación -> TEXTO (Sin formatter)
+                // 2. Montos (Neto, Bruto, Comision, Ajuste, Retencion) -> MONEDA
+                
+                const isLiq = upper.includes('LIQUIDACION') || upper.includes('REFERENCIA');
+                // Regex para detectar campos monetarios
+                const isMoney = !isLiq && /MONTO|NETO|BRUTO|COMISION|RETENCION|AJUSTE/i.test(upper);
+
+                // Agregar columna original
+                columns.push({
+                    title: headerStr,
+                    field: String(idx),
+                    headerFilter: true,
+                    width: isMoney ? 130 : 160,
+                    // Si es dinero -> 'money'. Si es Liquidación -> undefined (texto plano)
+                    formatter: isMoney ? "money" : undefined, 
+                    hozAlign: isMoney ? "right" : "left",
+                    cssClass: isMoney ? "font-mono" : ""
+                });
+
+                // INYECCIÓN AGRESIVA: Si dice "NETO", ponemos "Neto-ACI" al lado
+                if (!aciAdded && upper.includes('NETO')) {
+                    columns.push({
+                        title: "Neto - ACI", 
+                        field: "_netoACI", 
+                        formatter: "money", 
+                        hozAlign: "right",
+                        width: 140,
+                        headerFilter: true,
+                        cssClass: "font-mono font-bold text-blue-700 bg-blue-50 border-l-2 border-blue-200" 
+                    });
+                    aciAdded = true;
+                }
+            });
+
+            // FALLBACK: Si no encontró la palabra "NETO", agregar al final
+            if (!aciAdded) {
+                columns.push({
+                    title: "Neto - ACI (Calc)", 
+                    field: "_netoACI", 
+                    formatter: "money", 
+                    hozAlign: "right",
+                    width: 140,
+                    cssClass: "font-bold text-blue-700 bg-blue-50"
+                });
+            }
         } else if (isScotia) {
              const realHeaders = this.data.headers.scotia_detalle || [];
              columns = [
@@ -613,9 +693,8 @@ window.ConciliacionLogic = {
                                 // Instanciamos el Grid pasando solo el ID del buscador y las opciones
                                 new VanillaGrid("#popup-grid", data, columns, { 
                                     threshold: 0,
-                                    searchInputId: "popup-search", // <--- CONEXIÓN AUTOMÁTICA
-                                    autoFocusSearch: true,         // <--- UX: Escribir apenas abre
-                                    
+                                    searchInputId: "popup-search", 
+                                    autoFocusSearch: true,         
                                     // Callback REACTIVO en tiempo real
                                     onCheckboxChange: (row, field, val) => {
                                         if(window.opener && window.opener.ConciliacionLogic) {
@@ -637,7 +716,21 @@ window.ConciliacionLogic = {
         win.document.close();
     },
 
-    formatMoney: function(val) { return new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(val); },
+    formatMoney: function(val) { 
+        // Forzamos formato CR: ₡ 1 000,00
+        // Intl 'es-CR' a veces usa punto para miles. Lo corregimos manualmente.
+        let fmt = new Intl.NumberFormat('es-CR', {
+            style: 'currency', 
+            currency: 'CRC',
+            minimumFractionDigits: 2
+        }).format(val);
+        
+        // Si el sistema generó puntos para miles (ej: 1.000,00), los cambiamos por espacio
+        if (fmt.includes('.') && fmt.includes(',')) {
+            fmt = fmt.replace(/\./g, ' ');
+        }
+        return fmt;
+    },
     moneyFormatter: function(cell) { return window.ConciliacionLogic.formatMoney(cell.getValue()); },
     diffFormatter: function(cell) {
         const val = cell.getValue();

@@ -50,29 +50,54 @@ class VanillaGrid {
         const thead = document.createElement('thead');
         thead.className = "bg-slate-100 dark:bg-slate-700 sticky top-0 z-20 shadow-sm";
 
-        // Fila 1: Títulos
+        // Fila 1: Títulos (Con Drag & Drop y Sort arreglado)
         const trTitles = document.createElement('tr');
-        this.columns.forEach(col => {
+        this.columns.forEach((col, idx) => {
             const th = document.createElement('th');
             const align = col.hozAlign === 'right' ? 'flex-row-reverse' : 'flex-row';
             const isSorted = this.sortState.field === col.field;
+            
+            // Icono de ordenamiento (flecha)
             const sortIcon = this.getSortIcon(isSorted ? this.sortState.dir : 0);
+            
+            // Estilos activos
             const activeClass = isSorted ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-slate-600" : "text-slate-600 dark:text-slate-400";
 
-            // UX STICKY: Si es checkbox, fijamos la posición y aumentamos Z-Index
             let stickyClass = "";
             if (col.formatter === 'checkbox') {
-                // z-30 para ganarles a las celdas normales (z-0) y a los headers normales (z-20)
                 stickyClass = "sticky left-0 z-30 bg-slate-100 dark:bg-slate-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"; 
             }
 
-            th.className = `p-0 border-r border-b border-slate-300 dark:border-slate-600 select-none ${activeClass} ${stickyClass}`;
+            // Atributos Drag & Drop en el TH
+            th.draggable = true; 
+            th.dataset.colIdx = idx; 
+
+            th.className = `p-0 border-r border-b border-slate-300 dark:border-slate-600 select-none ${activeClass} ${stickyClass} transition-colors duration-200`;
+            
+            // Estructura interna
             th.innerHTML = `
-                <div class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors h-full ${align}" data-action="sort" data-field="${col.field}">
-                    <span class="font-bold truncate flex-grow">${col.title}</span>
-                    <span class="text-slate-400 text-xs w-4">${sortIcon}</span>
-                    <button class="p-1 hover:bg-slate-300 dark:hover:bg-slate-500 rounded text-slate-400 hover:text-blue-600" title="Agrupar" data-action="group" data-field="${col.field}">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                <div class="flex items-center justify-between px-2 py-2 h-full w-full">
+                    <!-- ZONA CLICK (ORDENAR) + DRAG -->
+                    <!-- Flex-grow para ocupar espacio, cursor-pointer para indicar click -->
+                    <div class="flex items-center gap-2 flex-grow cursor-pointer hover:text-blue-600 transition-colors select-none" 
+                         data-action="sort" 
+                         data-field="${col.field}"
+                         title="Clic para ordenar">
+                        
+                        <!-- Texto Centrado si es numérico, Izquierda si es texto -->
+                        <span class="font-bold truncate ${col.hozAlign === 'right' ? 'text-right w-full pr-1' : 'text-left'}">${col.title}</span>
+                        
+                        <!-- Icono Sort -->
+                        <span class="text-slate-400 text-xs w-3 shrink-0">${sortIcon}</span>
+                    </div>
+
+                    <!-- BOTÓN AGRUPAR (Click separado) -->
+                    <button class="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors ml-1 shrink-0" 
+                            title="${this.groupByField === col.field ? 'Desagrupar' : 'Agrupar'}" 
+                            data-action="group" 
+                            data-field="${col.field}"
+                            onmousedown="event.stopPropagation()"> <!-- Evita iniciar Drag -->
+                        <svg class="w-3.5 h-3.5 ${this.groupByField === col.field ? 'text-blue-600' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h7"></path></svg>
                     </button>
                 </div>
             `;
@@ -291,12 +316,16 @@ class VanillaGrid {
         
         // 1. Sort & Group
         thead.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-action]');
+            const btn = e.target.closest('[data-action]'); 
             if(btn) {
                 const action = btn.dataset.action;
                 const field = btn.dataset.field;
                 if(action === 'sort') this.handleSort(field);
-                if(action === 'group') { e.stopPropagation(); this.groupByField = this.groupByField === field ? null : field; this.render(); }
+                if(action === 'group') { 
+                    e.stopPropagation(); 
+                    this.groupByField = this.groupByField === field ? null : field; 
+                    this.render(); 
+                }
             }
             
             // CHANGE: Listener para el botón Limpiar
@@ -362,6 +391,52 @@ class VanillaGrid {
                     this.options.onCheckboxChange(this.displayData[r], field, val);
                 }
             }
+        });
+
+        // 5. Drag & Drop de Columnas
+        let draggedColIdx = null;
+
+        const headers = table.querySelectorAll('thead tr:first-child th');
+        headers.forEach(th => {
+            // Iniciar arrastre
+            th.addEventListener('dragstart', (e) => {
+                draggedColIdx = parseInt(e.target.dataset.colIdx);
+                e.dataTransfer.effectAllowed = 'move';
+                e.target.classList.add('opacity-50', 'bg-blue-100'); // Feedback visual
+            });
+
+            // Terminar arrastre (limpieza)
+            th.addEventListener('dragend', (e) => {
+                e.target.classList.remove('opacity-50', 'bg-blue-100');
+                headers.forEach(h => h.classList.remove('border-l-4', 'border-blue-500')); // Quitar indicadores
+            });
+
+            // Arrastrar sobre otro header
+            th.addEventListener('dragover', (e) => {
+                e.preventDefault(); // Necesario para permitir drop
+                const targetIdx = parseInt(e.currentTarget.dataset.colIdx);
+                if (draggedColIdx === targetIdx) return;
+
+                // Indicador visual de inserción (Borde izquierdo azul)
+                headers.forEach(h => h.classList.remove('border-l-4', 'border-blue-500'));
+                e.currentTarget.classList.add('border-l-4', 'border-blue-500');
+            });
+
+            // Soltar (Drop)
+            th.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const targetIdx = parseInt(e.currentTarget.dataset.colIdx);
+
+                if (draggedColIdx !== null && draggedColIdx !== targetIdx) {
+                    // Reordenar array de columnas
+                    const colToMove = this.columns[draggedColIdx];
+                    this.columns.splice(draggedColIdx, 1); // Sacar
+                    this.columns.splice(targetIdx, 0, colToMove); // Insertar
+
+                    // Redibujar tabla completa
+                    this.render();
+                }
+            });
         });
     }
 
@@ -705,28 +780,19 @@ class VanillaGrid {
         const num = parseFloat(val);
         if(isNaN(num)) return val;
 
-        // Formato Personalizado: "2 737 233,99" (Espacio miles, Coma decimal)
-        // Usamos 'fr-FR' como base porque usa espacios para miles, y luego ajustamos si hace falta.
-        // O mejor: Usamos Intl con opciones específicas.
-        
         let formatted = new Intl.NumberFormat('es-CR', {
             style: 'currency', 
             currency: 'CRC', 
-            minimumFractionDigits: 2,
-            useGrouping: true
+            minimumFractionDigits: 2, // <--- OBLIGATORIO: Siempre 2 decimales
+            maximumFractionDigits: 2  // <--- OBLIGATORIO: No más de 2
         }).format(Math.abs(num));
 
-        // HACK UX: Reemplazar el separador de miles (que puede ser punto o coma según OS) por espacio
-        // Detectamos si hay un caracter no numérico que no sea la coma decimal final
-        // Esto es complejo de hacer universal. 
-        // Mejor opción: Si es-CR da "₡2.737.233,99", reemplazamos puntos por espacios.
-        
-        // Si el navegador usa punto para miles (común en es-CR):
+        // HACK UX: Reemplazar punto de miles por espacio (Estándar visual solicitado)
+        // Ejemplo: ₡1.533,41 -> ₡1 533,41
         if (formatted.includes('.') && formatted.includes(',')) {
              formatted = formatted.replace(/\./g, ' '); 
         }
 
-        // Negativos Rojos
         if (num < 0) {
             return `<span class="text-red-600 font-bold">-${formatted}</span>`;
         }
