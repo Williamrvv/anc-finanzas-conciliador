@@ -111,26 +111,18 @@
                     </div>
                 </div>
 
-                <!-- PANEL AUDITORÍA BAC (Flujo Natural, Altura Variable) -->
-                <div id="audit-bac" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden">
-                    <!-- 1. PENDIENTES DETALLE -->
-                    <div class="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800/30 rounded-xl p-4 shadow-sm">
-                        <h4 class="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase mb-3 flex items-center gap-2">
+                <!-- TABLA DE EXCEPCIONES BAC -->
+                <div id="audit-bac" class="flex flex-col gap-2 mt-4 hidden">
+                    <div class="px-4 py-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-t-lg flex justify-between items-center">
+                        <h4 class="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                            Excepciones detalle BAC
+                            Excepciones y Pendientes (No Conciliado)
                         </h4>
-                        <!-- max-h-96 pone un límite sano (384px) pero permite crecer hasta ahí -->
-                        <div id="audit-list-bac-detalle" class="max-h-96 overflow-y-auto pr-2 space-y-1"></div>
+                        <span class="text-[10px] text-orange-600 dark:text-orange-300">Doble clic para analizar</span>
                     </div>
-
-                    <!-- 2. PENDIENTES BANCO -->
-                    <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/30 rounded-xl p-4 shadow-sm">
-                        <h4 class="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase mb-3 flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Excepciones pagado BAC 
-                        </h4>
-                        <div id="audit-list-bac-pagado" class="max-h-96 overflow-y-auto pr-2 space-y-1"></div>
-                    </div>
+                    
+                    <!-- Contenedor Grid Excepciones -->
+                    <div id="table-exceptions-bac" class="h-[300px] border border-orange-200 dark:border-orange-800 rounded-b-lg overflow-hidden shadow-sm"></div>
                 </div>
 
             </div>

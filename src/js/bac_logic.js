@@ -2,8 +2,9 @@ window.BACLogic = {
     // Procesa el CSV de Detalle (BAC)
     processCSV: function(text, filename) {
         // 0. VALIDACIÓN DE DUPLICADOS (Seguridad)
-        // Inicializar estructura si no existe
-        this.data.files = this.data.files || { bac_detalle: [], bac_pagado: [] };
+        this.data.files = this.data.files || {};
+        this.data.files.bac_detalle = this.data.files.bac_detalle || [];
+        this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         
         // Si el archivo ya está en la lista, detenemos todo.
         if (filename && this.data.files.bac_detalle.includes(filename)) {
@@ -80,7 +81,9 @@ window.BACLogic = {
         
         this.data.detalle = (this.data.detalle || []).concat(newRows);
         
-        this.data.files = this.data.files || { bac_detalle: [], bac_pagado: [] };
+        this.data.files = this.data.files || {};
+        this.data.files.bac_detalle = this.data.files.bac_detalle || [];
+        this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         if(filename && !this.data.files.bac_detalle.includes(filename)) {
             this.data.files.bac_detalle.push(filename);
         }
@@ -100,7 +103,9 @@ window.BACLogic = {
     // Procesa el Excel de Pagado (BAC)
     processExcel: function(buf, filename) {
         // 0. VALIDACIÓN DE DUPLICADOS (Seguridad)
-        this.data.files = this.data.files || { bac_detalle: [], bac_pagado: [] };
+        this.data.files = this.data.files || {};
+        this.data.files.bac_detalle = this.data.files.bac_detalle || [];
+        this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         
         if (filename && this.data.files.bac_pagado.includes(filename)) {
             alert(`⚠️ El archivo "${filename}" ya fue cargado previamente.\n\nSe omitirá para evitar duplicar datos.`);
@@ -189,7 +194,9 @@ window.BACLogic = {
             return acc + (r._enabled ? r._monto : 0);
         }, 0);
 
-        this.data.files = this.data.files || { bac_detalle: [], bac_pagado: [] };
+        this.data.files = this.data.files || {};
+        this.data.files.bac_detalle = this.data.files.bac_detalle || [];
+        this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         if(filename && !this.data.files.bac_pagado.includes(filename)) {
             this.data.files.bac_pagado.push(filename);
         }
@@ -258,55 +265,79 @@ window.BACLogic = {
         const hasDetalle = this.data.detalle && this.data.detalle.length > 0;
         const hasPagado = this.data.pagado && this.data.pagado.length > 0;
 
-        if (!hasDetalle || !hasPagado) {
+        if (!hasDetalle && !hasPagado) {
+            // Estado Inicial
             const container = document.getElementById('table-result-bac');
-            if(container) {
-                container.innerHTML = `
-                    <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 animate-pulse">
-                        <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="text-xs font-bold">Esperando archivo complementario...</span>
-                        <div class="flex gap-4 mt-2 text-[10px]">
-                            <span class="${hasDetalle ? 'text-green-500' : 'text-slate-300'}">● Detalle</span>
-                            <span class="${hasPagado ? 'text-green-500' : 'text-slate-300'}">● Banco</span>
-                        </div>
-                    </div>
-                `;
-            }
+            if(container) container.innerHTML = '<div class="text-center text-slate-400 p-10 font-bold">Esperando archivos...</div>';
             return;
         }
 
-        const det = {}, pag = {};
-        
+        // 1. Agrupar Detalle (Ventas)
+        const det = {};
         this.data.detalle.forEach(r => {
             if(!r._enabled) return;
             const id = r._id;
-            const net = r._netoACI; 
-            if(!det[id]) det[id]={id, count:0, sumNeto:0};
-            det[id].count++; det[id].sumNeto+=net;
+            const net = r._netoACI; // Usamos Neto - ACI
+            if(!det[id]) det[id]={id, count:0, sumNeto:0, rows: []};
+            det[id].count++; 
+            det[id].sumNeto += net;
+            det[id].rows.push(r); // Guardamos referencia para auditoría
         });
 
+        // 2. Agrupar Pagado (Bancos)
+        const pag = {};
         this.data.pagado.forEach(r => {
             if(!r._enabled) return;
             const d = r._desc || ""; 
-            const id = d.length > 3 ? d.split(' ')[0].substring(3) : ""; 
+            const id = d.length > 3 ? d.split(' ')[0].substring(3) : "SIN_ID"; 
             if(id) { 
-                if(!pag[id]) pag[id] = 0; 
-                pag[id] += r._monto; 
+                if(!pag[id]) pag[id] = { id, sum: 0, rows: [] }; 
+                pag[id].sum += r._monto; 
+                pag[id].rows.push(r);
             }
         });
 
+        // 3. GENERAR ID ÚNICO Y CLASIFICAR (Conciliado vs Discrepancia)
         const now = new Date();
         const timeKey = now.getTime();
+        
+        const allIds = new Set([...Object.keys(det), ...Object.keys(pag)]);
+        const gridData = [];     // Para la Tabla Principal (Verde)
+        const exceptions = [];   // Para el Panel de Auditoría (Rojo/Naranja)
 
-        const tableData = Object.values(det).map(i => ({
-            uuid: `${timeKey}-${i.id}`, 
-            id: i.id, 
-            count: i.count, 
-            neto: i.sumNeto,
-            pagado: pag[i.id]||0, 
-            diff: i.sumNeto-(pag[i.id]||0)
-        }));
+        allIds.forEach(id => {
+            const dObj = det[id] || { count:0, sumNeto:0, rows:[] };
+            const pObj = pag[id] || { sum:0, rows:[] };
+            
+            const esperado = dObj.sumNeto;
+            const depositado = pObj.sum;
+            const diff = esperado - depositado;
 
+            // TOLERANCIA: ±5 colones por redondeos decimales
+            const isMatch = Math.abs(diff) < 5 && esperado > 0 && depositado > 0;
+
+            const itemObj = {
+                uuid: `${timeKey}-${id}`,
+                id: id,
+                count: dObj.count,
+                neto: esperado,
+                pagado: depositado,
+                diff: diff,
+                // Metadatos para auditoría
+                rowsDet: dObj.rows,
+                rowsPag: pObj.rows
+            };
+
+            if (isMatch) {
+                // CASO 1: CONCILIADO -> A la Tabla Principal
+                gridData.push(itemObj);
+            } else {
+                // CASO 2: DISCREPANCIA -> Al Panel de Auditoría (Sacado de la tabla)
+                exceptions.push(itemObj);
+            }
+        });
+
+        // 4. ACTUALIZAR TABLA PRINCIPAL (Solo Conciliados)
         const columns = [
             { title: "ID Ref", field: "uuid", width: 140, headerFilter: true, visible: false }, 
             { title: "Afiliado", field: "id", headerFilter: true, width: 100 }, 
@@ -319,37 +350,105 @@ window.BACLogic = {
         const thresholdInput = document.getElementById('threshold-bac');
         const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
 
+        // Guardar Mapa Global para acceso rápido desde Auditoría
+        this.data.processed = this.data.processed || {};
+        this.data.processed.bac_matches = {}; 
+        
+        // Indexar tanto conciliados como excepciones
+        [...gridData, ...exceptions].forEach(item => {
+            this.data.processed.bac_matches[item.id] = item;
+        });
+
+        // Configuración Grid
         if (this.grids.bac) {
-            this.grids.bac.updateData(tableData);
+            this.grids.bac.updateData(gridData);
         } else {
-            this.grids.bac = new VanillaGrid("#table-result-bac", tableData, columns, {
+            this.grids.bac = new VanillaGrid("#table-result-bac", gridData, columns, {
                 threshold: currentThreshold,
-                searchInputId: "search-bac"
+                searchInputId: "search-bac",
+                // CONEXIÓN DOBLE CLIC
+                onRowDblClick: (rowData) => {
+                    // rowData es el objeto 'itemObj' que creamos
+                    window.ConciliacionLogic.openTransactionModal(rowData);
+                }
             });
         }
         
-        this.renderAudit('bac');
+        // 5. RENDERIZAR AUDITORÍA (Discrepancias + Excluidos Manuales)
+        this.renderBACAudit(exceptions);
+    },
+
+    // Renderiza la tabla de excepciones (roja/naranja)
+    renderBACAudit: function(exceptions) {
+        const container = document.getElementById('audit-bac');
+        if(!container) return;
+
+        if(exceptions.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+        
+        container.classList.remove('hidden');
+
+        // Columnas específicas para Auditoría (Agregamos "Estado")
+        const columns = [
+            { title: "ID Ref", field: "uuid", visible: false },
+            { title: "Afiliado", field: "id", width: 100, headerFilter: true },
+            { 
+                title: "Diagnóstico", field: "diff", width: 180, 
+                formatter: (cell) => {
+                    const row = cell.getRow(); // Acceso al objeto de datos
+                    const neto = row.neto;
+                    const pag = row.pagado;
+                    
+                    if(neto > 0 && pag === 0) return `<span class="text-orange-600 font-bold flex items-center gap-1">⚠ Falta Depósito</span>`;
+                    if(neto === 0 && pag > 0) return `<span class="text-blue-600 font-bold flex items-center gap-1">ℹ Sobrante Banco</span>`;
+                    return `<span class="text-red-600 font-bold flex items-center gap-1">❌ Diferencia Monto</span>`;
+                }
+            },
+            { title: "Esperado", field: "neto", hozAlign: "right", formatter: "money" },
+            { title: "Recibido", field: "pagado", hozAlign: "right", formatter: "money" },
+            { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-600 bg-red-50 dark:bg-red-900/10" }
+        ];
+
+        // Instanciar Grid de Excepciones
+        // Guardamos en this.grids.bac_audit para no perder referencia
+        if (this.grids.bac_audit) {
+            this.grids.bac_audit.updateData(exceptions);
+        } else {
+            this.grids.bac_audit = new VanillaGrid("#table-exceptions-bac", exceptions, columns, {
+                threshold: 0, // No aplica umbral aquí, todo es excepción
+                // Habilitar Doble Clic también aquí
+                onRowDblClick: (rowData) => {
+                    window.ConciliacionLogic.openTransactionModal(rowData);
+                }
+            });
+        }
     },
 
     // Eliminar archivo Detalle y recalcular
     removeFileDetalle: function(filename) {
         if(!confirm(`¿Eliminar los datos de "${filename}"?`)) return;
 
-        // 1. Filtrar Datos: Mantener solo los que NO son de este archivo
+        // 1. Filtrar Datos (Borrar filas)
         this.data.detalle = this.data.detalle.filter(row => row._sourceFile !== filename);
         
-        // 2. Actualizar Lista de Archivos
+        // 2. CORRECCIÓN CRÍTICA: Borrar nombre del registro de archivos
+        // Aseguramos que se reasigne el array filtrado
         this.data.files.bac_detalle = this.data.files.bac_detalle.filter(f => f !== filename);
 
         // 3. Refrescar UI
         this.recalculateDetalle();
         this.updateFileList('bac_detalle');
         
-        // Feedback
+        // Reset Dropzone si no quedan archivos
         const drop = document.getElementById('drop-bac-detalle');
-        if(this.data.detalle.length === 0) {
+        if(this.data.files.bac_detalle.length === 0) { // Usar length de archivos, es más seguro
             drop.classList.remove('border-green-500', 'bg-green-50');
             drop.classList.add('border-slate-300', 'bg-white');
+            // Limpiar status completamente
+            document.getElementById('status-bac-detalle').innerHTML = '';
+            document.getElementById('status-bac-detalle').classList.add('hidden');
         }
     },
 
@@ -357,25 +456,24 @@ window.BACLogic = {
     removeFilePagado: function(filename) {
         if(!confirm(`¿Eliminar los datos de "${filename}"?`)) return;
 
-        // 1. Filtrar Datos
         this.data.pagado = this.data.pagado.filter(row => row._sourceFile !== filename);
         
-        // 2. Actualizar Lista
+        // CORRECCIÓN CRÍTICA
         this.data.files.bac_pagado = this.data.files.bac_pagado.filter(f => f !== filename);
 
-        // 3. Recalcular Total Global
         const total = this.data.pagado.reduce((acc, r) => acc + (r._enabled ? r._monto : 0), 0);
         document.getElementById('sum-depositos').innerText = this.formatMoney(total);
 
-        // 4. Refrescar UI y Match
         this.updateFileList('bac_pagado');
         this.runMatch();
 
-        const drop = document.getElementById('drop-bac-pagado');
-        if(this.data.pagado.length === 0) {
+        if(this.data.files.bac_pagado.length === 0) {
+            const drop = document.getElementById('drop-bac-pagado');
             drop.classList.remove('border-green-500', 'bg-green-50');
             drop.classList.add('border-slate-300', 'bg-white');
             document.getElementById('card-bac-pagado').classList.add('hidden');
+            document.getElementById('status-bac-pagado').innerHTML = '';
+            document.getElementById('status-bac-pagado').classList.add('hidden');
         }
     },
 

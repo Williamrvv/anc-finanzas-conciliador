@@ -302,8 +302,20 @@ class VanillaGrid {
                 content = `<div class="flex justify-center"><input type="checkbox" class="w-4 h-4 cursor-pointer accent-blue-600 vg-checkbox" ${checked} data-r="${idx}" data-c="${colIdx}"></div>`;
             }
             
-            if (col.formatter === 'money') content = this.formatMoney(content);
-            // Usamos innerHTML para permitir colores en negativos y checkboxes
+            // Soporte para funciones formatter personalizadas
+            if (typeof col.formatter === 'function') {
+                // Simulamos un objeto cell simple
+                const cellShim = {
+                    getValue: () => row[col.field],
+                    getRow: () => row, // Permitir acceso a toda la fila
+                    getElement: () => td
+                };
+                content = col.formatter(cellShim);
+            } 
+            else if (col.formatter === 'money') {
+                content = this.formatMoney(content);
+            }
+
             td.innerHTML = content !== undefined ? content : '';
             tr.appendChild(td);
         });
@@ -437,6 +449,21 @@ class VanillaGrid {
                     this.render();
                 }
             });
+        });
+
+        // 6. Doble Clic en Fila (Ver Detalles)
+        tbody.addEventListener('dblclick', (e) => {
+            const tr = e.target.closest('tr');
+            if(!tr) return;
+            
+            // Obtener datos de la fila
+            const rowIndex = parseInt(tr.querySelector('td').dataset.r);
+            const rowData = this.displayData[rowIndex];
+            
+            // Ejecutar callback si existe
+            if(this.options.onRowDblClick) {
+                this.options.onRowDblClick(rowData);
+            }
         });
     }
 

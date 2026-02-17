@@ -4,14 +4,14 @@ window.ConciliacionLogic = {
         pagado: [], 
         scotia_detalle: [], 
         scotia_pagado: [], 
-        // NUEVO: Registro de Archivos Cargados para la conciliación
+        // Estructura completa desde el inicio
         files: {
             bac_detalle: [],
             bac_pagado: [],
             scotia_detalle: [],
             scotia_pagado: [],
             tsd: []
-        }
+        },
     },
     grids: { bac: null, scotia: null }, // <--- Almacén de instancias
     activeTab: 'bac', // Estado actual
@@ -837,6 +837,116 @@ window.ConciliacionLogic = {
         if (this.data.tsd && this.data.tsd.length > 0) {
             this.runMatchTSD();
         }
+    },
+
+    // Modal de Detalles de Transacción (Cruce)
+    openTransactionModal: function(data) {
+        if(!data) return;
+
+        // Datos del cruce
+        const ventas = data.rowsDet || [];
+        const banco = data.rowsPag || [];
+        const diff = data.diff;
+        
+        // Estilos
+        const isDark = document.documentElement.classList.contains('dark');
+        const bg = isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800';
+        const border = isDark ? 'border-slate-700' : 'border-slate-200';
+        
+        // Generador de filas HTML
+        const renderRows = (rows, type) => {
+            if(rows.length === 0) return `<tr><td colspan="3" class="p-4 text-center text-xs text-slate-400 italic">Sin datos registrados</td></tr>`;
+            return rows.map(r => `
+                <tr class="border-b ${border} text-[10px] hover:bg-slate-50 dark:hover:bg-slate-800">
+                    <td class="p-2">${type === 'venta' ? (r._id || r.id) : (r._desc || r._extractedId)}</td>
+                    <td class="p-2 text-right font-mono">${this.formatMoney(type === 'venta' ? (r._netoACI || r._neto) : r._monto)}</td>
+                    <td class="p-2 text-center text-[9px] text-slate-400">${r._sourceFile || 'N/A'}</td>
+                </tr>
+            `).join('');
+        };
+
+        // Crear ventana emergente
+        const w = 900, h = 500;
+        const left = (screen.width - w) / 2;
+        const top = (screen.height - h) / 2;
+        const win = window.open("", "_blank", `width=${w},height=${h},top=${top},left=${left}`);
+        
+        win.document.write(`
+            <!DOCTYPE html>
+            <html class="${isDark ? 'dark' : ''}">
+            <head>
+                <title>Detalle de Conciliación: ${data.id}</title>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <script>tailwind.config = { darkMode: 'class' }</script>
+            </head>
+            <body class="${bg} p-6 flex flex-col h-screen overflow-hidden">
+                
+                <!-- HEADER -->
+                <div class="flex justify-between items-start mb-6 border-b ${border} pb-4">
+                    <div>
+                        <h1 class="text-xl font-bold flex items-center gap-2">
+                            <span>🔍 Análisis de Transacción</span>
+                            <span class="bg-blue-100 text-blue-800 text-sm px-2 py-0.5 rounded">${data.id}</span>
+                        </h1>
+                        <p class="text-xs text-slate-500 mt-1">Comparativa fila por fila de lo esperado vs lo recibido.</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-slate-400 uppercase font-bold">Diferencia</div>
+                        <div class="text-2xl font-mono font-bold ${Math.abs(diff) > 5 ? 'text-red-500' : 'text-green-500'}">
+                            ${this.formatMoney(diff)}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTENIDO (DOS COLUMNAS) -->
+                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden">
+                    
+                    <!-- IZQUIERDA: VENTAS (Esperado) -->
+                    <div class="flex flex-col border ${border} rounded-lg overflow-hidden">
+                        <div class="bg-blue-50 dark:bg-blue-900/20 p-2 text-xs font-bold text-blue-700 dark:text-blue-300 uppercase border-b ${border} text-center">
+                            Ventas Internas (Esperado)
+                        </div>
+                        <div class="overflow-y-auto flex-grow bg-slate-50 dark:bg-slate-800/50">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="text-[9px] uppercase text-slate-400 bg-white dark:bg-slate-900 sticky top-0 shadow-sm">
+                                    <tr><th class="p-2">ID / Ref</th><th class="p-2 text-right">Monto</th><th class="p-2 text-center">Archivo</th></tr>
+                                </thead>
+                                <tbody>${renderRows(ventas, 'venta')}</tbody>
+                            </table>
+                        </div>
+                        <div class="p-2 bg-slate-100 dark:bg-slate-900 text-right text-xs font-bold border-t ${border}">
+                            Total: ${this.formatMoney(data.neto)}
+                        </div>
+                    </div>
+
+                    <!-- DERECHA: BANCO (Recibido) -->
+                    <div class="flex flex-col border ${border} rounded-lg overflow-hidden">
+                        <div class="bg-green-50 dark:bg-green-900/20 p-2 text-xs font-bold text-green-700 dark:text-green-300 uppercase border-b ${border} text-center">
+                            Depósitos Bancarios (Recibido)
+                        </div>
+                        <div class="overflow-y-auto flex-grow bg-slate-50 dark:bg-slate-800/50">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="text-[9px] uppercase text-slate-400 bg-white dark:bg-slate-900 sticky top-0 shadow-sm">
+                                    <tr><th class="p-2">Descripción</th><th class="p-2 text-right">Monto</th><th class="p-2 text-center">Archivo</th></tr>
+                                </thead>
+                                <tbody>${renderRows(banco, 'banco')}</tbody>
+                            </table>
+                        </div>
+                        <div class="p-2 bg-slate-100 dark:bg-slate-900 text-right text-xs font-bold border-t ${border}">
+                            Total: ${this.formatMoney(data.pagado)}
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="mt-4 text-center">
+                    <button onclick="window.close()" class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-white px-6 py-2 rounded text-sm font-bold transition-colors">
+                        Cerrar Detalle
+                    </button>
+                </div>
+            </body>
+            </html>
+        `);
     },
 };
 
