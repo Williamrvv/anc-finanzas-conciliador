@@ -133,9 +133,3 @@ docker-compose up -d --build
 
 Las credenciales de base de datos y puertos se configuran en el archivo .env.
 
-code
-Code
-download
-content_copy
-expand_less
-Puedes copiar este contenido directamente a tu repositorio. Refleja fielmente todo el trabajo avanzado y la lógica robusta que hemos construido.
