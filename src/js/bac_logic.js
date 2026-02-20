@@ -45,6 +45,7 @@ window.BACLogic = {
         const idxNeto = headerRow.findIndex(h => /Neto/i.test(h)); 
         const idxACI = headerRow.findIndex(h => /Ajuste.*Comisi/i.test(h)); 
         const idxLiq = headerRow.findIndex(h => /Liquidaci/i.test(h));
+        console.log("DEBUG LIQ INDEX:", idxLiq);
 
         const cleanNum = (val) => {
             if(!val) return 0;
@@ -59,9 +60,17 @@ window.BACLogic = {
             const valNeto = idxNeto !== -1 ? cleanNum(row[idxNeto]) : cleanNum(row[12]);
             const valACI = idxACI !== -1 ? cleanNum(row[idxACI]) : 0;
 
+            let valLiq = '';
+            if (idxLiq !== -1 && row[idxLiq]) {
+                // Limpiar comillas y espacios
+                valLiq = String(row[idxLiq]).replace(/["']/g, '').trim();
+            }
+
             return {
+                _uid: 'det_' + Math.random().toString(36).substr(2, 9),
                 _raw: row, 
                 _id: row[0],
+                _liq: valLiq,
                 _venta: cleanNum(row[8]), 
                 _comision: cleanNum(row[9]), 
                 _retV: cleanNum(row[10]), 
@@ -169,11 +178,23 @@ window.BACLogic = {
             if(typeof montoRaw === 'number') m = montoRaw;
             else if(typeof montoRaw === 'string') m = parseFloat(montoRaw.replace(/\s/g,'').replace(',','.')) || 0;
 
-            const desc = String(row[iDesc] || '');
-            const isAFI = desc.toUpperCase().trim().startsWith('AFI');
+            const desc = String(row[iDesc] || '').trim(); // Aseguramos trim aquí
+            
+            // 1. Extraer ID del Afiliado (Primera palabra de la descripción)
+            const parts = desc.split(' ');
+            const extractedID = parts.length > 0 ? parts[0] : "SIN_ID";
+
+            // 2. Extraer Referencia LIQ
+            const liqMatch = desc.match(/LIQ\s*(\d+)/i);
+            const liqRef = liqMatch ? liqMatch[1] : "";
+            
+            const isAFI = desc.toUpperCase().startsWith('AFI');
 
             const rowObj = {
+                _uid: 'pag_' + Math.random().toString(36).substr(2, 9),
                 _desc: desc,
+                _extractedId: extractedID, // <--- Ahora sí está definida
+                _liqRef: liqRef, 
                 _monto: m,
                 _enabled: isAFI, 
                 _sourceFile: filename,
@@ -266,7 +287,6 @@ window.BACLogic = {
         const hasPagado = this.data.pagado && this.data.pagado.length > 0;
 
         if (!hasDetalle && !hasPagado) {
-            // Estado Inicial
             const container = document.getElementById('table-result-bac');
             if(container) container.innerHTML = '<div class="text-center text-slate-400 p-10 font-bold">Esperando archivos...</div>';
             return;
@@ -281,7 +301,7 @@ window.BACLogic = {
             if(!det[id]) det[id]={id, count:0, sumNeto:0, rows: []};
             det[id].count++; 
             det[id].sumNeto += net;
-            det[id].rows.push(r); // Guardamos referencia para auditoría
+            det[id].rows.push(r);
         });
 
         // 2. Agrupar Pagado (Bancos)
@@ -297,85 +317,204 @@ window.BACLogic = {
             }
         });
 
-        // 3. GENERAR ID ÚNICO Y CLASIFICAR (Conciliado vs Discrepancia)
+        // 3. PROCESAMIENTO INTELIGENTE (DOBLE PASADA)
         const now = new Date();
         const timeKey = now.getTime();
-        
         const allIds = new Set([...Object.keys(det), ...Object.keys(pag)]);
-        const gridData = [];     // Para la Tabla Principal (Verde)
-        const exceptions = [];   // Para el Panel de Auditoría (Rojo/Naranja)
+        
+        const gridData = [];     // Tabla Verde
+        const exceptions = [];   // Tabla Roja
+
+        // A. Inyectar Conciliaciones Manuales (Ya procesadas)
+        this.manualMatches.forEach(group => {
+            // Calculamos totales del grupo
+            const sumDet = group.rows.filter(r => r._type === 'Venta').reduce((s, r) => s + (r._netoACI || r._neto || 0), 0);
+            const sumPag = group.rows.filter(r => r._type === 'Banco').reduce((s, r) => s + (r._monto || 0), 0);
+            
+            gridData.push({
+                uuid: group.id,
+                id: group.rows[0]?._id || group.rows[0]?._extractedId || "MANUAL",
+                count: group.rows.length,
+                neto: sumDet,
+                pagado: sumPag,
+                diff: sumDet - sumPag,
+                rowsDet: group.rows.filter(r => r._type === 'Venta'),
+                rowsPag: group.rows.filter(r => r._type === 'Banco'),
+                _isManual: true, // Flag importante
+                _manualReason: group.reason
+            });
+        });
 
         allIds.forEach(id => {
             const dObj = det[id] || { count:0, sumNeto:0, rows:[] };
             const pObj = pag[id] || { sum:0, rows:[] };
             
-            const esperado = dObj.sumNeto;
-            const depositado = pObj.sum;
-            const diff = esperado - depositado;
-
-            // TOLERANCIA: ±5 colones por redondeos decimales
-            const isMatch = Math.abs(diff) < 5 && esperado > 0 && depositado > 0;
-
-            const itemObj = {
-                uuid: `${timeKey}-${id}`,
-                id: id,
-                count: dObj.count,
-                neto: esperado,
-                pagado: depositado,
-                diff: diff,
-                // Metadatos para auditoría
-                rowsDet: dObj.rows,
-                rowsPag: pObj.rows
-            };
+            const diff = dObj.sumNeto - pObj.sum;
+            const isMatch = Math.abs(diff) < 1 && dObj.sumNeto > 0 && pObj.sum > 0;
 
             if (isMatch) {
-                // CASO 1: CONCILIADO -> A la Tabla Principal
-                gridData.push(itemObj);
+                // CASO A: Conciliación Perfecta por Afiliado
+                gridData.push({
+                    uuid: `${timeKey}-${id}`,
+                    id: id,
+                    count: dObj.count,
+                    neto: dObj.sumNeto,
+                    pagado: pObj.sum,
+                    diff: diff,
+                    rowsDet: dObj.rows,
+                    rowsPag: pObj.rows
+                });
             } else {
-                // CASO 2: DISCREPANCIA -> Al Panel de Auditoría (Sacado de la tabla)
-                exceptions.push(itemObj);
+                // CASO B: No cuadra -> Intentar "Rescate por Liquidación"
+                const rescueResult = this.tryMatchByLiquidation(dObj.rows, pObj.rows, id, timeKey);
+                
+                // 1. Agregar los rescatados a la tabla verde
+                if (rescueResult.matched.length > 0) {
+                    gridData.push(...rescueResult.matched);
+                }
+
+                // 2. Agregar los sobrantes reales a excepciones
+                // Solo si queda algo pendiente (si no hay nada, es que se concilió todo por partes)
+                if (rescueResult.residue.rowsDet.length > 0 || rescueResult.residue.rowsPag.length > 0) {
+                    // Recalcular montos del residuo
+                    const resDetSum = rescueResult.residue.rowsDet.reduce((s,r) => s + r._netoACI, 0);
+                    const resPagSum = rescueResult.residue.rowsPag.reduce((s,r) => s + r._monto, 0);
+                    
+                    exceptions.push({
+                        uuid: `${timeKey}-${id}-ERR`,
+                        id: id,
+                        count: rescueResult.residue.rowsDet.length,
+                        neto: resDetSum,
+                        pagado: resPagSum,
+                        diff: resDetSum - resPagSum,
+                        rowsDet: rescueResult.residue.rowsDet,
+                        rowsPag: rescueResult.residue.rowsPag
+                    });
+                }
             }
         });
 
-        // 4. ACTUALIZAR TABLA PRINCIPAL (Solo Conciliados)
+        // 4. ACTUALIZAR TABLA PRINCIPAL (Nombres Corregidos)
         const columns = [
             { title: "ID Ref", field: "uuid", width: 140, headerFilter: true, visible: false }, 
-            { title: "Afiliado", field: "id", headerFilter: true, width: 100 }, 
+            { 
+                title: "Afiliado / LIQ", field: "id", width: 140, 
+                formatter: (cell) => {
+                    const r = cell.getRow(); 
+                    let content = `<span class="font-bold">${r.id}</span>`;
+                    
+                    // A. Marca de Conciliación Manual (Grupo)
+                    if(r._isManual) {
+                        content += `<span class="ml-2 text-purple-600" title="${r._manualReason}">🤝</span>`;
+                    }
+
+                    // B. Marca de Ajuste Específico (Fila Ficticia)
+                    // Buscamos si alguna fila interna es ajuste
+                    const hasAdj = r.rowsDet && r.rowsDet.some(d => d._isAdjustment);
+                    if(hasAdj) {
+                        content += `<span class="ml-1 text-yellow-600" title="Contiene Ajuste Manual (Contracargo/Devolución)">🛠️</span>`;
+                    }
+
+                    return content;
+                }
+            }, 
             { title: "Trans.", field: "count", hozAlign: "center", bottomCalc: "sum" },
-            { title: "Neto Esperado", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Depositado", field: "pagado", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
+            // CAMBIO DE NOMBRE
+            { title: "Detallado (esperado)", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
+            // CAMBIO DE NOMBRE
+            { title: "Pagado (recibido)", field: "pagado", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
             { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", bottomCalc: "sum" }
         ];
 
         const thresholdInput = document.getElementById('threshold-bac');
         const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
 
-        // Guardar Mapa Global para acceso rápido desde Auditoría
+        // Indexar para Doble Clic
         this.data.processed = this.data.processed || {};
         this.data.processed.bac_matches = {}; 
-        
-        // Indexar tanto conciliados como excepciones
         [...gridData, ...exceptions].forEach(item => {
-            this.data.processed.bac_matches[item.id] = item;
+            this.data.processed.bac_matches[item.id] = item; // Usamos ID (AFI o AFI-LIQ)
+            // Hack para excepciones con mismo ID base: usar UUID
+            this.data.processed.bac_matches[item.uuid] = item; 
         });
 
-        // Configuración Grid
         if (this.grids.bac) {
             this.grids.bac.updateData(gridData);
         } else {
             this.grids.bac = new VanillaGrid("#table-result-bac", gridData, columns, {
                 threshold: currentThreshold,
                 searchInputId: "search-bac",
-                // CONEXIÓN DOBLE CLIC
                 onRowDblClick: (rowData) => {
-                    // rowData es el objeto 'itemObj' que creamos
                     window.ConciliacionLogic.openTransactionModal(rowData);
                 }
             });
         }
         
-        // 5. RENDERIZAR AUDITORÍA (Discrepancias + Excluidos Manuales)
+        // 5. Renderizar Auditoría (con nombres corregidos)
         this.renderBACAudit(exceptions);
+    },
+
+    // Sub-función lógica para intentar casar por Liquidación
+    tryMatchByLiquidation: function(rowsDet, rowsPag, afiId, timeKey) {
+        const matched = [];
+        const unmatchedDet = [];
+        let unmatchedPag = [...rowsPag]; // Copia para ir consumiendo
+
+        // 1. Agrupar Detalle por Liquidación
+        const detByLiq = {};
+        rowsDet.forEach(r => {
+            const liq = r._liq ? String(r._liq).trim() : "SIN_LIQ";
+            if(!detByLiq[liq]) detByLiq[liq] = { sum: 0, rows: [] };
+            detByLiq[liq].sum += r._netoACI;
+            detByLiq[liq].rows.push(r);
+        });
+
+        // 2. Buscar esa Liquidación en el Pagado
+        Object.keys(detByLiq).forEach(liq => {
+            if (liq === "SIN_LIQ") {
+                // Si no tiene liquidación, va directo a residuo
+                unmatchedDet.push(...detByLiq[liq].rows);
+                return;
+            }
+
+            const detGroup = detByLiq[liq];
+            
+            // Buscar en Pagado filas con ese _liqRef
+            // Filtramos el array de pagados pendientes
+            const matchPagRows = unmatchedPag.filter(p => String(p._liqRef).trim() === liq);
+            const matchPagSum = matchPagRows.reduce((s, p) => s + p._monto, 0);
+
+            const diff = detGroup.sum - matchPagSum;
+
+            // SI CUADRA LA LIQUIDACIÓN (Tolerancia 1 colón)
+            if (Math.abs(diff) < 1 && matchPagRows.length > 0) {
+                // ¡MATCH! -> A Tabla Verde
+                matched.push({
+                    uuid: `${timeKey}-${afiId}-${liq}`,
+                    id: `${afiId} - LIQ ${liq}`, // ID visual compuesto
+                    count: detGroup.rows.length,
+                    neto: detGroup.sum,
+                    pagado: matchPagSum,
+                    diff: diff,
+                    rowsDet: detGroup.rows,
+                    rowsPag: matchPagRows
+                });
+
+                // Quitar los usados de unmatchedPag
+                unmatchedPag = unmatchedPag.filter(p => String(p._liqRef).trim() !== liq);
+            } else {
+                // NO CUADRA -> A Residuo
+                unmatchedDet.push(...detGroup.rows);
+            }
+        });
+
+        return {
+            matched: matched,
+            residue: {
+                rowsDet: unmatchedDet,
+                rowsPag: unmatchedPag
+            }
+        };
     },
 
     // Renderiza la tabla de excepciones (roja/naranja)
@@ -406,13 +545,13 @@ window.BACLogic = {
                     return `<span class="text-red-600 font-bold flex items-center gap-1">❌ Diferencia Monto</span>`;
                 }
             },
-            { title: "Esperado", field: "neto", hozAlign: "right", formatter: "money" },
-            { title: "Recibido", field: "pagado", hozAlign: "right", formatter: "money" },
+            { title: "EsDetallado (esperado)", field: "neto", hozAlign: "right", formatter: "money" },
+            { title: "Pagado (recibido)", field: "pagado", hozAlign: "right", formatter: "money" },
             { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-600 bg-red-50 dark:bg-red-900/10" }
         ];
 
         // Instanciar Grid de Excepciones
-        // Guardamos en this.grids.bac_audit para no perder referencia
+        // Guarda en this.grids.bac_audit para no perder referencia
         if (this.grids.bac_audit) {
             this.grids.bac_audit.updateData(exceptions);
         } else {
@@ -420,8 +559,10 @@ window.BACLogic = {
                 threshold: 0, // No aplica umbral aquí, todo es excepción
                 // Habilitar Doble Clic también aquí
                 onRowDblClick: (rowData) => {
-                    window.ConciliacionLogic.openTransactionModal(rowData);
-                }
+                // Usar UUID para buscar en el índice global y asegurar que pasamos todos los metadatos (rowsDet/rowsPag)
+                const fullData = window.ConciliacionLogic.data.processed.bac_matches[rowData.uuid];
+                window.ConciliacionLogic.openTransactionModal(fullData || rowData);
+            }
             });
         }
     },
@@ -532,5 +673,274 @@ window.BACLogic = {
         // Asegurar clases necesarias en el padre para que el absolute funcione
         status.parentElement.classList.add('group', 'relative'); 
         status.classList.remove('hidden');
-    }
+    },
+
+    // Almacén de filas diferidas manualmente (arrastre de saldo)
+    deferredRows: { det: [], pag: [] },
+
+    // Función para marcar filas como diferidas desde el PopUp
+    // Función para marcar filas como diferidas desde el PopUp
+    deferRows: function(rowsToDefer) {
+        console.log("🚀 Iniciando diferimiento. Items recibidos:", rowsToDefer.length);
+        let changed = false;
+
+        rowsToDefer.forEach(item => {
+            const targetUid = item.rawData._uid; 
+            if (!targetUid) {
+                console.error("❌ Error: Fila sin UID recibida del popup", item);
+                return;
+            }
+
+            // Lógica unificada para buscar en Detalle o Pagado
+            const isVenta = item.type === 'venta';
+            const targetArray = isVenta ? this.data.detalle : this.data.pagado;
+            const targetDeferred = isVenta ? this.deferredRows.det : this.deferredRows.pag;
+
+            // Buscamos el índice en el array principal
+            const idx = targetArray.findIndex(r => r._uid === targetUid);
+
+            if (idx !== -1) {
+                // Modificamos el estado
+                targetArray[idx]._enabled = false;
+                targetArray[idx]._deferred = true;
+                
+                // Lo agregamos a la lista de diferidos (Evitando duplicados)
+                if (!targetDeferred.some(d => d._uid === targetUid)) {
+                    targetDeferred.push(targetArray[idx]);
+                }
+                
+                console.log(`✅ Diferido: ${isVenta ? 'Venta' : 'Banco'} [${targetUid}]`);
+                changed = true;
+            } else {
+                console.warn(`⚠️ No se encontró el registro original: ${targetUid}`);
+            }
+        });
+
+        if (changed) {
+            console.log("Cambios aplicados. Recalculando...");
+            
+            // 1. Forzar limpieza visual (opcional pero ayuda)
+            document.getElementById('sum-depositos').innerText = '...'; 
+
+            // 2. Ejecutar cascada completa
+            this.recalculateDetalle(); // Actualiza Tarjeta Arriba
+            
+            // Recalcular Total Global Pagado (Tarjeta Verde)
+            const totalPag = this.data.pagado.reduce((acc, r) => acc + (r._enabled ? r._monto : 0), 0);
+            document.getElementById('sum-depositos').innerText = this.formatMoney(totalPag);
+
+            this.runMatch();           // Actualiza Tablas Verde y Roja
+            this.renderDeferredTable(); // Muestra Tabla Azul
+            
+            alert(`✅ ${rowsToDefer.length} registro(s) movidos a "Saldos Pendientes".\nLa conciliación se ha recalculado.`);
+        } else {
+            alert("⚠️ No se pudieron aplicar cambios.\nRevise la consola para más detalles.");
+        }
+    },
+
+    // Renderiza la tabla de "Saldos para Mañana"
+    renderDeferredTable: function() {
+        const container = document.getElementById('audit-deferred-bac'); // Nuevo contenedor en HTML
+        if(!container) return;
+
+        const allDeferred = [
+            ...this.deferredRows.det.map(r => ({ ...r, _type: 'Venta', _montoVisual: r._netoACI })),
+            ...this.deferredRows.pag.map(r => ({ ...r, _type: 'Banco', _montoVisual: r._monto }))
+        ];
+
+        if(allDeferred.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+        
+        container.classList.remove('hidden');
+
+        // Instanciar Grid Simple
+        const columns = [
+            { 
+                title: "", width: 40, hozAlign: "center", 
+                formatter: () => `<div class="text-green-600 font-bold cursor-pointer hover:scale-125" title="Restaurar a Conciliación">↩</div>`,
+                cellClick: (e, cell) => {
+                    const row = cell.getRow(); 
+                    this.restoreRow(row);
+                }
+            },
+            { title: "Tipo", field: "_type", width: 80, headerFilter: true },
+            { title: "Referencia", field: "_id", width: 200, formatter: (cell) => {
+                const r = cell.getRow(); 
+                return r._desc || r._id || 'N/A';
+            }},
+            { title: "Monto", field: "_montoVisual", formatter: "money", hozAlign: "right" },
+            { title: "Archivo Origen", field: "_sourceFile", width: 120 }
+        ];
+
+        if(this.grids.bac_deferred) {
+            this.grids.bac_deferred.updateData(allDeferred);
+        } else {
+            this.grids.bac_deferred = new VanillaGrid("#table-deferred-bac", allDeferred, columns);
+        }
+    },
+
+    // Restaura una fila diferida al flujo principal
+    restoreRow: function(row) {
+        if(!confirm("¿Devolver este registro a la conciliación activa?")) return;
+
+        const uid = row._uid;
+        const isVenta = row._type === 'Venta';
+        
+        // 1. Quitar de la lista de diferidos
+        if (isVenta) {
+            this.deferredRows.det = this.deferredRows.det.filter(r => r._uid !== uid);
+            // 2. Reactivar en lista principal
+            const original = this.data.detalle.find(r => r._uid === uid);
+            if (original) { original._enabled = true; delete original._deferred; }
+        } else {
+            this.deferredRows.pag = this.deferredRows.pag.filter(r => r._uid !== uid);
+            const original = this.data.pagado.find(r => r._uid === uid);
+            if (original) { original._enabled = true; delete original._deferred; }
+        }
+
+        // 3. Recalcular todo
+        this.recalculateDetalle();
+        this.runMatch();
+        this.renderDeferredTable();
+    },
+
+    // Almacén de conciliaciones manuales
+    manualMatches: [], // Array de grupos { id: 'manual_1', rows: [], reason: '...' }
+
+    // Función para aplicar conciliación manual desde el PopUp
+    applyManualMatch: function(selection, reason) {
+        // selection = { det: [ids...], pag: [ids...] }
+        console.log("Aplicando Conciliación Manual:", selection, reason);
+
+        const groupID = 'man_' + Date.now();
+        const matchedRows = [];
+
+        // 1. Marcar Detalle
+        selection.det.forEach(uid => {
+            const row = this.data.detalle.find(r => r._uid === uid);
+            if(row) {
+                row._enabled = false; // Sacar del flujo automático
+                row._manualMatch = groupID;
+                row._manualReason = reason;
+                matchedRows.push({...row, _type: 'Venta'});
+            }
+        });
+
+        // 2. Marcar Pagado
+        selection.pag.forEach(uid => {
+            const row = this.data.pagado.find(r => r._uid === uid);
+            if(row) {
+                row._enabled = false;
+                row._manualMatch = groupID;
+                row._manualReason = reason;
+                matchedRows.push({...row, _type: 'Banco'});
+            }
+        });
+
+        // 3. Guardar Grupo
+        this.manualMatches.push({
+            id: groupID,
+            reason: reason,
+            rows: matchedRows,
+            timestamp: new Date()
+        });
+
+        // 4. Recalcular Todo
+        this.recalculateDetalle();
+        this.runMatch();
+        this.renderManualMatchesTable(); // Nueva tabla visual
+        
+        alert("✅ Conciliación manual aplicada correctamente.");
+    },
+
+    // Renderiza la tabla de conciliados manuales con UX mejorada
+    renderManualMatchesTable: function() {
+        const container = document.getElementById('audit-manual-bac'); 
+        if(!container) return;
+
+        if(this.manualMatches.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+        
+        container.classList.remove('hidden');
+
+        // Aplanamos datos para el Grid
+        const flatRows = this.manualMatches.flatMap(group => 
+            group.rows.map(r => ({
+                ...r, 
+                _groupID: group.id,
+                _groupReason: group.reason,
+                _timestamp: group.timestamp.toLocaleTimeString(),
+                _montoVisual: r._type === 'Venta' ? r._netoACI : r._monto,
+                _refVisual: r._type === 'Venta' ? (r._id || 'N/A') : (r._extractedId || r._desc || 'N/A')
+            }))
+        );
+
+        const columns = [
+            { 
+                title: "", width: 40, hozAlign: "center", 
+                formatter: () => `<div class="text-red-500 font-bold cursor-pointer hover:scale-125 transition-transform" title="Deshacer esta conciliación">✖</div>`,
+                cellClick: (e, cell) => {
+                    const row = cell.getRow();
+                    this.undoManualMatch(row._groupID);
+                }
+            },
+            { 
+                title: "Motivo / Justificación", field: "_groupReason", width: 200, 
+                formatter: (cell) => {
+                    const val = cell.getValue();
+                    return `<span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-[10px] font-bold border border-purple-200 uppercase tracking-wide">${val}</span>`;
+                }
+            },
+            { title: "Hora", field: "_timestamp", width: 80, cssClass: "text-slate-400 text-[10px]" },
+            { 
+                title: "Tipo", field: "_type", width: 80, 
+                formatter: (cell) => {
+                    const val = cell.getValue();
+                    return val === 'Venta' ? `<span class="text-blue-600 font-bold">Venta</span>` : `<span class="text-green-600 font-bold">Banco</span>`;
+                }
+            },
+            { title: "Referencia", field: "_refVisual", width: 150, cssClass: "font-mono" },
+            { title: "Monto", field: "_montoVisual", formatter: "money", hozAlign: "right", cssClass: "font-bold" }
+        ];
+
+        // Instanciar o Actualizar
+        if(this.grids.bac_manual) {
+            this.grids.bac_manual.updateData(flatRows);
+        } else {
+            this.grids.bac_manual = new VanillaGrid("#table-manual-bac", flatRows, columns);
+        }
+        
+        // Scroll automático al nuevo elemento (UX)
+        container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    },
+
+    // Deshacer conciliación manual
+    undoManualMatch: function(groupID) {
+        if(!confirm("¿Deshacer esta conciliación manual y devolver los registros al flujo?")) return;
+
+        // 1. Reactivar filas originales
+        this.data.detalle.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
+        this.data.pagado.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
+
+        // 2. Eliminar grupo
+        this.manualMatches = this.manualMatches.filter(g => g.id !== groupID);
+
+        // 3. Recalcular
+        this.recalculateDetalle();
+        this.runMatch();
+        this.renderManualMatchesTable();
+    },
+
+    // Inyectar filas de ajuste manual (creadas en el popup)
+    injectAdjustments: function(newRows) {
+        console.log("Inyectando Ajustes:", newRows);
+        // Concatenar y guardar
+        this.data.detalle = (this.data.detalle || []).concat(newRows);
+        // Importante: No llama a runMatch aquí porque applyManualMatch lo hará inmediatamente después
+    },
+
 };

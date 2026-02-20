@@ -33,7 +33,13 @@ class VanillaGrid {
         
         const activeEl = document.activeElement;
         const savedCursor = (activeEl && activeEl.tagName === 'INPUT') ? 
-            { field: activeEl.dataset.filter, val: activeEl.value } : null;
+            { 
+                field: activeEl.dataset.filter, 
+                val: activeEl.value,
+                // Guardar posición exacta del cursor
+                start: activeEl.selectionStart,
+                end: activeEl.selectionEnd
+            } : null;
 
         this.container.innerHTML = '';
         // CHANGE: Agregamos 'select-none' aquí para bloquear selección de texto globalmente en la tabla
@@ -219,9 +225,20 @@ class VanillaGrid {
         scrollArea.appendChild(table);
         this.container.appendChild(scrollArea);
 
+        // Restaurar Foco y Cursor (Mejorado)
         if(savedCursor) {
-            const input = this.container.querySelector(`input[data-filter="${savedCursor.field}"]`);
-            if(input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+            setTimeout(() => {
+                const input = this.container.querySelector(`input[data-filter="${savedCursor.field}"]`);
+                if(input) { 
+                    input.focus(); 
+                    // Restaurar posición exacta
+                    if (typeof savedCursor.start === 'number') {
+                        input.setSelectionRange(savedCursor.start, savedCursor.end);
+                    } else {
+                        input.setSelectionRange(input.value.length, input.value.length);
+                    }
+                }
+            }, 0);
         }
 
         this.container.appendChild(scrollArea);
@@ -307,7 +324,7 @@ class VanillaGrid {
                 // Simulamos un objeto cell simple
                 const cellShim = {
                     getValue: () => row[col.field],
-                    getRow: () => row, // Permitir acceso a toda la fila
+                    getRow: () => row, 
                     getElement: () => td
                 };
                 content = col.formatter(cellShim);
@@ -726,15 +743,16 @@ class VanillaGrid {
             }
         });
         
-        // Actualizar UI
-        const bar = document.getElementById('global-table-stats');
+        // Actualizar UI (Soporte Multi-Ventana)
+        // Busca la barra dentro del documento donde vive la tabla (Main o PopUp)
+        const doc = this.container.ownerDocument; 
+        const bar = doc.getElementById('global-table-stats');
         if(bar) {
             if(this.selection.size < 2) {
                 bar.classList.add('hidden');
             } else {
-                document.getElementById('gst-count').innerText = this.selection.size;
-                // Formato final siempre es CR (coma para decimales)
-                document.getElementById('gst-sum').innerText = this.formatMoney(sum);
+                doc.getElementById('gst-count').innerText = this.selection.size;
+                doc.getElementById('gst-sum').innerText = this.formatMoney(sum);
                 bar.classList.remove('hidden');
             }
         }

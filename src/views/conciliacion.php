@@ -124,6 +124,30 @@
                     <!-- Contenedor Grid Excepciones -->
                     <div id="table-exceptions-bac" class="h-[300px] border border-orange-200 dark:border-orange-800 rounded-b-lg overflow-hidden shadow-sm"></div>
                 </div>
+                <!-- TABLA DIFERIDOS (SALDOS ARRASTRADOS) -->
+                <div id="audit-deferred-bac" class="flex flex-col gap-2 mt-4 hidden">
+                    <div class="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-t-lg flex justify-between items-center">
+                        <h4 class="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Saldos Pendientes (Diferidos para Futuro)
+                        </h4>
+                    </div>
+                    <div id="table-deferred-bac" class="h-[200px] border border-blue-200 dark:border-blue-800 rounded-b-lg overflow-hidden shadow-sm"></div>
+                </div>
+
+                <!-- TABLA CONCILIACIONES MANUALES -->
+                <div id="audit-manual-bac" class="flex flex-col gap-2 mt-4 hidden group/manual">
+                    <div class="px-4 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-t-lg flex justify-between items-center">
+                        <h4 class="text-xs font-bold text-purple-700 dark:text-purple-400 uppercase flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Historial de Conciliaciones Manuales
+                        </h4>
+                        <span class="text-[10px] text-purple-600 dark:text-purple-300 bg-purple-100 dark:bg-purple-800 px-2 py-0.5 rounded-full font-bold shadow-sm">
+                            Registros Ajustados por Usuario
+                        </span>
+                    </div>
+                    <div id="table-manual-bac" class="h-[250px] border border-purple-200 dark:border-purple-800 rounded-b-lg overflow-hidden shadow-sm"></div>
+                </div>
 
             </div>
         </div>

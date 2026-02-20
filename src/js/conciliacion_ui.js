@@ -12,6 +12,7 @@ window.ConciliacionLogic = {
             scotia_pagado: [],
             tsd: []
         },
+        
     },
     grids: { bac: null, scotia: null }, // <--- Almacén de instancias
     activeTab: 'bac', // Estado actual
@@ -635,6 +636,12 @@ window.ConciliacionLogic = {
         if(!win) return alert("Ventana bloqueada.");
 
         const isDark = document.documentElement.classList.contains('dark');
+        const bg = isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800';
+        
+        // Estilos Adaptables
+        const headerClass = isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-blue-50 border-blue-100 text-blue-700';
+        const cardClass = isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-300';
+        const inputClass = isDark ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-800';
 
         win.document.write(`
             <!DOCTYPE html>
@@ -839,7 +846,7 @@ window.ConciliacionLogic = {
         }
     },
 
-    // Modal de Detalles de Transacción (Cruce)
+    // Modal de Detalles de Transacción (Cruce) - VERSIÓN VANILLA GRID
     openTransactionModal: function(data) {
         if(!data) return;
 
@@ -848,105 +855,350 @@ window.ConciliacionLogic = {
         const banco = data.rowsPag || [];
         const diff = data.diff;
         
-        // Estilos
+        // Preparar JSON
+        const jsonVentas = JSON.stringify(ventas.map(v => ({...v, _selected: false}))).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const jsonBanco = JSON.stringify(banco.map(b => ({...b, _selected: false}))).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        
         const isDark = document.documentElement.classList.contains('dark');
         const bg = isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800';
-        const border = isDark ? 'border-slate-700' : 'border-slate-200';
         
-        // Generador de filas HTML
-        const renderRows = (rows, type) => {
-            if(rows.length === 0) return `<tr><td colspan="3" class="p-4 text-center text-xs text-slate-400 italic">Sin datos registrados</td></tr>`;
-            return rows.map(r => `
-                <tr class="border-b ${border} text-[10px] hover:bg-slate-50 dark:hover:bg-slate-800">
-                    <td class="p-2">${type === 'venta' ? (r._id || r.id) : (r._desc || r._extractedId)}</td>
-                    <td class="p-2 text-right font-mono">${this.formatMoney(type === 'venta' ? (r._netoACI || r._neto) : r._monto)}</td>
-                    <td class="p-2 text-center text-[9px] text-slate-400">${r._sourceFile || 'N/A'}</td>
-                </tr>
-            `).join('');
-        };
-
-        // Crear ventana emergente
-        const w = 900, h = 500;
+        const w = 1100, h = 600;
         const left = (screen.width - w) / 2;
         const top = (screen.height - h) / 2;
         const win = window.open("", "_blank", `width=${w},height=${h},top=${top},left=${left}`);
         
+        if(!win) return alert("Ventana bloqueada.");
+
         win.document.write(`
             <!DOCTYPE html>
             <html class="${isDark ? 'dark' : ''}">
             <head>
-                <title>Detalle de Conciliación: ${data.id}</title>
+                <title>Análisis: ${data.id}</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <script>tailwind.config = { darkMode: 'class' }</script>
+                <script src="/js/vanilla_grid.js"></script>
+                <style>
+                    ::-webkit-scrollbar { width: 8px; height: 8px; }
+                    ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+                    .dark ::-webkit-scrollbar-thumb { background-color: #475569; }
+                </style>
             </head>
-            <body class="${bg} p-6 flex flex-col h-screen overflow-hidden">
+            <body class="${bg} p-4 flex flex-col h-screen overflow-hidden text-sm relative">
                 
-                <!-- HEADER -->
-                <div class="flex justify-between items-start mb-6 border-b ${border} pb-4">
+                <!-- HEADER (Igual) -->
+                <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                    <!-- ... (mismo header) ... -->
                     <div>
                         <h1 class="text-xl font-bold flex items-center gap-2">
-                            <span>🔍 Análisis de Transacción</span>
-                            <span class="bg-blue-100 text-blue-800 text-sm px-2 py-0.5 rounded">${data.id}</span>
+                            <span>🔎 Análisis de Transacción</span>
+                            <span class="bg-blue-100 text-blue-800 text-sm px-2 py-0.5 rounded font-mono">${data.id}</span>
                         </h1>
-                        <p class="text-xs text-slate-500 mt-1">Comparativa fila por fila de lo esperado vs lo recibido.</p>
                     </div>
                     <div class="text-right">
-                        <div class="text-xs text-slate-400 uppercase font-bold">Diferencia</div>
-                        <div class="text-2xl font-mono font-bold ${Math.abs(diff) > 5 ? 'text-red-500' : 'text-green-500'}">
+                        <span class="text-xs text-slate-400 uppercase font-bold mr-2">Diferencia Total:</span>
+                        <span class="text-xl font-mono font-bold ${Math.abs(diff) > 5 ? 'text-red-500' : 'text-green-500'}">
                             ${this.formatMoney(diff)}
-                        </div>
+                        </span>
                     </div>
                 </div>
 
-                <!-- CONTENIDO (DOS COLUMNAS) -->
-                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden">
+                <!-- CONTENIDO (GRID 2 COLUMNAS) -->
+                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden h-full">
                     
-                    <!-- IZQUIERDA: VENTAS (Esperado) -->
-                    <div class="flex flex-col border ${border} rounded-lg overflow-hidden">
-                        <div class="bg-blue-50 dark:bg-blue-900/20 p-2 text-xs font-bold text-blue-700 dark:text-blue-300 uppercase border-b ${border} text-center">
-                            Ventas Internas (Esperado)
+                    <!-- IZQUIERDA: VENTAS + BOTÓN AJUSTE -->
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative">
+                        <div class="${isDark ? 'bg-blue-900/20 text-blue-300 border-slate-700' : 'bg-blue-50 text-blue-700 border-blue-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                            <span>Ventas Internas (Esperado)</span>
+                            <button id="btn-add-adj" class="bg-white hover:bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-colors">
+                                <span class="text-lg leading-none">+</span> Agregar Ajuste
+                            </button>
                         </div>
-                        <div class="overflow-y-auto flex-grow bg-slate-50 dark:bg-slate-800/50">
-                            <table class="w-full text-left border-collapse">
-                                <thead class="text-[9px] uppercase text-slate-400 bg-white dark:bg-slate-900 sticky top-0 shadow-sm">
-                                    <tr><th class="p-2">ID / Ref</th><th class="p-2 text-right">Monto</th><th class="p-2 text-center">Archivo</th></tr>
-                                </thead>
-                                <tbody>${renderRows(ventas, 'venta')}</tbody>
-                            </table>
-                        </div>
-                        <div class="p-2 bg-slate-100 dark:bg-slate-900 text-right text-xs font-bold border-t ${border}">
-                            Total: ${this.formatMoney(data.neto)}
-                        </div>
+                        <div id="grid-ventas" class="flex-grow relative bg-white dark:bg-slate-800"></div>
                     </div>
 
-                    <!-- DERECHA: BANCO (Recibido) -->
-                    <div class="flex flex-col border ${border} rounded-lg overflow-hidden">
-                        <div class="bg-green-50 dark:bg-green-900/20 p-2 text-xs font-bold text-green-700 dark:text-green-300 uppercase border-b ${border} text-center">
-                            Depósitos Bancarios (Recibido)
+                    <!-- DERECHA: BANCO -->
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden">
+                        <!-- ... (mismo header banco) ... -->
+                        <div class="${isDark ? 'bg-green-900/20 text-green-300 border-slate-700' : 'bg-green-50 text-green-700 border-green-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                            <span>Depósitos Bancarios (Recibido)</span>
+                            <span class="bg-white dark:bg-slate-800 px-2 rounded text-[10px] shadow-sm">Total: ${this.formatMoney(data.pagado)}</span>
                         </div>
-                        <div class="overflow-y-auto flex-grow bg-slate-50 dark:bg-slate-800/50">
-                            <table class="w-full text-left border-collapse">
-                                <thead class="text-[9px] uppercase text-slate-400 bg-white dark:bg-slate-900 sticky top-0 shadow-sm">
-                                    <tr><th class="p-2">Descripción</th><th class="p-2 text-right">Monto</th><th class="p-2 text-center">Archivo</th></tr>
-                                </thead>
-                                <tbody>${renderRows(banco, 'banco')}</tbody>
-                            </table>
-                        </div>
-                        <div class="p-2 bg-slate-100 dark:bg-slate-900 text-right text-xs font-bold border-t ${border}">
-                            Total: ${this.formatMoney(data.pagado)}
-                        </div>
+                        <div id="grid-banco" class="flex-grow relative bg-white dark:bg-slate-800"></div>
                     </div>
-
                 </div>
 
-                <div class="mt-4 text-center">
-                    <button onclick="window.close()" class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-white px-6 py-2 rounded text-sm font-bold transition-colors">
-                        Cerrar Detalle
-                    </button>
+                <!-- FOOTER ACTIVO (Igual) -->
+                <!-- ... (mismo footer con calculadora) ... -->
+                <div class="p-3 bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-700">
+                    <div class="flex justify-between items-center">
+                        <!-- CALCULADORA -->
+                        <div class="flex items-center gap-4 text-sm">
+                            <div class="flex flex-col">
+                                <span class="text-[10px] text-slate-500 uppercase">Sel. Ventas</span>
+                                <span id="sum-ventas" class="font-mono font-bold text-blue-600">₡0,00</span>
+                            </div>
+                            <div class="text-slate-400 font-bold">-</div>
+                            <div class="flex flex-col">
+                                <span class="text-[10px] text-slate-500 uppercase">Sel. Banco</span>
+                                <span id="sum-banco" class="font-mono font-bold text-green-600">₡0,00</span>
+                            </div>
+                            <div class="text-slate-400 font-bold">=</div>
+                            <div class="flex flex-col">
+                                <span class="text-[10px] text-slate-500 uppercase">Diferencia</span>
+                                <span id="sum-diff" class="font-mono font-bold text-slate-800 dark:text-white bg-white dark:bg-slate-700 px-2 py-0.5 rounded border border-slate-300">₡0,00</span>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES -->
+                        <div class="flex gap-2">
+                            <button id="btn-manual" disabled class="bg-purple-100 text-purple-400 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 cursor-not-allowed transition-colors border border-transparent">
+                                <span>🤝</span> Conciliar Manualmente
+                            </button>
+                            <button id="btn-defer" class="bg-orange-100 hover:bg-orange-200 text-orange-700 border border-orange-200 px-4 py-2 rounded text-sm font-bold transition-colors flex items-center gap-2">
+                                <span>⏳</span> Diferir
+                            </button>
+                            <button onclick="window.close()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-4 py-2 rounded text-sm font-bold transition-colors">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODAL INTERNO DE AJUSTE -->
+                <div id="modal-adj" class="absolute inset-0 bg-black/50 backdrop-blur-sm z-[100] hidden flex items-center justify-center">
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-2xl w-96 p-6 border border-slate-200 dark:border-slate-700">
+                        <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white">Agregar Ajuste Manual</h3>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Ajuste (Obligatorio)</label>
+                                <select id="adj-type" multiple class="w-full p-2 text-sm border rounded bg-slate-50 dark:bg-slate-900 dark:border-slate-600 h-24">
+                                    <option value="Contracargo">Contracargo</option>
+                                    <option value="Devolución">Devolución</option>
+                                    <option value="Mantenimiento">Mantenimiento</option>
+                                    <option value="Ajuste Comisión">Ajuste por Comisión</option>
+                                    <option value="Error Banco">Error del Banco</option>
+                                </select>
+                                <p class="text-[10px] text-slate-400 mt-1">Ctrl + Click para seleccionar varios</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Monto del Ajuste</label>
+                                <input type="number" id="adj-amount" 
+                                    class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded font-mono bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors" 
+                                    placeholder="0.00">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Justificación (Opcional)</label>
+                                <textarea id="adj-reason" 
+                                    class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded h-16 resize-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors" 
+                                    placeholder="Explique la razón..."></textarea>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Evidencia (Captura)</label>
+                                <input type="file" id="adj-file" 
+                                    class="w-full text-xs text-slate-500 dark:text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800 transition-colors cursor-pointer">
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-2 mt-6">
+                            <button onclick="document.getElementById('modal-adj').classList.add('hidden')" class="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded">Cancelar</button>
+                            <button id="btn-save-adj" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-bold">Guardar Ajuste</button>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                    const rawVentas = JSON.parse('${jsonVentas}');
+                    const rawBanco = JSON.parse('${jsonBanco}');
+                    
+                    // Definición de Columnas
+                    const colsVentas = [
+                        { title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 },
+                        { title: "Comercio", field: "3", headerFilter: true, width: 150, cssClass: "text-[10px]" },
+                        { title: "Liquidación", field: "_liq", headerFilter: true, width: 100, cssClass: "font-mono text-blue-700 font-bold" },
+                        { title: "Afiliado", field: "_id", headerFilter: true, width: 80, cssClass: "font-bold" },
+                        { title: "Neto (-ACI)", field: "_netoACI", formatter: "money", hozAlign: "right" },
+                        { 
+                            title: "Archivo / Tipo", field: "_sourceFile", width: 100, headerFilter: true, cssClass: "text-[9px]",
+                            formatter: (cell) => {
+                                const row = cell.getRow();
+                                if(row._isAdjustment) {
+                                    // CORRECCIÓN: Usar comillas simples y concatenación (+) para no romper el template string del padre
+                                    const types = row._adjTypes ? row._adjTypes.join(', ') : 'AJUSTE';
+                                    const reason = row._adjReason || '';
+                                    return '<span class="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300 px-1 rounded font-bold text-[9px]" title="' + reason + '">' + types + '</span>';
+                                }
+                                return row._sourceFile;
+                            }
+                        }
+                    ];
+
+                    const colsBanco = [
+                        { title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 },
+                        { title: "Afiliado", field: "_extractedId", headerFilter: true, width: 90, cssClass: "font-bold text-green-700" },
+                        { title: "Ref (LIQ)", field: "_liqRef", headerFilter: true, width: 100, cssClass: "font-bold text-blue-700" },
+                        { title: "Descripción", field: "_desc", headerFilter: true, width: 180, cssClass: "text-[10px]" },
+                        { title: "Créditos", field: "_monto", formatter: "money", hozAlign: "right" },
+                        { title: "Archivo", field: "_sourceFile", width: 80, headerFilter: true, cssClass: "text-[9px]" }
+                    ];
+
+                    // Helper Formato Moneda
+                    const fmt = (n) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(n);
+
+                    // Función de Recálculo
+                    function updateCalc() {
+                        let sumV = 0; let selV = [];
+                        gVentas.displayData.forEach(r => { 
+                            if(r._selected) { 
+                                sumV += (r._netoACI || r._neto || 0); 
+                                selV.push(r._uid); 
+                            } 
+                        });
+
+                        let sumB = 0; let selB = [];
+                        gBanco.displayData.forEach(r => { 
+                            if(r._selected) { 
+                                sumB += (r._monto || 0); 
+                                selB.push(r._uid); 
+                            } 
+                        });
+
+                        const diff = sumV - sumB;
+                        
+                        document.getElementById('sum-ventas').innerText = fmt(sumV);
+                        document.getElementById('sum-banco').innerText = fmt(sumB);
+                        const elDiff = document.getElementById('sum-diff');
+                        elDiff.innerText = fmt(diff);
+                        
+                        const btn = document.getElementById('btn-manual');
+                        const isValid = Math.abs(diff) < 1 && (selV.length > 0 || selB.length > 0);
+                        
+                        if(isValid) {
+                            btn.disabled = false;
+                            btn.className = "bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-2 transition-colors shadow-md";
+                            elDiff.className = "font-mono font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-200";
+                        } else {
+                            btn.disabled = true;
+                            btn.className = "bg-purple-100 text-purple-300 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 cursor-not-allowed border border-transparent";
+                            elDiff.className = "font-mono font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200";
+                        }
+                        return { det: selV, pag: selB };
+                    }
+
+                    let gVentas, gBanco;
+                    
+                    window.onload = function() {
+                        const opts = { onCheckboxChange: () => updateCalc() };
+                        gVentas = new VanillaGrid("#grid-ventas", rawVentas, colsVentas, opts); 
+                        gBanco = new VanillaGrid("#grid-banco", rawBanco, colsBanco, opts);     
+                        
+                        document.addEventListener('change', (e) => {
+                            if(e.target.type === 'checkbox') setTimeout(updateCalc, 50);
+                        });
+
+                        // --- LÓGICA DE BOTONES ---
+
+                        // 1. Abrir Modal Ajuste
+                        document.getElementById('btn-add-adj').onclick = function() {
+                            document.getElementById('modal-adj').classList.remove('hidden');
+                        };
+
+                        // 2. Guardar Ajuste
+                        document.getElementById('btn-save-adj').onclick = function() {
+                            const types = Array.from(document.getElementById('adj-type').selectedOptions).map(o => o.value);
+                            const amount = parseFloat(document.getElementById('adj-amount').value);
+                            const reason = document.getElementById('adj-reason').value;
+                            
+                            if(types.length === 0) return alert("Debe seleccionar al menos un Tipo de Ajuste.");
+                            if(isNaN(amount) || amount === 0) return alert("Debe ingresar un monto válido (puede ser negativo).");
+
+                            // Crear Fila Ficticia
+                            const newRow = {
+                                _uid: 'adj_' + Date.now(),
+                                _id: 'AJUSTE',
+                                _netoACI: amount,
+                                _neto: amount,
+                                _isAdjustment: true, // Flag importante
+                                _adjTypes: types,
+                                _adjReason: reason,
+                                _selected: true, // Auto-seleccionar
+                                _sourceFile: 'MANUAL'
+                            };
+
+                            // Inyectar en Grid Ventas
+                            // VanillaGrid necesita actualizar data completa
+                            const newData = [...gVentas.displayData, newRow];
+                            gVentas.updateData(newData);
+                            
+                            // Cerrar modal y recalcular
+                            document.getElementById('modal-adj').classList.add('hidden');
+                            // Limpiar form
+                            document.getElementById('adj-amount').value = '';
+                            document.getElementById('adj-reason').value = '';
+                            
+                            updateCalc();
+                        };
+
+                        // 3. Conciliar Manualmente
+                        document.getElementById('btn-manual').onclick = function() {
+                            const selection = updateCalc();
+                            
+                            // Si hay ajustes manuales en la selección, los detectamos
+                            // (Nota: La lógica de guardar estos ajustes en la BD real vendrá después)
+                            
+                            if(window.opener && window.opener.BACLogic) {
+                                // Pasamos el motivo combinado si hay ajustes
+                                let finalReason = "Conciliación Manual";
+                                const adjustments = gVentas.displayData.filter(r => r._selected && r._isAdjustment);
+                                if(adjustments.length > 0) {
+                                    finalReason = "Ajuste: " + adjustments.map(a => a._adjTypes.join(', ')).join(' + ');
+                                } else {
+                                    const userReason = prompt("Justificación (Opcional):", "Ajuste manual");
+                                    if(userReason === null) return;
+                                    if(userReason) finalReason = userReason;
+                                }
+
+                                // IMPORTANTE: Si hay filas nuevas (ajustes), hay que enviarlas al padre para que las agregue a su memoria
+                                if(adjustments.length > 0) {
+                                    window.opener.BACLogic.injectAdjustments(adjustments);
+                                }
+
+                                window.opener.BACLogic.applyManualMatch(selection, finalReason);
+                                window.close();
+                            }
+                        };
+
+                        // 4. Diferir
+                        document.getElementById('btn-defer').onclick = function() {
+                            const selection = updateCalc();
+                            const rowsToDefer = [];
+                            // (Lógica de recolección igual a antes...)
+                            gVentas.displayData.forEach(r => { if(r._selected) rowsToDefer.push({ type: 'venta', rawData: r }); });
+                            gBanco.displayData.forEach(r => { if(r._selected) rowsToDefer.push({ type: 'banco', rawData: r }); });
+
+                            if(rowsToDefer.length === 0) return alert("Seleccione filas para diferir.");
+
+                            if(window.opener && window.opener.ConciliacionLogic) {
+                                window.opener.ConciliacionLogic.deferRows(rowsToDefer);
+                                window.close();
+                            }
+                        };
+                    };
+                </script>
+                
+                <!-- Barra Status Autosuma -->
+                <div id="global-table-stats" class="fixed bottom-[60px] left-0 w-full bg-slate-100 dark:bg-slate-800 border-t border-slate-300 dark:border-slate-700 py-1 px-4 flex justify-end items-center gap-6 text-xs font-mono hidden z-50 shadow-md">
+                    <div class="text-slate-500">SELECCIÓN:</div>
+                    <div class="flex gap-2"><span class="text-slate-500">CNT:</span><span id="gst-count" class="font-bold">0</span></div>
+                    <div class="flex gap-2"><span class="text-slate-500">SUM:</span><span id="gst-sum" class="font-bold">0</span></div>
                 </div>
             </body>
             </html>
         `);
+        win.document.close();
     },
 };
 
