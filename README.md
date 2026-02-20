@@ -1,4 +1,4 @@
-# Sistema de Conciliación Financiera ANC (v2.0)
+# Sistema de Conciliación Financiera ANC (v0.01)
 
 Sistema web SPA (Single Page Application) diseñado para automatizar el cruce y validación de cierres de caja entre reportes internos (TSD) y estados de cuenta bancarios (BAC Credomatic y Scotiabank).
 
