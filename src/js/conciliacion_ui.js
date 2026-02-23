@@ -162,7 +162,7 @@ window.ConciliacionLogic = {
         }
     },
 
-    data: { detalle: [], pagado: [] },
+    // data: { detalle: [], pagado: [] },
     table: null,
 
     init: function() {
@@ -1149,7 +1149,7 @@ window.ConciliacionLogic = {
                             // Si hay ajustes manuales en la selección, los detectamos
                             // (Nota: La lógica de guardar estos ajustes en la BD real vendrá después)
                             
-                            if(window.opener && window.opener.BACLogic) {
+                            if(window.opener && window.opener.ConciliacionLogic) {
                                 // Pasamos el motivo combinado si hay ajustes
                                 let finalReason = "Conciliación Manual";
                                 const adjustments = gVentas.displayData.filter(r => r._selected && r._isAdjustment);
@@ -1161,12 +1161,17 @@ window.ConciliacionLogic = {
                                     if(userReason) finalReason = userReason;
                                 }
 
-                                // IMPORTANTE: Si hay filas nuevas (ajustes), hay que enviarlas al padre para que las agregue a su memoria
-                                if(adjustments.length > 0) {
-                                    window.opener.BACLogic.injectAdjustments(adjustments);
+                                // Inyectar Ajustes
+                                if(adjustments.length > 0 && typeof window.opener.ConciliacionLogic.injectAdjustments === 'function') {
+                                    window.opener.ConciliacionLogic.injectAdjustments(adjustments);
                                 }
 
-                                window.opener.BACLogic.applyManualMatch(selection, finalReason);
+                                // Aplicar Match Manual
+                                if(typeof window.opener.ConciliacionLogic.applyManualMatch === 'function') {
+                                    window.opener.ConciliacionLogic.applyManualMatch(selection, finalReason);
+                                } else {
+                                    alert("El módulo actual aún no soporta Conciliación Manual.");
+                                }
                                 window.close();
                             }
                         };

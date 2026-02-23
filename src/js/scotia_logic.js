@@ -359,6 +359,8 @@ window.ScotiaLogic = {
         if (!hasDetalle || !hasPagado) {
             const container = document.getElementById('table-result-scotia');
             if(container) {
+                if(this.grids && this.grids.scotia) this.grids.scotia = null;
+                
                 container.innerHTML = `
                     <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
                         <div class="animate-pulse flex flex-col items-center">

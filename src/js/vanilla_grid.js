@@ -752,7 +752,7 @@ class VanillaGrid {
                 bar.classList.add('hidden');
             } else {
                 doc.getElementById('gst-count').innerText = this.selection.size;
-                doc.getElementById('gst-sum').innerText = this.formatMoney(sum);
+                doc.getElementById('gst-sum').innerHTML = this.formatMoney(sum);
                 bar.classList.remove('hidden');
             }
         }

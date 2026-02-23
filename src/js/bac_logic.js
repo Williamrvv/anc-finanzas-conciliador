@@ -759,10 +759,9 @@ window.BACLogic = {
         const columns = [
             { 
                 title: "", width: 40, hozAlign: "center", 
-                formatter: () => `<div class="text-green-600 font-bold cursor-pointer hover:scale-125" title="Restaurar a Conciliación">↩</div>`,
-                cellClick: (e, cell) => {
-                    const row = cell.getRow(); 
-                    this.restoreRow(row);
+                formatter: (cell) => {
+                    const r = cell.getRow();
+                    return `<div onclick="window.ConciliacionLogic.restoreRow('${r._uid}', '${r._type}')" class="text-green-600 font-bold cursor-pointer hover:scale-125" title="Restaurar a Conciliación">↩</div>`;
                 }
             },
             { title: "Tipo", field: "_type", width: 80, headerFilter: true },
@@ -782,11 +781,10 @@ window.BACLogic = {
     },
 
     // Restaura una fila diferida al flujo principal
-    restoreRow: function(row) {
+    restoreRow: function(uid, type) {
         if(!confirm("¿Devolver este registro a la conciliación activa?")) return;
 
-        const uid = row._uid;
-        const isVenta = row._type === 'Venta';
+        const isVenta = type === 'Venta';
         
         // 1. Quitar de la lista de diferidos
         if (isVenta) {
@@ -882,10 +880,9 @@ window.BACLogic = {
         const columns = [
             { 
                 title: "", width: 40, hozAlign: "center", 
-                formatter: () => `<div class="text-red-500 font-bold cursor-pointer hover:scale-125 transition-transform" title="Deshacer esta conciliación">✖</div>`,
-                cellClick: (e, cell) => {
-                    const row = cell.getRow();
-                    this.undoManualMatch(row._groupID);
+                formatter: (cell) => {
+                    const r = cell.getRow();
+                    return `<div onclick="window.ConciliacionLogic.undoManualMatch('${r._groupID}')" class="text-red-500 font-bold cursor-pointer hover:scale-125 transition-transform" title="Deshacer esta conciliación">✖</div>`;
                 }
             },
             { 

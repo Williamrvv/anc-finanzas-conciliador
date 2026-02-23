@@ -1,10 +1,12 @@
+// Buscar TODO el contenido de app.js y Reemplazar por este código limpio:
+
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
-    
+
     // Router simple: Leer la URL actual
     const path = window.location.pathname.substring(1); 
     const view = path === '' ? 'dashboard' : path;
-    
+
     // Carga inicial
     if(window.loadView) {
         window.loadView(view, false);
@@ -22,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.loadView = function(viewName, pushHistory = true) {
     const app = document.getElementById('app');
     if(!app) return;
-    
+
     // Loader
     app.innerHTML = '<div class="flex justify-center p-10 animate-fade-in"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>';
 

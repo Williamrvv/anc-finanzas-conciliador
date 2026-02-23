@@ -255,10 +255,10 @@ window.TSDLogic = {
             const auth = r._auth;
             const match = bankIndex[auth]; 
             
-            if (hasBanks && !match) {
-                unmatched += r._monto;
-                return;
-            }
+            // if (hasBanks && !match) {
+            //     unmatched += r._monto;
+            //     return;
+            // }
 
             let estado = 'Pendiente';
             let diff = r._monto;

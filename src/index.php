@@ -33,26 +33,27 @@ session_start();
             }
         }
     </script>
+    <style>
+        /* --- SCROLLBAR MODERNO GLOBAL --- */
+            /* Aplico diseño moderno a todas las barras de desplazamiento del sitio */
+            ::-webkit-scrollbar { width: 10px; height: 10px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { 
+                background-color: #cbd5e1; 
+                border-radius: 5px; 
+                border: 2px solid #f8fafc; /* Borde para efecto "flotante" */
+            }
+            ::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+            
+            /* Adaptación Modo Oscuro */
+            .dark ::-webkit-scrollbar-thumb { 
+                background-color: #475569; 
+                border-color: #0f172a; 
+            }
+            .dark ::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
+    </style>
 </head>
-<style>
-    /* --- SCROLLBAR MODERNO GLOBAL --- */
-        /* Aplico diseño moderno a todas las barras de desplazamiento del sitio */
-        ::-webkit-scrollbar { width: 10px; height: 10px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { 
-            background-color: #cbd5e1; 
-            border-radius: 5px; 
-            border: 2px solid #f8fafc; /* Borde para efecto "flotante" */
-        }
-        ::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
-        
-        /* Adaptación Modo Oscuro */
-        .dark ::-webkit-scrollbar-thumb { 
-            background-color: #475569; 
-            border-color: #0f172a; 
-        }
-        .dark ::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
-</style>
+
 <body class="bg-slate-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col min-h-screen">
 
     <!-- HEADER / NAVBAR -->
