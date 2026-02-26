@@ -1,5 +1,3 @@
-// Buscar TODO el contenido de app.js y Reemplazar por este código limpio:
-
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
 
@@ -18,6 +16,47 @@ document.addEventListener('DOMContentLoaded', () => {
             window.loadView(event.state.view, false);
         }
     };
+
+    // --- MANEJADOR GLOBAL DE FORMULARIO DE LOGIN ---
+    document.body.addEventListener('submit', async (e) => {
+        if (e.target.id === 'local-login-form') {
+            e.preventDefault(); // Evita que la página se refresque
+            
+            const btn = document.getElementById('btn-submit-local');
+            const errBox = document.getElementById('login-error');
+            
+            btn.innerHTML = 'Validando...';
+            btn.disabled = true;
+            errBox.classList.add('hidden');
+
+            const formData = new FormData(e.target);
+            
+            try {
+                const response = await fetch('api/login_local.php', { method: 'POST', body: formData });
+                
+                // Prevenir fallo si PHP devuelve error 500 en lugar de JSON
+                if (!response.ok) throw new Error("Error interno del servidor");
+                
+                const data = await response.json();
+                
+                if(data.success) {
+                    window.location.reload(); // Éxito: Recarga para que PHP monte la sesión y entre
+                } else {
+                    errBox.innerText = data.error || "Usuario y/o contraseña incorrectos.";
+                    errBox.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error(err);
+                errBox.innerText = "Error de conexión con el servidor.";
+                errBox.classList.remove('hidden');
+            } finally {
+                btn.innerHTML = 'Iniciar sesión local';
+                btn.disabled = false;
+                document.getElementById('password').value = ''; 
+            }
+        }
+    });
+
 });
 
 // --- SPA Router Logic ---
@@ -40,12 +79,11 @@ window.loadView = function(viewName, pushHistory = true) {
                 history.pushState({view: viewName}, '', viewName === 'dashboard' ? '/' : viewName);
             }
 
-            // Inicialización de módulos (Sin setTimeout)
+            // Inicialización de módulos
             if (viewName === 'conciliacion' && window.ConciliacionLogic) {
-                // Pequeño requestAnimationFrame para asegurar que el renderizado ocurrió
-                requestAnimationFrame(() => {
-                    window.ConciliacionLogic.init();
-                });
+                requestAnimationFrame(() => window.ConciliacionLogic.init());
+            } else if (viewName === 'usuarios' && window.UsuariosLogic) {
+                requestAnimationFrame(() => window.UsuariosLogic.init());
             }
         })
         .catch(err => {

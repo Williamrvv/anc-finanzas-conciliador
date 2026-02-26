@@ -67,10 +67,19 @@ session_start();
                     <div class="hidden md:flex ml-10 space-x-4">
                         <button onclick="loadView('dashboard')" class="text-slate-600 dark:text-slate-300 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Inicio</button>
                         <!-- Módulos -->
+                        <?php if($_SESSION['user']['role'] !== 'visitante'): ?>
                         <button onclick="loadView('conciliacion')" class="text-slate-600 dark:text-slate-300 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
                             Conciliación
                         </button>
+                        <?php endif; ?>
+
+                        <?php if(($_SESSION['user']['can_manage'] ?? false) || ($_SESSION['user']['role'] ?? '') === 'admin'): ?>
+                        <button onclick="loadView('usuarios')" class="text-slate-600 dark:text-slate-300 hover:text-purple-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                            Usuarios
+                        </button>
+                        <?php endif; ?>
                     </div>
                 </div>
                 
@@ -128,6 +137,8 @@ session_start();
     <script src="js/bac_logic.js"></script>
     <script src="js/scotia_logic.js"></script>
     <script src="js/tsd_logic.js"></script>
+    <!-- Módulo Usuarios -->
+    <script src="js/usuarios_logic.js"></script>
     <!-- JS SPA -->
     <script src="js/app.js"></script>
 </body>

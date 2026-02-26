@@ -1,11 +1,28 @@
 <?php
 session_start();
 
-$view = $_GET['view'] ?? 'dashboard';
+$raw_view = $_GET['view'] ?? 'dashboard';
+$view = preg_replace('/[^a-zA-Z0-9_-]/', '', $raw_view);
 
-// Si no hay sesión, forzamos la vista de login
+// 1. Si no hay sesión, forzamos login
 if (!isset($_SESSION['user'])) {
     $view = 'login_view';
+} else {
+    // 2. Control de Acceso Basado en Roles (RBAC)
+    $role = $_SESSION['user']['role'] ?? 'visitante';
+
+    // Reglas de Bloqueo (Actualizado con el Súper Permiso)
+    $canManage = $_SESSION['user']['can_manage'] ?? false;
+    $isAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
+    
+    // Si no tiene el súper permiso Y TAMPOCO es admin, lo bloqueamos
+    if ($view === 'usuarios' && !$canManage && !$isAdmin) {
+        $view = 'dashboard';
+    }
+    
+    if ($view === 'conciliacion' && $role === 'visitante') {
+        $view = 'dashboard'; // El visitante no puede conciliar
+    }
 }
 
 $file = __DIR__ . "/views/$view.php";

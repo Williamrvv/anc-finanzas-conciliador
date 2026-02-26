@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/db.php'; // Agregamos la BD
 
 if (!isset($_GET['code'])) {
     die("Error: No se recibió código de autorización.");
@@ -33,32 +34,80 @@ curl_close($ch);
 $tokenData = json_decode($response, true);
 
 if (!isset($tokenData['access_token'])) {
-    die("Error obteniendo token: " . $response);
+    die("Error obteniendo token O365.");
 }
 
 $accessToken = $tokenData['access_token'];
 
-// 2. Obtener datos del usuario usando el Token
+// 2. Obtener datos del usuario desde Microsoft Graph
 $userUrl = "https://graph.microsoft.com/v1.0/me";
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $userUrl);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Authorization: Bearer $accessToken",
-    "Content-Type: application/json"
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $accessToken", "Content-Type: application/json"]);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $userResponse = curl_exec($ch);
 curl_close($ch);
 
 $userData = json_decode($userResponse, true);
 
-// 3. Guardar en sesión
-$_SESSION['user'] = [
-    'id' => $userData['id'],
-    'name' => $userData['displayName'],
-    'email' => $userData['mail'] ?? $userData['userPrincipalName'],
-    'jobTitle' => $userData['jobTitle'] ?? 'N/A'
-];
+$email = $userData['mail'] ?? $userData['userPrincipalName'];
+$name = $userData['givenName'] ?? $userData['displayName'];
+$surname = $userData['surname'] ?? '';
+$jobTitle = $userData['jobTitle'] ?? 'Colaborador';
 
-header('Location: /');
-exit;
+// 3. INTEGRACIÓN CON BASE DE DATOS (UPSERT LÓGICO)
+try {
+    $pdo = Database::connect();
+    
+    // Consultar si existe
+     $stmt = $pdo->prepare("
+        SELECT u.Activo, u.Puede_Administrar, r.Nombre_Rol 
+        FROM Tbl_Usuarios u 
+        INNER JOIN Tbl_Roles r ON u.Id_Rol = r.Id_Rol 
+        WHERE u.Email = ?
+    ");
+    $stmt->execute([$email]);
+    $dbUser = $stmt->fetch();
+
+    $finalRole = 'visitante';
+
+    if ($dbUser) {
+        // EXISTE: Validar si está activo
+        if ($dbUser['Activo'] == 0) {
+            die("<div style='text-align:center; padding:50px; font-family:sans-serif;'><h2>⛔ Acceso Denegado</h2><p>Esta cuenta ha sido dada de baja del sistema.</p><a href='/'>Volver</a></div>");
+        }
+        $finalRole = $dbUser['Nombre_Rol'];
+        
+        // (Opcional: Se podría hacer un UPDATE aquí para refrescar su Puesto si cambió en Microsoft)
+    } else {
+        // NO EXISTE: Crearlo automáticamente
+        // Primero, obtener el Id del rol visitante
+        $stmtRol = $pdo->prepare("SELECT Id_Rol FROM Tbl_Roles WHERE Nombre_Rol = 'visitante'");
+        $stmtRol->execute();
+        $idRolVisitante = $stmtRol->fetchColumn();
+
+        // Insertar usuario
+        $stmtInsert = $pdo->prepare("
+            INSERT INTO Tbl_Usuarios (Email, Nombre, Apellidos, Puesto, Id_Rol) 
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmtInsert->execute([$email, $name, $surname, $jobTitle, $idRolVisitante]);
+    }
+
+    $canManage = isset($dbUser['Puede_Administrar']) && $dbUser['Puede_Administrar'] == 1;
+    // 4. Guardar en sesión PHP
+    $_SESSION['user'] = [
+        'email' => $email,
+        'name' => $name . ' ' . $surname,
+        'jobTitle' => $jobTitle,
+        'role' => $finalRole,
+        'can_manage' => ($canManage || $finalRole === 'admin')
+    ];
+
+    header('Location: /');
+    exit;
+
+} catch (Exception $e) {
+    die("Error Crítico de Base de Datos: No se pudo verificar la identidad.");
+}
+?>
