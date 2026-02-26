@@ -435,17 +435,8 @@ window.ConciliacionLogic = {
                     let finalVal = val;
 
                     // A. CORRECCIÓN DE FECHAS (Columna 0)
-                    // Asumimos formato inglés MM/DD/YYYY o YYYY-MM-DD -> DD/MM/YYYY
-                    if(idx === 0 && val) {
-                        const dateStr = String(val).trim();
-                        // Intento simple de parseo
-                        const parts = dateStr.split(/[-/]/); 
-                        if(parts.length === 3) {
-                            // Si es YYYY-MM-DD
-                            if(parts[0].length === 4) finalVal = `${parts[2]}/${parts[1]}/${parts[0]}`;
-                            // Si es MM/DD/YYYY (común en CSVs )
-                            else if(parts[2].length === 4) finalVal = `${parts[1]}/${parts[0]}/${parts[2]}`;
-                        }
+                     if(idx === 0 && val) {
+                        finalVal = window.ConciliacionLogic.formatDateCR(val);
                     }
 
                     // B. CORRECCIÓN DE NÚMEROS (Columnas 8 a 12)
@@ -730,6 +721,44 @@ window.ConciliacionLogic = {
         win.document.close();
     },
 
+    // Formateador de fechas a estándar CR (DD/MM/YYYY)
+    formatDateCR: function(val) {
+        if (!val) return "";
+        let str = String(val).trim().split(' ')[0]; // Quitar horas si existen
+
+        // 1. Si es número de serie de Excel (ej: 45310 -> 18/01/2026)
+        if (!isNaN(str) && Number(str) > 10000 && Number(str) < 99999) {
+            const date = new Date((Number(str) - 25569) * 86400 * 1000);
+            const utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+            const d = String(utcDate.getDate()).padStart(2, '0');
+            const m = String(utcDate.getMonth() + 1).padStart(2, '0');
+            return `${d}/${m}/${utcDate.getFullYear()}`;
+        }
+
+        // 2. Si ya trae separadores (CSV)
+        if (str.includes('/') || str.includes('-')) {
+            const parts = str.split(/[-/]/);
+            if (parts.length === 3) {
+                if (parts[0].length === 4) { // YYYY-MM-DD
+                    return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+                } else if (parts[2].length === 4) { // DD/MM/YYYY o MM/DD/YYYY
+                    let d = parseInt(parts[0]);
+                    let m = parseInt(parts[1]);
+                    if (m > 12) { let temp = d; d = m; m = temp; } // Intercambiar si es gringo
+                    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${parts[2]}`;
+                }
+            }
+        }
+
+        // 3. Cadenas numéricas pegadas
+        if (str.length === 8 && !isNaN(str)) {
+             if (str.startsWith('20')) return `${str.substring(6,8)}/${str.substring(4,6)}/${str.substring(0,4)}`;
+             else return `${str.substring(0,2)}/${str.substring(2,4)}/${str.substring(4,8)}`;
+        }
+
+        return str;
+    },
+
     formatMoney: function(val) { 
         // Forzamos formato CR: ₡ 1 000,00
         // Intl 'es-CR' a veces usa punto para miles. Lo corregimos manualmente.
@@ -859,13 +888,24 @@ window.ConciliacionLogic = {
         const jsonVentas = JSON.stringify(ventas.map(v => ({...v, _selected: false}))).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const jsonBanco = JSON.stringify(banco.map(b => ({...b, _selected: false}))).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         
+        // NUEVO: Extraer y enviar los encabezados reales para el Tooltip
+        const headDet = this.data.headers && this.data.headers.detalle ? this.data.headers.detalle : [];
+        const headPag = this.data.headers && this.data.headers.pagado ? this.data.headers.pagado : [];
+        const jsonHeadersDet = JSON.stringify(headDet).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const jsonHeadersPag = JSON.stringify(headPag).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        
         const isDark = document.documentElement.classList.contains('dark');
         const bg = isDark ? 'bg-slate-900 text-white' : 'bg-white text-slate-800';
         
-        const w = 1100, h = 600;
+        // Aumentamos el tamaño para mejor UX sin ser pantalla completa
+        const w = 1400, h = 850;
         const left = (screen.width - w) / 2;
         const top = (screen.height - h) / 2;
         const win = window.open("", "_blank", `width=${w},height=${h},top=${top},left=${left}`);
+        
+        // Detectar si ya está conciliado (Diferencia = 0 o es un grupo manual ya guardado)
+        const diffVal = data.diferencia_val !== undefined ? data.diferencia_val : data.diff;
+        const isReadOnly = Math.abs(diffVal) < 1 || data._isManual === true;
         
         if(!win) return alert("Ventana bloqueada.");
 
@@ -896,7 +936,7 @@ window.ConciliacionLogic = {
                     </div>
                     <div class="text-right">
                         <span class="text-xs text-slate-400 uppercase font-bold mr-2">Diferencia Total:</span>
-                        <span class="text-xl font-mono font-bold ${Math.abs(diff) > 5 ? 'text-red-500' : 'text-green-500'}">
+                        <span id="header-diff-display" class="text-xl font-mono font-bold ${Math.abs(diff) > 5 ? 'text-red-500' : 'text-green-500'}">
                             ${this.formatMoney(diff)}
                         </span>
                     </div>
@@ -904,26 +944,28 @@ window.ConciliacionLogic = {
 
                 <!-- CONTENIDO (GRID 2 COLUMNAS) -->
                 <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden h-full">
-                    
-                    <!-- IZQUIERDA: VENTAS + BOTÓN AJUSTE -->
-                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative">
-                        <div class="${isDark ? 'bg-blue-900/20 text-blue-300 border-slate-700' : 'bg-blue-50 text-blue-700 border-blue-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
-                            <span>Ventas Internas (Esperado)</span>
-                            <button id="btn-add-adj" class="bg-white hover:bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-colors">
-                                <span class="text-lg leading-none">+</span> Agregar Ajuste
-                            </button>
-                        </div>
-                        <div id="grid-ventas" class="flex-grow relative bg-white dark:bg-slate-800"></div>
-                    </div>
 
                     <!-- DERECHA: BANCO -->
                     <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden">
                         <!-- ... (mismo header banco) ... -->
                         <div class="${isDark ? 'bg-green-900/20 text-green-300 border-slate-700' : 'bg-green-50 text-green-700 border-green-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
-                            <span>Depósitos Bancarios (Recibido)</span>
+                            <span>Pagado Bac (Recibido)</span>
                             <span class="bg-white dark:bg-slate-800 px-2 rounded text-[10px] shadow-sm">Total: ${this.formatMoney(data.pagado)}</span>
                         </div>
                         <div id="grid-banco" class="flex-grow relative bg-white dark:bg-slate-800"></div>
+                    </div>
+                    
+                    <!-- IZQUIERDA: VENTAS + BOTÓN AJUSTE -->
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative">
+                        <div class="${isDark ? 'bg-blue-900/20 text-blue-300 border-slate-700' : 'bg-blue-50 text-blue-700 border-blue-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                            <span>Detallado Bac (Esperado)</span>
+                            ${isReadOnly ? '' : `
+                            <button id="btn-add-adj" class="bg-white hover:bg-blue-100 text-blue-600 border border-blue-200 px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-colors shadow-sm">
+                                <span class="text-lg leading-none">+</span> Agregar Ajuste
+                            </button>
+                            `}
+                        </div>
+                        <div id="grid-ventas" class="flex-grow relative bg-white dark:bg-slate-800"></div>
                     </div>
                 </div>
 
@@ -950,62 +992,161 @@ window.ConciliacionLogic = {
                         </div>
 
                         <!-- BOTONES -->
-                        <div class="flex gap-2">
-                            <button id="btn-manual" disabled class="bg-purple-100 text-purple-400 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 cursor-not-allowed transition-colors border border-transparent">
-                                <span>🤝</span> Conciliar Manualmente
-                            </button>
-                            <button id="btn-defer" class="bg-orange-100 hover:bg-orange-200 text-orange-700 border border-orange-200 px-4 py-2 rounded text-sm font-bold transition-colors flex items-center gap-2">
-                                <span>⏳</span> Diferir
-                            </button>
-                            <button onclick="window.close()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-4 py-2 rounded text-sm font-bold transition-colors">
-                                Cerrar
+                        <div class="flex gap-3 items-center">
+                            ${isReadOnly ? `
+                                <span class="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 border border-green-200 dark:border-green-700">
+                                    ✅ Transacción Conciliada
+                                </span>
+                            ` : `
+                                <button id="btn-manual" disabled class="bg-purple-100 text-purple-400 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 cursor-not-allowed transition-colors border border-transparent">
+                                    <span>🤝</span> Conciliar Manualmente
+                                </button>
+                            `}
+                            <button onclick="window.close()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-4 py-2 rounded text-sm font-bold transition-colors shadow-sm">
+                                Cerrar Ventana
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- MODAL INTERNO DE AJUSTE -->
-                <div id="modal-adj" class="absolute inset-0 bg-black/50 backdrop-blur-sm z-[100] hidden flex items-center justify-center">
-                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-2xl w-96 p-6 border border-slate-200 dark:border-slate-700">
-                        <h3 class="text-lg font-bold mb-4 text-slate-800 dark:text-white">Agregar Ajuste Manual</h3>
+                <!-- MODAL AVANZADO DE INGRESO DE VENTA / AJUSTE -->
+                <div id="modal-adj" class="absolute inset-0 bg-black/60 backdrop-blur-sm z-[100] hidden flex items-center justify-center overflow-y-auto p-4">
+                    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[95vh]">
                         
-                        <div class="space-y-3">
+                        <!-- Header Modal -->
+                        <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 rounded-t-xl flex justify-between items-center shrink-0">
                             <div>
-                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Ajuste (Obligatorio)</label>
-                                <select id="adj-type" multiple class="w-full p-2 text-sm border rounded bg-slate-50 dark:bg-slate-900 dark:border-slate-600 h-24">
-                                    <option value="Contracargo">Contracargo</option>
-                                    <option value="Devolución">Devolución</option>
-                                    <option value="Mantenimiento">Mantenimiento</option>
-                                    <option value="Ajuste Comisión">Ajuste por Comisión</option>
-                                    <option value="Error Banco">Error del Banco</option>
-                                </select>
-                                <p class="text-[10px] text-slate-400 mt-1">Ctrl + Click para seleccionar varios</p>
+                                <h3 class="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <span class="text-blue-600">➕</span> Ingresar Venta Faltante / Ajuste
+                                </h3>
+                                <p class="text-[10px] text-slate-500 mt-1">Complete los datos para inyectar una fila en el Detallado (Esperado).</p>
                             </div>
-
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Monto del Ajuste</label>
-                                <input type="number" id="adj-amount" 
-                                    class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded font-mono bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors" 
-                                    placeholder="0.00">
-                            </div>
-
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Justificación (Opcional)</label>
-                                <textarea id="adj-reason" 
-                                    class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded h-16 resize-none bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors" 
-                                    placeholder="Explique la razón..."></textarea>
-                            </div>
+                            <button onclick="document.getElementById('modal-adj').classList.add('hidden')" class="text-slate-400 hover:text-red-500 transition-colors">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+                        
+                        <!-- Body Modal (Scrollable) -->
+                        <div class="p-6 overflow-y-auto flex-grow custom-scrollbar space-y-5">
                             
-                            <div>
-                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Evidencia (Captura)</label>
-                                <input type="file" id="adj-file" 
-                                    class="w-full text-xs text-slate-500 dark:text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300 dark:hover:file:bg-blue-800 transition-colors cursor-pointer">
+                            <!-- NUEVO: Destino y Tipo -->
+                            <div class="grid grid-cols-1 gap-4 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-100 dark:border-purple-800">
+                                <!-- Destino Oculto (Forzado a 'det') -->
+                                <input type="hidden" id="fm-target" value="det">
+                                
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Ajuste <span class="text-red-500">*</span></label>
+                                    <select id="fm-type" class="w-full p-2 text-xs font-bold border rounded bg-white dark:bg-slate-900 dark:border-slate-600 outline-none focus:ring-1 focus:ring-purple-500 text-purple-700 dark:text-purple-300 shadow-sm">
+                                        <option value="">-- Seleccione una opción --</option>
+                                        <option value="Contracargo">Contracargo</option>
+                                        <option value="Devolución">Devolución</option>
+                                        <option value="Mantenimiento">Mantenimiento</option>
+                                        <option value="Remisión">Remisión</option>
+                                    </select>
+                                </div>
                             </div>
+
+                            <!-- Bloque 1: Identificación -->
+                            <div class="grid grid-cols-3 gap-4">
+                                <div class="col-span-1">
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Afiliado</label>
+                                    <input type="text" id="fm-afil" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none">
+                                </div>
+                                <div class="col-span-1">
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">N° Liquidación</label>
+                                    <input type="text" id="fm-liq" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none font-mono">
+                                </div>
+                                <div class="col-span-1">
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Comercial</label>
+                                    <input type="text" id="fm-comercio" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none">
+                                </div>
+                            </div>
+
+                            <!-- Bloque 2: Operación -->
+                            <div class="grid grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Transac.</label>
+                                    <input type="date" id="fm-ftrans" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Pago</label>
+                                    <input type="date" id="fm-fpago" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">N° Tarjeta</label>
+                                    <input type="text" id="fm-tarjeta" placeholder="****1234" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none font-mono">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Autorización</label>
+                                    <input type="text" id="fm-auth" placeholder="000000" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none font-mono">
+                                </div>
+                            </div>
+
+                            <!-- Bloque 3: Financiero (Calculadora) -->
+                            <div>
+                                <div class="flex items-center gap-2 mb-3">
+                                    <div class="w-1/3">
+                                        <label class="block text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase mb-1">Monto de Venta (MV)</label>
+                                        <div class="relative">
+                                            <span class="absolute left-2 top-1.5 text-slate-400 font-bold">₡</span>
+                                            <input type="number" step="100" id="fm-mv" class="w-full p-1.5 pl-6 text-sm font-bold border-2 border-blue-300 dark:border-blue-600 rounded bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-100 focus:ring-0 outline-none transition-colors" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow text-[9px] text-slate-400 italic mt-3">Las retenciones se calculan solas. Si el destino es "Pagado (Banco)", el Monto Neto Final será lo depositado.</div>
+                                </div>
+
+                                <div class="grid grid-cols-4 gap-3">
+                                    <div>
+                                        <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Comisión (1.95%)</label>
+                                        <input type="number" id="fm-com" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 text-red-600 dark:text-red-400 outline-none font-mono" placeholder="0.00">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Ret. Ventas (5.31%)</label>
+                                        <input type="number" id="fm-retv" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 text-orange-600 dark:text-orange-400 outline-none font-mono" placeholder="0.00">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Ret. Rentas (1.76%)</label>
+                                        <input type="number" id="fm-retr" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 text-orange-600 dark:text-orange-400 outline-none font-mono" placeholder="0.00">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Ajuste ACI</label>
+                                        <input type="number" id="fm-aci" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 text-slate-700 dark:text-slate-300 outline-none font-mono" placeholder="0.00">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Totalizador Final -->
+                            <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex justify-between items-center">
+                                <span class="text-xs font-bold text-green-800 dark:text-green-400 uppercase">Monto Neto Final</span>
+                                <span id="fm-neto-display" class="text-xl font-mono font-bold text-green-700 dark:text-green-300">₡0.00</span>
+                            </div>
+
+                            <!-- NUEVO: Auditoría (Justificación y Captura) -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Justificación (Auditoría)</label>
+                                    <textarea id="fm-reason" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none h-20 resize-none" placeholder="Motivo del ajuste..."></textarea>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Evidencia Visual (Captura)</label>
+                                    <div id="fm-evidence-zone" class="w-full h-20 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded bg-slate-50 dark:bg-slate-900/50 flex flex-col items-center justify-center text-slate-400 focus:outline-none focus:border-blue-500 focus:text-blue-500 transition-colors relative overflow-hidden" tabindex="0">
+                                        <div id="fm-ev-text" class="text-[10px] text-center pointer-events-none">
+                                            <span class="block text-lg mb-1">📋</span>
+                                            Haz clic aquí y presiona <br> <kbd class="font-sans font-bold bg-white dark:bg-slate-800 px-1 rounded shadow-sm">Ctrl</kbd> + <kbd class="font-sans font-bold bg-white dark:bg-slate-800 px-1 rounded shadow-sm">V</kbd>
+                                        </div>
+                                        <img id="fm-ev-preview" class="absolute inset-0 w-full h-full object-contain hidden bg-slate-100 dark:bg-slate-800">
+                                        <button id="fm-ev-clear" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] hidden opacity-75 hover:opacity-100">×</button>
+                                    </div>
+                                    <input type="hidden" id="fm-evidence-b64">
+                                </div>
+                            </div>
+
                         </div>
 
-                        <div class="flex justify-end gap-2 mt-6">
-                            <button onclick="document.getElementById('modal-adj').classList.add('hidden')" class="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded">Cancelar</button>
-                            <button id="btn-save-adj" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-bold">Guardar Ajuste</button>
+                        <!-- Footer Modal -->
+                        <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 rounded-b-xl flex justify-end gap-3 shrink-0">
+                            <button onclick="document.getElementById('modal-adj').classList.add('hidden')" class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors">Cancelar</button>
+                            <button id="btn-save-adj" class="px-6 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded font-bold shadow-md transition-all">Generar Registro</button>
                         </div>
                     </div>
                 </div>
@@ -1013,59 +1154,239 @@ window.ConciliacionLogic = {
                 <script>
                     const rawVentas = JSON.parse('${jsonVentas}');
                     const rawBanco = JSON.parse('${jsonBanco}');
+                    const headersDet = JSON.parse('${jsonHeadersDet}');
+                    const headersPag = JSON.parse('${jsonHeadersPag}');
+                    const isReadOnly = ${isReadOnly};
                     
-                    // Definición de Columnas
-                    const colsVentas = [
-                        { title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 },
-                        { title: "Comercio", field: "3", headerFilter: true, width: 150, cssClass: "text-[10px]" },
-                        { title: "Liquidación", field: "_liq", headerFilter: true, width: 100, cssClass: "font-mono text-blue-700 font-bold" },
-                        { title: "Afiliado", field: "_id", headerFilter: true, width: 80, cssClass: "font-bold" },
-                        { title: "Neto (-ACI)", field: "_netoACI", formatter: "money", hozAlign: "right" },
+                    // Helper Formato Moneda nativo para el popup
+                    const fmt = (n) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(n);
+
+                    // --- HELPER 1: Tooltip de Ajustes Manuales ---
+                    const generateTooltip = (row, isVenta) => {
+                        const tipoAjuste = row._adjType || 'Ajuste Manual';
+                        const justificacion = row._adjReason || 'Sin justificación proporcionada.';
+                        const afil = row._id || row._extractedId || 'N/A';
+                        const liq = row._liq || row._liqRef || 'N/A';
+                        const comercio = row["3"] || (row._desc ? row._desc.replace(\`[\${tipoAjuste}] \`, '') : 'N/A');
+                        const fTrans = row._fecha ? window.opener.ConciliacionLogic.formatDateCR(row._fecha) : 'N/A';
+                        const fPago = row._fechaPago ? window.opener.ConciliacionLogic.formatDateCR(row._fechaPago) : 'N/A';
+
+                        return \`
+                            <div class="text-left min-w-[280px] max-w-[320px]">
+                                <div class="border-b border-slate-200 dark:border-slate-600 pb-2 mb-2">
+                                    <div class="font-bold text-slate-800 dark:text-white text-xs uppercase">\${tipoAjuste}</div>
+                                    <div class="text-[9px] text-slate-500 dark:text-slate-400">Destino: \${isVenta ? 'Detallado (Ventas)' : 'Pagado (Banco)'}</div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[9px] text-slate-700 dark:text-slate-300 mb-2 bg-slate-50 dark:bg-slate-700/50 border border-slate-100 dark:border-slate-600 p-1.5 rounded">
+                                    <div><span class="text-slate-400 dark:text-slate-500 block">Afiliado:</span> <span class="font-mono font-bold">\${afil}</span></div>
+                                    <div><span class="text-slate-400 dark:text-slate-500 block">Liquidación:</span> <span class="font-mono font-bold">\${liq}</span></div>
+                                    <div class="col-span-2"><span class="text-slate-400 dark:text-slate-500 block">Comercio:</span> <span class="truncate block font-bold">\${comercio}</span></div>
+                                    <div><span class="text-slate-400 dark:text-slate-500 block">F. Transacción:</span> \${fTrans}</div>
+                                    <div><span class="text-slate-400 dark:text-slate-500 block">F. Pago:</span> \${fPago}</div>
+                                    <div><span class="text-slate-400 dark:text-slate-500 block">Tarjeta:</span> <span class="font-mono">\${row._tarjeta || 'N/A'}</span></div>
+                                    <div><span class="text-slate-400 dark:text-slate-500 block">Autorización:</span> <span class="font-mono">\${row._auth || 'N/A'}</span></div>
+                                </div>
+                                <div class="space-y-1 text-[10px] bg-slate-100 dark:bg-slate-900/50 p-1.5 rounded border border-slate-200 dark:border-slate-700 mb-2">
+                                    <div class="flex justify-between"><span>Monto Venta:</span> <span class="font-mono text-slate-800 dark:text-white">\${fmt(row._venta || 0)}</span></div>
+                                    <div class="flex justify-between text-red-600 dark:text-red-400"><span>Comisión (1.95%):</span> <span class="font-mono">-\${fmt(row._comision || 0)}</span></div>
+                                    <div class="flex justify-between text-orange-600 dark:text-orange-400"><span>Ret. Ventas (5.31%):</span> <span class="font-mono">-\${fmt(row._retV || 0)}</span></div>
+                                    <div class="flex justify-between text-orange-600 dark:text-orange-400"><span>Ret. Rentas (1.76%):</span> <span class="font-mono">-\${fmt(row._retR || 0)}</span></div>
+                                    <div class="flex justify-between text-slate-500 dark:text-slate-400"><span>Ajuste ACI:</span> <span class="font-mono">-\${fmt(row._aciOrig || 0)}</span></div>
+                                    <div class="flex justify-between border-t border-slate-300 dark:border-slate-600 pt-1 mt-1 font-bold \${isVenta ? 'text-blue-700 dark:text-blue-400' : 'text-green-700 dark:text-green-400'}">
+                                        <span>NETO FINAL:</span> <span class="font-mono text-xs">\${fmt(isVenta ? row._netoACI : row._monto)}</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-[9px] text-slate-500 uppercase font-bold mb-0.5">Justificación:</div>
+                                    <div class="text-[10px] text-slate-700 dark:text-slate-300 italic break-words whitespace-normal bg-white dark:bg-slate-700/30 p-1.5 rounded border-l-2 border-slate-400 dark:border-slate-500 shadow-sm">\${justificacion}</div>
+                                    \${row._adjEvidence ? '<div class="text-[10px] text-blue-600 dark:text-blue-400 mt-2 font-bold flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> Incluye Evidencia Visual</div>' : ''}
+                                </div>
+                            </div>
+                        \`;
+                    };
+
+                    // --- HELPER 2: Tooltip Extendido para Filas Normales (Scrollable & Smart) ---
+                    const generateGenericTooltip = (row, isVenta) => {
+                        const headers = isVenta ? headersDet : headersPag;
+                        const origen = isVenta ? 'Detallado (Ventas)' : 'Pagado (Banco)';
+                        
+                        let html = \`
+                            <div class="text-left min-w-[280px] max-w-[350px] text-[10px] flex flex-col max-h-[50vh]">
+                                <div class="border-b border-slate-200 dark:border-slate-600 pb-2 mb-2 font-bold text-slate-800 dark:text-white uppercase flex items-center gap-2 shrink-0">
+                                    <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 
+                                    Datos Originales <span class="text-[9px] text-slate-600 bg-slate-100 dark:text-slate-400 dark:bg-slate-700 px-1.5 py-0.5 rounded">\${origen}</span>
+                                </div>
+                                <div class="overflow-y-auto custom-scrollbar pr-2 space-y-1.5 flex-grow">
+                        \`;
+                        
+                        for(let key in row) {
+                            // Ignorar objetos internos
+                            if(typeof row[key] === 'object') continue;
+                            
+                            // BLOQUEO ANTIDUPLICADOS: Ocultar TODO lo que empiece con '_' 
+                            // (porque ya viene en las columnas crudas '0','1'), excepto '_netoACI' que nosotros calculamos.
+                            if(key.startsWith('_') && key !== '_netoACI') continue;
+                            
+                            let val = row[key];
+                            if(val === null || val === undefined || val === '') continue;
+                            
+                            let displayKey = key;
+                            
+                            // Traductor de Headers
+                            if (!isNaN(key) && headers[key]) {
+                                displayKey = headers[key];
+                            } else if (key === '_netoACI') {
+                                displayKey = 'NETO (-ACI)';
+                            }
+
+                            const upperKey = displayKey.toUpperCase();
+
+                            // 1. Formateo de Fechas CR (Aplica a cualquier columna que diga FECHA)
+                            if (upperKey.includes('FECHA')) {
+                                val = window.opener.ConciliacionLogic.formatDateCR(val);
+                            } 
+                            // 2. Formateo de Moneda Seguro (Evita NaN limpiando la data primero)
+                            else if (/NETO|MONTO|VENTA|COMISI|RETENC|IMPORTE/i.test(upperKey)) {
+                                let num = parseFloat(String(val).replace(/["'\\s₡,]/g, ''));
+                                if (!isNaN(num)) {
+                                    val = \`<span class="text-green-700 dark:text-green-400 font-bold">\${fmt(num)}</span>\`;
+                                }
+                            }
+
+                            html += \`
+                                <div class="flex flex-col border-b border-slate-100 dark:border-slate-700/50 pb-1">
+                                    <span class="text-slate-400 dark:text-slate-500 font-bold uppercase text-[8px]">\${displayKey}</span> 
+                                    <span class="text-slate-800 dark:text-slate-200 font-mono break-words whitespace-normal">\${val}</span>
+                                </div>
+                            \`;
+                        }
+                        html += '</div></div>';
+                        return html;
+                    };
+
+                    // --- ELIMINAR AJUSTE MANUAL AL VUELO ---
+                    window.deleteAdj = function(uid, target) {
+                        if(!confirm("¿Eliminar este ajuste manual insertado?")) return;
+                        if(target === 'det') {
+                            gVentas.updateData(gVentas.displayData.filter(r => r._uid !== uid));
+                        } else {
+                            gBanco.updateData(gBanco.displayData.filter(r => r._uid !== uid));
+                        }
+                        updateCalc();
+                        hideGlobalTooltip(); // Limpiar residuos visuales
+                    };
+
+                    // --- CONSTRUCCIÓN DE COLUMNAS INTELIGENTE ---
+                    const colsVentas = [];
+                    if(!isReadOnly) colsVentas.push({ title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 });
+                    
+                    colsVentas.push(
+                        { title: "Fecha", field: "_fecha", width: 80, cssClass: "text-[10px] text-slate-500", formatter: (cell) => window.opener.ConciliacionLogic.formatDateCR(cell.getValue()) },
+                        { title: "Comercio", field: "3", headerFilter: true, width: 140, cssClass: "text-[10px] truncate" },
+                        { title: "Liquidación", field: "_liq", headerFilter: true, width: 90, cssClass: "font-mono text-blue-700 font-bold text-[10px]" },
+                        { title: "Neto (-ACI)", field: "_netoACI", formatter: "money", hozAlign: "right", cssClass: "font-bold" },
                         { 
-                            title: "Archivo / Tipo", field: "_sourceFile", width: 100, headerFilter: true, cssClass: "text-[9px]",
+                            title: "Origen / Detalles", field: "_sourceFile", width: 150, headerFilter: true,
                             formatter: (cell) => {
                                 const row = cell.getRow();
                                 if(row._isAdjustment) {
-                                    // CORRECCIÓN: Usar comillas simples y concatenación (+) para no romper el template string del padre
-                                    const types = row._adjTypes ? row._adjTypes.join(', ') : 'AJUSTE';
-                                    const reason = row._adjReason || '';
-                                    return '<span class="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300 px-1 rounded font-bold text-[9px]" title="' + reason + '">' + types + '</span>';
+                                    const b64 = btoa(unescape(encodeURIComponent(generateTooltip(row, true))));
+                                    return \`
+                                        <div class="flex justify-between items-center w-full h-full">
+                                            <div onmouseenter="showGlobalTooltip(this, '\${b64}')" onmouseleave="hideGlobalTooltip()" class="flex items-center gap-1 cursor-help">
+                                                <span class="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 px-1.5 py-0.5 rounded text-[9px] font-bold border border-blue-200 dark:border-blue-700 truncate">\${row._adjType || 'Ajuste'} ℹ️</span>
+                                            </div>
+                                            \${isReadOnly ? '' : \`<button onclick="window.deleteAdj('\${row._uid}', 'det')" class="text-red-500 hover:bg-red-100 dark:hover:bg-red-900/50 px-1 rounded shadow-sm transition-colors text-[10px]" title="Eliminar Ajuste">✖</button>\`}
+                                        </div>
+                                    \`;
                                 }
-                                return row._sourceFile;
+                                
+                                // Fila Normal -> Tooltip Genérico
+                                const b64Gen = btoa(unescape(encodeURIComponent(generateGenericTooltip(row, true))));
+                                return \`
+                                    <div class="flex justify-between items-center w-full h-full group/info">
+                                        <span class="text-[9px] text-slate-400 truncate w-[90px]" title="\${row._sourceFile}">\${row._sourceFile}</span>
+                                        <div onmouseenter="showGlobalTooltip(this, '\${b64Gen}')" onmouseleave="hideGlobalTooltip()" class="text-blue-400 hover:text-blue-600 cursor-help transition-transform opacity-50 group-hover/info:opacity-100 bg-slate-100 dark:bg-slate-700 p-0.5 rounded">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </div>
+                                    </div>
+                                \`;
                             }
                         }
-                    ];
+                    );
 
-                    const colsBanco = [
-                        { title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 },
+                    const colsBanco = [];
+                    if(!isReadOnly) colsBanco.push({ title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 });
+                    
+                    colsBanco.push(
+                        { title: "Fecha", field: "_fecha", width: 80, cssClass: "text-[10px] text-slate-500", formatter: (cell) => window.opener.ConciliacionLogic.formatDateCR(cell.getValue()) },
                         { title: "Afiliado", field: "_extractedId", headerFilter: true, width: 90, cssClass: "font-bold text-green-700" },
                         { title: "Ref (LIQ)", field: "_liqRef", headerFilter: true, width: 100, cssClass: "font-bold text-blue-700" },
-                        { title: "Descripción", field: "_desc", headerFilter: true, width: 180, cssClass: "text-[10px]" },
-                        { title: "Créditos", field: "_monto", formatter: "money", hozAlign: "right" },
-                        { title: "Archivo", field: "_sourceFile", width: 80, headerFilter: true, cssClass: "text-[9px]" }
-                    ];
+                        { title: "Descripción", field: "_desc", headerFilter: true, width: 150, cssClass: "text-[10px] truncate" },
+                        { title: "Créditos", field: "_monto", formatter: "money", hozAlign: "right", cssClass: "font-bold" },
+                        { 
+                            title: "Origen / Detalles", field: "_sourceFile", width: 150, headerFilter: true,
+                            formatter: (cell) => {
+                                const row = cell.getRow();
+                                if(row._isAdjustment) {
+                                    const b64 = btoa(unescape(encodeURIComponent(generateTooltip(row, false))));
+                                    return \`
+                                        <div class="flex justify-between items-center w-full h-full">
+                                            <div onmouseenter="showGlobalTooltip(this, '\${b64}')" onmouseleave="hideGlobalTooltip()" class="flex items-center gap-1 cursor-help">
+                                                <span class="bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 px-1.5 py-0.5 rounded text-[9px] font-bold border border-green-200 dark:border-green-700 truncate">\${row._adjType || 'Ajuste'} ℹ️</span>
+                                            </div>
+                                            \${isReadOnly ? '' : \`<button onclick="window.deleteAdj('\${row._uid}', 'pag')" class="text-red-500 hover:bg-red-100 dark:hover:bg-red-900/50 px-1 rounded shadow-sm transition-colors text-[10px]" title="Eliminar Ajuste">✖</button>\`}
+                                        </div>
+                                    \`;
+                                }
+                                
+                                // Fila Normal -> Tooltip Genérico
+                                const b64Gen = btoa(unescape(encodeURIComponent(generateGenericTooltip(row, false))));
+                                return \`
+                                    <div class="flex justify-between items-center w-full h-full group/info">
+                                        <span class="text-[9px] text-slate-400 truncate w-[90px]" title="\${row._sourceFile}">\${row._sourceFile}</span>
+                                        <div onmouseenter="showGlobalTooltip(this, '\${b64Gen}')" onmouseleave="hideGlobalTooltip()" class="text-blue-400 hover:text-blue-600 cursor-help transition-transform opacity-50 group-hover/info:opacity-100 bg-slate-100 dark:bg-slate-700 p-0.5 rounded">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </div>
+                                    </div>
+                                \`;
+                            }
+                        }
+                    );
 
-                    // Helper Formato Moneda
-                    const fmt = (n) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(n);
-
-                    // Función de Recálculo
+                    // 1. Funciones Centrales
                     function updateCalc() {
                         let sumV = 0; let selV = [];
-                        gVentas.displayData.forEach(r => { 
-                            if(r._selected) { 
-                                sumV += (r._netoACI || r._neto || 0); 
-                                selV.push(r._uid); 
-                            } 
-                        });
+                        let globalSumV = 0; // Para el Header Superior
+                        
+                        if(gVentas && gVentas.displayData) {
+                            gVentas.displayData.forEach(r => { 
+                                const val = (r._netoACI || r._neto || 0);
+                                globalSumV += val;
+                                if(r._selected) { sumV += val; selV.push(r._uid); } 
+                            });
+                        }
 
                         let sumB = 0; let selB = [];
-                        gBanco.displayData.forEach(r => { 
-                            if(r._selected) { 
-                                sumB += (r._monto || 0); 
-                                selB.push(r._uid); 
-                            } 
-                        });
+                        let globalSumB = 0; // Para el Header Superior
+                        
+                        if(gBanco && gBanco.displayData) {
+                            gBanco.displayData.forEach(r => { 
+                                const val = (r._monto || 0);
+                                globalSumB += val;
+                                if(r._selected) { sumB += val; selB.push(r._uid); } 
+                            });
+                        }
 
+                        // --- Actualizar Diferencia Total Global (Arriba a la derecha) ---
+                        currentGlobalDiff = globalSumV - globalSumB; // Asignamos a la variable global
+                        const headerDiffEl = document.getElementById('header-diff-display');
+                        if (headerDiffEl) {
+                            headerDiffEl.innerText = fmt(currentGlobalDiff);
+                            headerDiffEl.className = "text-xl font-mono font-bold " + (Math.abs(currentGlobalDiff) > 5 ? 'text-red-500' : 'text-green-500');
+                        }
+
+                        // --- Actualizar Calculadora de Selección Inferior ---
                         const diff = sumV - sumB;
                         
                         document.getElementById('sum-ventas').innerText = fmt(sumV);
@@ -1089,7 +1410,10 @@ window.ConciliacionLogic = {
                     }
 
                     let gVentas, gBanco;
-                    
+                    // Inicializamos con el valor matemático inyectado directamente desde la tabla
+                    let currentGlobalDiff = ${diffVal}; 
+
+                    // 2. Inicialización
                     window.onload = function() {
                         const opts = { onCheckboxChange: () => updateCalc() };
                         gVentas = new VanillaGrid("#grid-ventas", rawVentas, colsVentas, opts); 
@@ -1099,74 +1423,181 @@ window.ConciliacionLogic = {
                             if(e.target.type === 'checkbox') setTimeout(updateCalc, 50);
                         });
 
-                        // --- LÓGICA DE BOTONES ---
+                        // 3. Lógica Formulario Avanzado (Calculadora)
+                        const elMV = document.getElementById('fm-mv');
+                        const elCom = document.getElementById('fm-com');
+                        const elRetV = document.getElementById('fm-retv');
+                        const elRetR = document.getElementById('fm-retr');
+                        const elAci = document.getElementById('fm-aci');
+                        const elNetoDisp = document.getElementById('fm-neto-display');
 
-                        // 1. Abrir Modal Ajuste
+                        const calcFinanzas = () => {
+                            const mv = parseFloat(elMV.value) || 0;
+                            const aci = parseFloat(elAci.value) || 0;
+                            
+                            if(document.activeElement === elMV || elCom.value === '') elCom.value = (mv * 0.0195).toFixed(2);
+                            if(document.activeElement === elMV || elRetV.value === '') elRetV.value = (mv * 0.0531).toFixed(2);
+                            if(document.activeElement === elMV || elRetR.value === '') elRetR.value = (mv * 0.0176).toFixed(2);
+
+                            const com = parseFloat(elCom.value) || 0;
+                            const rv = parseFloat(elRetV.value) || 0;
+                            const rr = parseFloat(elRetR.value) || 0;
+
+                            const netoPuro = mv - com - rv - rr;
+                            const netoFinal = netoPuro - aci;
+
+                            elNetoDisp.innerText = fmt(netoFinal);
+                            return { mv, com, rv, rr, aci, netoPuro, netoFinal };
+                        };
+
+                        [elMV, elCom, elRetV, elRetR, elAci].forEach(el => el.addEventListener('input', calcFinanzas));
+
+                        // 4. Eventos de Pegar Imagen (Ctrl+V)
+                        const evZone = document.getElementById('fm-evidence-zone');
+                        const evPreview = document.getElementById('fm-ev-preview');
+                        const evB64 = document.getElementById('fm-evidence-b64');
+                        const evText = document.getElementById('fm-ev-text');
+                        const evClear = document.getElementById('fm-ev-clear');
+
+                        evZone.addEventListener('paste', (e) => {
+                            e.preventDefault();
+                            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                            for (let index in items) {
+                                const item = items[index];
+                                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                                    const blob = item.getAsFile();
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                        evPreview.src = event.target.result;
+                                        evPreview.classList.remove('hidden');
+                                        evB64.value = event.target.result;
+                                        evText.classList.add('hidden');
+                                        evClear.classList.remove('hidden');
+                                    };
+                                    reader.readAsDataURL(blob);
+                                }
+                            }
+                        });
+
+                        evClear.onclick = (e) => {
+                            e.stopPropagation(); 
+                            evPreview.src = '';
+                            evPreview.classList.add('hidden');
+                            evB64.value = '';
+                            evText.classList.remove('hidden');
+                            evClear.classList.add('hidden');
+                        };
+
+                        // 5. Abrir Modal y Autocompletar
                         document.getElementById('btn-add-adj').onclick = function() {
+                            const srcAfil = rawBanco.length > 0 ? rawBanco[0]._extractedId : (rawVentas.length > 0 ? rawVentas[0]._id : '');
+                            const srcLiq = rawBanco.length > 0 ? rawBanco[0]._liqRef : (rawVentas.length > 0 ? rawVentas[0]._liq : '');
+                            
+                            document.getElementById('fm-afil').value = srcAfil;
+                            document.getElementById('fm-liq').value = srcLiq;
+                            document.getElementById('fm-comercio').value = rawVentas.length > 0 ? (rawVentas[0]["3"] || '') : '';
+                            
+                            const today = new Date().toISOString().split('T')[0];
+                            document.getElementById('fm-ftrans').value = today;
+                            document.getElementById('fm-fpago').value = today;
+
+                            // --- AUTOCOMPLETADO INTELIGENTE DEL MONTO ---
+                            if (currentGlobalDiff !== 0) {
+                                // Factor inverso matemático: Neto Inverso / Factor de Retenciones (0.9098)
+                                let sugVenta = (currentGlobalDiff * -1) / 0.9098;
+                                
+                                document.getElementById('fm-mv').value = sugVenta.toFixed(2);
+                                calcFinanzas(); // Forzar el recálculo visual inmediato
+                            } else {
+                                document.getElementById('fm-mv').value = '';
+                                [elCom, elRetV, elRetR, elAci].forEach(el => el.value = '');
+                                elNetoDisp.innerText = '₡0.00';
+                            }
+
                             document.getElementById('modal-adj').classList.remove('hidden');
                         };
 
-                        // 2. Guardar Ajuste
+                        // 6. Guardar Ajuste / Crear Fila
                         document.getElementById('btn-save-adj').onclick = function() {
-                            const types = Array.from(document.getElementById('adj-type').selectedOptions).map(o => o.value);
-                            const amount = parseFloat(document.getElementById('adj-amount').value);
-                            const reason = document.getElementById('adj-reason').value;
+                            const type = document.getElementById('fm-type').value;
+                            const target = document.getElementById('fm-target').value;
+                            const reason = document.getElementById('fm-reason').value;
                             
-                            if(types.length === 0) return alert("Debe seleccionar al menos un Tipo de Ajuste.");
-                            if(isNaN(amount) || amount === 0) return alert("Debe ingresar un monto válido (puede ser negativo).");
+                            if(!type) return alert("Debe seleccionar un Tipo de Ajuste.");
+                            
+                            const res = calcFinanzas();
+                            if(res.mv === 0 && res.netoFinal === 0) return alert("Debe ingresar montos válidos.");
 
-                            // Crear Fila Ficticia
                             const newRow = {
-                                _uid: 'adj_' + Date.now(),
-                                _id: 'AJUSTE',
-                                _netoACI: amount,
-                                _neto: amount,
-                                _isAdjustment: true, // Flag importante
-                                _adjTypes: types,
+                                _uid: 'man_' + Date.now(),
+                                _isAdjustment: true,
+                                _selected: true,
+                                _sourceFile: 'Registro Manual',
+                                _target: target,
+                                _adjType: type,
                                 _adjReason: reason,
-                                _selected: true, // Auto-seleccionar
-                                _sourceFile: 'MANUAL'
+                                _adjEvidence: evB64.value, 
+                                _fecha: document.getElementById('fm-ftrans').value,
+                                _fechaPago: document.getElementById('fm-fpago').value,
+                                _tarjeta: document.getElementById('fm-tarjeta').value,
+                                _auth: document.getElementById('fm-auth').value,
                             };
 
-                            // Inyectar en Grid Ventas
-                            // VanillaGrid necesita actualizar data completa
-                            const newData = [...gVentas.displayData, newRow];
-                            gVentas.updateData(newData);
+                            if (target === 'det') {
+                                newRow._id = document.getElementById('fm-afil').value;
+                                newRow._liq = document.getElementById('fm-liq').value;
+                                newRow["3"] = document.getElementById('fm-comercio').value;
+                                newRow._venta = res.mv;
+                                newRow._comision = res.com;
+                                newRow._retV = res.rv;
+                                newRow._retR = res.rr;
+                                newRow._aciOrig = res.aci; 
+                                newRow._neto = res.netoPuro;
+                                newRow._netoACI = res.netoFinal;
+
+                                const newData = [...gVentas.displayData, newRow];
+                                gVentas.updateData(newData);
+                            } else {
+                                newRow._extractedId = document.getElementById('fm-afil').value;
+                                newRow._liqRef = document.getElementById('fm-liq').value;
+                                newRow._desc = '[' + type + '] ' + document.getElementById('fm-comercio').value;
+                                newRow._monto = res.netoFinal; 
+                                
+                                const newData = [...gBanco.displayData, newRow];
+                                gBanco.updateData(newData);
+                            }
                             
-                            // Cerrar modal y recalcular
                             document.getElementById('modal-adj').classList.add('hidden');
-                            // Limpiar form
-                            document.getElementById('adj-amount').value = '';
-                            document.getElementById('adj-reason').value = '';
+                            [elMV, elCom, elRetV, elRetR, elAci, document.getElementById('fm-tarjeta'), document.getElementById('fm-auth'), document.getElementById('fm-reason')].forEach(e => e.value = '');
+                            evClear.onclick(new Event('click')); 
                             
                             updateCalc();
                         };
 
-                        // 3. Conciliar Manualmente
+                        // 7. Conciliar Manualmente
                         document.getElementById('btn-manual').onclick = function() {
                             const selection = updateCalc();
                             
-                            // Si hay ajustes manuales en la selección, los detectamos
-                            // (Nota: La lógica de guardar estos ajustes en la BD real vendrá después)
-                            
                             if(window.opener && window.opener.ConciliacionLogic) {
-                                // Pasamos el motivo combinado si hay ajustes
                                 let finalReason = "Conciliación Manual";
-                                const adjustments = gVentas.displayData.filter(r => r._selected && r._isAdjustment);
+                                const adjVentas = gVentas.displayData.filter(r => r._selected && r._isAdjustment);
+                                const adjBanco = gBanco.displayData.filter(r => r._selected && r._isAdjustment);
+                                const adjustments = [...adjVentas, ...adjBanco];
+                                
                                 if(adjustments.length > 0) {
-                                    finalReason = "Ajuste: " + adjustments.map(a => a._adjTypes.join(', ')).join(' + ');
+                                    const c = adjustments.length;
+                                    const totalAjuste = adjustments.reduce((s, a) => s + (parseFloat(a._netoACI || a._monto) || 0), 0);
+                                    finalReason = "Ajuste Manual (" + c + " fila/s) ₡ " + totalAjuste.toFixed(2);
                                 } else {
                                     const userReason = prompt("Justificación (Opcional):", "Ajuste manual");
                                     if(userReason === null) return;
                                     if(userReason) finalReason = userReason;
                                 }
 
-                                // Inyectar Ajustes
                                 if(adjustments.length > 0 && typeof window.opener.ConciliacionLogic.injectAdjustments === 'function') {
                                     window.opener.ConciliacionLogic.injectAdjustments(adjustments);
                                 }
 
-                                // Aplicar Match Manual
                                 if(typeof window.opener.ConciliacionLogic.applyManualMatch === 'function') {
                                     window.opener.ConciliacionLogic.applyManualMatch(selection, finalReason);
                                 } else {
@@ -1176,21 +1607,8 @@ window.ConciliacionLogic = {
                             }
                         };
 
-                        // 4. Diferir
-                        document.getElementById('btn-defer').onclick = function() {
-                            const selection = updateCalc();
-                            const rowsToDefer = [];
-                            // (Lógica de recolección igual a antes...)
-                            gVentas.displayData.forEach(r => { if(r._selected) rowsToDefer.push({ type: 'venta', rawData: r }); });
-                            gBanco.displayData.forEach(r => { if(r._selected) rowsToDefer.push({ type: 'banco', rawData: r }); });
-
-                            if(rowsToDefer.length === 0) return alert("Seleccione filas para diferir.");
-
-                            if(window.opener && window.opener.ConciliacionLogic) {
-                                window.opener.ConciliacionLogic.deferRows(rowsToDefer);
-                                window.close();
-                            }
-                        };
+                        // 8. Sincronización inicial
+                        updateCalc();
                     };
                 </script>
                 
@@ -1200,6 +1618,69 @@ window.ConciliacionLogic = {
                     <div class="flex gap-2"><span class="text-slate-500">CNT:</span><span id="gst-count" class="font-bold">0</span></div>
                     <div class="flex gap-2"><span class="text-slate-500">SUM:</span><span id="gst-sum" class="font-bold">0</span></div>
                 </div>
+                
+                <!-- CONTENEDOR TOOLTIP FLOTANTE GLOBAL (Anti-Clipping) -->
+                <div id="global-float-tooltip" class="fixed hidden bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 p-3 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-600 z-[99999] transform transition-opacity duration-200 opacity-0"></div>
+
+                <script>
+                    // Motor de Tooltip Global Interactivo
+                    let hideTimeout = null;
+                    const tt = document.getElementById('global-float-tooltip');
+
+                    // Si el usuario pone el mouse SOBRE el propio tooltip, cancelamos el cierre.
+                    tt.addEventListener('mouseenter', () => {
+                        if (hideTimeout) clearTimeout(hideTimeout);
+                    });
+
+                    // Si el usuario saca el mouse del tooltip, lo escondemos.
+                    tt.addEventListener('mouseleave', () => {
+                        window.hideGlobalTooltip(true); // Cierre forzado
+                    });
+
+                    window.showGlobalTooltip = function(el, htmlB64) {
+                        // Si estábamos a punto de cerrarlo, cancelar
+                        if (hideTimeout) clearTimeout(hideTimeout);
+                        
+                        tt.innerHTML = decodeURIComponent(escape(atob(htmlB64)));
+                        
+                        // Habilitar interacción (pointer-events-auto) para que funcione el scroll
+                        tt.classList.remove('pointer-events-none');
+                        tt.classList.add('pointer-events-auto');
+                        tt.classList.remove('hidden');
+                        
+                        // Calcular posición
+                        const rect = el.getBoundingClientRect();
+                        let top = rect.bottom + 5;
+                        let left = rect.left;
+                        
+                        // Evitar desbordamiento
+                        if (left + 320 > window.innerWidth) left = window.innerWidth - 330;
+                        // Ajuste inteligente: Si abajo no cabe, lo abrimos hacia arriba
+                        if (top + 250 > window.innerHeight) top = rect.top - tt.offsetHeight - 5;
+                        
+                        tt.style.top = top + 'px';
+                        tt.style.left = left + 'px';
+                        
+                        // Efecto fade in
+                        setTimeout(() => tt.classList.remove('opacity-0'), 10);
+                    };
+                    
+                    window.hideGlobalTooltip = function(force = false) {
+                        const delay = force ? 50 : 300; // 300ms de gracia para llegar al tooltip
+                        
+                        hideTimeout = setTimeout(() => {
+                            tt.classList.add('opacity-0');
+                            tt.classList.remove('pointer-events-auto');
+                            tt.classList.add('pointer-events-none');
+                            setTimeout(() => {
+                                // Doble chequeo por si el mouse volvió a entrar durante el fade-out
+                                if(tt.classList.contains('opacity-0')) {
+                                    tt.classList.add('hidden');
+                                }
+                            }, 200);
+                        }, delay);
+                    };
+                </script>
             </body>
             </html>
         `);

@@ -45,6 +45,7 @@ window.BACLogic = {
         const idxNeto = headerRow.findIndex(h => /Neto/i.test(h)); 
         const idxACI = headerRow.findIndex(h => /Ajuste.*Comisi/i.test(h)); 
         const idxLiq = headerRow.findIndex(h => /Liquidaci/i.test(h));
+        const idxFecha = headerRow.findIndex(h => /fecha/i.test(h)); 
         console.log("DEBUG LIQ INDEX:", idxLiq);
 
         const cleanNum = (val) => {
@@ -71,6 +72,7 @@ window.BACLogic = {
                 _raw: row, 
                 _id: row[0],
                 _liq: valLiq,
+                _fecha: idxFecha !== -1 ? row[idxFecha] : "", 
                 _venta: cleanNum(row[8]), 
                 _comision: cleanNum(row[9]), 
                 _retV: cleanNum(row[10]), 
@@ -149,6 +151,7 @@ window.BACLogic = {
         const iCodigo = headers.findIndex(h => h && String(h).toLowerCase().includes('código'));
         const iDesc = headers.findIndex(h => h && String(h).toLowerCase().includes('descripci'));
         const iCredito = headers.findIndex(h => h && String(h).toLowerCase().includes('crédito'));
+        const iFecha = headers.findIndex(h => h && String(h).toLowerCase().includes('fecha'));
 
         // Validación Estricta
         const missing = [];
@@ -193,9 +196,10 @@ window.BACLogic = {
             const rowObj = {
                 _uid: 'pag_' + Math.random().toString(36).substr(2, 9),
                 _desc: desc,
-                _extractedId: extractedID, // <--- Ahora sí está definida
+                _extractedId: extractedID, 
                 _liqRef: liqRef, 
                 _monto: m,
+                _fecha: iFecha !== -1 ? row[iFecha] : "", // NUEVO
                 _enabled: isAFI, 
                 _sourceFile: filename,
                 ...headers.reduce((acc, h, idx) => {
@@ -327,7 +331,6 @@ window.BACLogic = {
 
         // A. Inyectar Conciliaciones Manuales (Ya procesadas)
         this.manualMatches.forEach(group => {
-            // Calculamos totales del grupo
             const sumDet = group.rows.filter(r => r._type === 'Venta').reduce((s, r) => s + (r._netoACI || r._neto || 0), 0);
             const sumPag = group.rows.filter(r => r._type === 'Banco').reduce((s, r) => s + (r._monto || 0), 0);
             
@@ -337,11 +340,13 @@ window.BACLogic = {
                 count: group.rows.length,
                 neto: sumDet,
                 pagado: sumPag,
-                diff: sumDet - sumPag,
+                diferencia_val: sumDet - sumPag, 
                 rowsDet: group.rows.filter(r => r._type === 'Venta'),
                 rowsPag: group.rows.filter(r => r._type === 'Banco'),
-                _isManual: true, // Flag importante
-                _manualReason: group.reason
+                _isManual: true, 
+                _groupID: group.id, // Enlace para deshacer
+                _manualReason: group.reason,
+                _rowClass: "bg-purple-50/50 dark:bg-purple-900/20 border-l-4 border-l-purple-500" // MARCO DE COLOR
             });
         });
 
@@ -353,36 +358,42 @@ window.BACLogic = {
             const isMatch = Math.abs(diff) < 1 && dObj.sumNeto > 0 && pObj.sum > 0;
 
             if (isMatch) {
-                // CASO A: Conciliación Perfecta por Afiliado
+                // CASO A: Conciliación Perfecta
                 gridData.push({
                     uuid: `${timeKey}-${id}`,
                     id: id,
                     count: dObj.count,
                     neto: dObj.sumNeto,
                     pagado: pObj.sum,
-                    diff: diff,
+                    diferencia_val: diff, // CAMBIADO PARA EVITAR CSS HARDCODE
                     rowsDet: dObj.rows,
                     rowsPag: pObj.rows
                 });
             } else {
-                // CASO B: No cuadra -> Intentar "Rescate por Liquidación"
+                // CASO B: Rescate por Liquidación
                 const rescueResult = this.tryMatchByLiquidation(dObj.rows, pObj.rows, id, timeKey);
                 
-                // 1. Agregar los rescatados a la tabla verde
                 if (rescueResult.matched.length > 0) {
                     gridData.push(...rescueResult.matched);
                 }
 
-                // 2. Agregar los sobrantes reales a excepciones
-                // Solo si queda algo pendiente (si no hay nada, es que se concilió todo por partes)
                 if (rescueResult.residue.rowsDet.length > 0 || rescueResult.residue.rowsPag.length > 0) {
-                    // Recalcular montos del residuo
                     const resDetSum = rescueResult.residue.rowsDet.reduce((s,r) => s + r._netoACI, 0);
                     const resPagSum = rescueResult.residue.rowsPag.reduce((s,r) => s + r._monto, 0);
+                    
+                    // EXTRAER FECHA EXACTA
+                    let f = "N/A";
+                    if (rescueResult.residue.rowsDet.length > 0 && rescueResult.residue.rowsDet[0]._fecha) {
+                        f = rescueResult.residue.rowsDet[0]._fecha;
+                    } else if (rescueResult.residue.rowsPag.length > 0 && rescueResult.residue.rowsPag[0]._fecha) {
+                        f = rescueResult.residue.rowsPag[0]._fecha;
+                    }
+                    if(f !== "N/A") f = window.ConciliacionLogic.formatDateCR(f); 
                     
                     exceptions.push({
                         uuid: `${timeKey}-${id}-ERR`,
                         id: id,
+                        fecha: f,
                         count: rescueResult.residue.rowsDet.length,
                         neto: resDetSum,
                         pagado: resPagSum,
@@ -394,40 +405,34 @@ window.BACLogic = {
             }
         });
 
-        // 4. ACTUALIZAR TABLA PRINCIPAL (Nombres Corregidos)
+        // 4. ACTUALIZAR TABLA PRINCIPAL
         const columns = [
             { title: "ID Ref", field: "uuid", width: 140, headerFilter: true, visible: false }, 
             { 
-                title: "Afiliado / LIQ", field: "id", width: 140, 
+                title: "Afiliado / LIQ", field: "id", width: 180, 
                 formatter: (cell) => {
                     const r = cell.getRow(); 
                     let content = `<span class="font-bold">${r.id}</span>`;
-                    
-                    // A. Marca de Conciliación Manual (Grupo)
                     if(r._isManual) {
                         content += `<span class="ml-2 text-purple-600" title="${r._manualReason}">🤝</span>`;
+                        // BOTÓN ELIMINAR DIRECTO EN LA TABLA
+                        content += `<button onclick="window.ConciliacionLogic.undoManualMatch('${r._groupID}')" class="ml-2 bg-red-100 hover:bg-red-200 text-red-600 px-1.5 py-0.5 rounded text-[9px] shadow-sm font-bold uppercase transition-colors" title="Eliminar ajuste y restaurar">Deshacer</button>`;
                     }
-
-                    // B. Marca de Ajuste Específico (Fila Ficticia)
-                    // Buscamos si alguna fila interna es ajuste
-                    const hasAdj = r.rowsDet && r.rowsDet.some(d => d._isAdjustment);
-                    if(hasAdj) {
-                        content += `<span class="ml-1 text-yellow-600" title="Contiene Ajuste Manual (Contracargo/Devolución)">🛠️</span>`;
-                    }
-
+                    const hasAdj = (r.rowsDet && r.rowsDet.some(d => d._isAdjustment)) || (r.rowsPag && r.rowsPag.some(d => d._isAdjustment));
+                    if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene Fila Ficticia">🛠️</span>`;
                     return content;
                 }
-            }, 
+            },
             { title: "Trans.", field: "count", hozAlign: "center", bottomCalc: "sum" },
-            // CAMBIO DE NOMBRE
-            { title: "Detallado (esperado)", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            // CAMBIO DE NOMBRE
             { title: "Pagado (recibido)", field: "pagado", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", bottomCalc: "sum" }
+            { title: "Detallado (esperado)", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
+            { title: "Diferencia", field: "diferencia_val", hozAlign: "right", formatter: "money", bottomCalc: "sum" }
+            
         ];
 
+        // Lectura segura del umbral (si el input está comentado en HTML, usa 2000 por defecto)
         const thresholdInput = document.getElementById('threshold-bac');
-        const currentThreshold = thresholdInput ? parseFloat(thresholdInput.value) : 2000;
+        const currentThreshold = thresholdInput && thresholdInput.value ? parseFloat(thresholdInput.value) : 2000;
 
         // Indexar para Doble Clic
         this.data.processed = this.data.processed || {};
@@ -491,11 +496,11 @@ window.BACLogic = {
                 // ¡MATCH! -> A Tabla Verde
                 matched.push({
                     uuid: `${timeKey}-${afiId}-${liq}`,
-                    id: `${afiId} - LIQ ${liq}`, // ID visual compuesto
+                    id: `${afiId} - LIQ ${liq}`, 
                     count: detGroup.rows.length,
                     neto: detGroup.sum,
                     pagado: matchPagSum,
-                    diff: diff,
+                    diferencia_val: diff, 
                     rowsDet: detGroup.rows,
                     rowsPag: matchPagRows
                 });
@@ -529,25 +534,22 @@ window.BACLogic = {
         
         container.classList.remove('hidden');
 
-        // Columnas específicas para Auditoría (Agregamos "Estado")
+        // Columnas Auditoría: Con Totales y Ordenadas
         const columns = [
-            { title: "ID Ref", field: "uuid", visible: false },
+            { title: "Fecha", field: "fecha", width: 90, headerFilter: true, cssClass: "text-slate-500 font-mono text-[10px]" },
             { title: "Afiliado", field: "id", width: 100, headerFilter: true },
             { 
                 title: "Diagnóstico", field: "diff", width: 180, 
                 formatter: (cell) => {
-                    const row = cell.getRow(); // Acceso al objeto de datos
-                    const neto = row.neto;
-                    const pag = row.pagado;
-                    
-                    if(neto > 0 && pag === 0) return `<span class="text-orange-600 font-bold flex items-center gap-1">⚠ Falta Depósito</span>`;
-                    if(neto === 0 && pag > 0) return `<span class="text-blue-600 font-bold flex items-center gap-1">ℹ Sobrante Banco</span>`;
+                    const row = cell.getRow();
+                    if(row.neto > 0 && row.pagado === 0) return `<span class="text-orange-600 font-bold flex items-center gap-1">⚠ Falta Depósito</span>`;
+                    if(row.neto === 0 && row.pagado > 0) return `<span class="text-blue-600 font-bold flex items-center gap-1">ℹ Sobrante Banco</span>`;
                     return `<span class="text-red-600 font-bold flex items-center gap-1">❌ Diferencia Monto</span>`;
                 }
             },
-            { title: "EsDetallado (esperado)", field: "neto", hozAlign: "right", formatter: "money" },
-            { title: "Pagado (recibido)", field: "pagado", hozAlign: "right", formatter: "money" },
-            { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-600 bg-red-50 dark:bg-red-900/10" }
+            { title: "Pagado (recibido)", field: "pagado", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
+            { title: "Detallado (esperado)", field: "neto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
+            { title: "Diferencia", field: "diff", hozAlign: "right", formatter: "money", bottomCalc: "sum", cssClass: "font-bold text-red-600 bg-red-50 dark:bg-red-900/10" }
         ];
 
         // Instanciar Grid de Excepciones
@@ -917,9 +919,13 @@ window.BACLogic = {
 
     // Deshacer conciliación manual
     undoManualMatch: function(groupID) {
-        if(!confirm("¿Deshacer esta conciliación manual y devolver los registros al flujo?")) return;
+        if(!confirm("¿Deshacer esta conciliación y restaurar los datos iniciales? Las filas creadas manualmente se eliminarán permanentemente.")) return;
 
-        // 1. Reactivar filas originales
+        // 1. DESTRUIR filas de ajuste ficticio (purga total)
+        this.data.detalle = this.data.detalle.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
+        this.data.pagado = this.data.pagado.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
+
+        // 2. Reactivar filas reales originales
         this.data.detalle.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
         this.data.pagado.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
 
@@ -935,8 +941,13 @@ window.BACLogic = {
     // Inyectar filas de ajuste manual (creadas en el popup)
     injectAdjustments: function(newRows) {
         console.log("Inyectando Ajustes:", newRows);
-        // Concatenar y guardar
-        this.data.detalle = (this.data.detalle || []).concat(newRows);
+        newRows.forEach(row => {
+            if (row._target === 'pag') {
+                this.data.pagado.push(row);
+            } else {
+                this.data.detalle.push(row);
+            }
+        });
         // Importante: No llama a runMatch aquí porque applyManualMatch lo hará inmediatamente después
     },
 

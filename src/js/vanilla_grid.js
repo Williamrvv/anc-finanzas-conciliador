@@ -270,8 +270,10 @@ class VanillaGrid {
 
     createRow(row, idx) {
         const tr = document.createElement('tr');
-        // CHANGE: Agregado 'select-none' a la fila
-        tr.className = "hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-slate-100 dark:border-slate-700 group select-none";
+        // Soporte para clases personalizadas inyectadas desde los datos (ej. fondos de color)
+        let rowBaseClass = "hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-slate-100 dark:border-slate-700 group select-none";
+        if (row._rowClass) rowBaseClass += " " + row._rowClass;
+        tr.className = rowBaseClass;
         
         this.columns.forEach((col, colIdx) => {
             const td = document.createElement('td');
@@ -284,29 +286,10 @@ class VanillaGrid {
 
             // UX STICKY: Fijar celda a la izquierda
             if (col.formatter === 'checkbox') {
-                // z-10 para estar sobre el scroll normal, pero bajo el header (z-20/30)
-                // IMPORTANTE: bg-white/dark:bg-slate-800 es necesario para que el texto no se vea "a través" de la celda al hacer scroll
                 cls += "sticky left-0 z-10 bg-white dark:bg-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ";
             }
 
-            if(col.field === 'diff') {
-                const val = parseFloat(row[col.field]);
-                
-                // LEER OPCIÓN: Si no existe, default 2000. Si existe (incluso 0), usarla.
-                const optThresh = this.options.threshold;
-                const threshold = (optThresh !== undefined && optThresh !== null) ? optThresh : 2000;
-                
-                // LÓGICA DE COLOR (Usando valor absoluto)
-                // Si la diferencia (positiva o negativa) es mayor al umbral -> ROJO
-                if(Math.abs(val) > threshold) {
-                    cls += "text-red-600 font-bold bg-red-50 dark:bg-red-900/10 ";
-                } 
-                // Si es exactamente 0 -> VERDE
-                else if(val === 0) {
-                    cls += "text-green-600 font-bold ";
-                }
-                // Si está dentro del umbral (ej: diferencia de 5 colones) -> NEUTRO
-            }
+            // (Lógica de colores eliminada a petición del cliente)
 
             td.className = cls;
             let content = row[col.field];
@@ -838,8 +821,9 @@ class VanillaGrid {
              formatted = formatted.replace(/\./g, ' '); 
         }
 
+        // Devolvemos el número negativo con formato neutral
         if (num < 0) {
-            return `<span class="text-red-600 font-bold">-${formatted}</span>`;
+            return `-${formatted}`;
         }
         return formatted;
     }

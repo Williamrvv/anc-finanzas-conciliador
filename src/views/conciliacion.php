@@ -33,6 +33,23 @@
             
             <!-- PANEL DE CONTROL BAC -->
             <div class="grid grid-cols-12 gap-3 h-32 shrink-0">
+
+                <!-- 3. Drop Pagado (2 Cols) -->
+                <div id="drop-bac-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50">
+                    <svg class="w-8 h-8 text-slate-300 group-hover:text-green-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 9l-3 6m0-6l3 6"></path></svg>
+                    <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Arrastra<br>Pagado BAC</span>
+                    <input type="file" id="file-bac-pagado" class="hidden pointer-events-auto" accept=".xlsx, .xls">
+                    <span id="status-bac-pagado" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
+                </div>
+
+                <!-- 4. Tarjeta Pagado (2 Cols) -->
+                <div id="card-bac-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden shadow-sm group transition-all cursor-pointer" onclick="window.ConciliacionFunctions.openPopup('pagado')">
+                    <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('pagado')" class="absolute top-1 right-1 p-1 text-green-600/50 hover:text-green-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-green-50/80 dark:bg-green-900/80 rounded">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                    </button>
+                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(TF)</span>
+                    <span id="sum-depositos" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
+                </div> 
                 
                 <!-- 1. Drop Detalle (2 Cols) -->
                 <div id="drop-bac-detalle" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50">
@@ -52,23 +69,6 @@
                         <div id="bac-summary-container" class="h-full flex items-center min-w-[450px] w-full"></div>
                     </div>
                 </div>
-
-                <!-- 3. Drop Pagado (2 Cols) -->
-                <div id="drop-bac-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50">
-                    <svg class="w-8 h-8 text-slate-300 group-hover:text-green-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 9l-3 6m0-6l3 6"></path></svg>
-                    <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Arrastra<br>Pagado BAC</span>
-                    <input type="file" id="file-bac-pagado" class="hidden pointer-events-auto" accept=".xlsx, .xls">
-                    <span id="status-bac-pagado" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
-                </div>
-
-                <!-- 4. Tarjeta Pagado (2 Cols) -->
-                <div id="card-bac-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden shadow-sm group transition-all cursor-pointer" onclick="window.ConciliacionFunctions.openPopup('pagado')">
-                    <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('pagado')" class="absolute top-1 right-1 p-1 text-green-600/50 hover:text-green-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-green-50/80 dark:bg-green-900/80 rounded">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                    </button>
-                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(TF)</span>
-                    <span id="sum-depositos" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
-                </div> 
             </div>
 
             <!-- Tabla Central BAC -->
@@ -85,13 +85,13 @@
                         
                         <div class="flex items-center gap-3">
                             <!-- Umbral BAC (Restaurado) -->
-                            <div class="flex items-center bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 px-2 py-1">
+                            <!-- <div class="flex items-center bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 px-2 py-1">
                                 <span class="text-[10px] font-bold text-slate-400 mr-2 uppercase">Diff Max:</span>
                                 <span class="text-slate-400 font-bold text-xs mr-1">₡</span>
                                 <input type="number" id="threshold-bac" value="2000" step="500" 
                                        oninput="window.ConciliacionFunctions.updateThreshold(this.value, 'bac')" 
                                        class="w-16 bg-transparent border-none text-xs font-bold text-right outline-none p-0 text-slate-700 dark:text-white">
-                            </div>
+                            </div> -->
 
                             <!-- Buscador BAC -->
                             <div class="relative w-64">
@@ -124,30 +124,6 @@
                     <!-- Contenedor Grid Excepciones -->
                     <div id="table-exceptions-bac" class="h-[300px] border border-orange-200 dark:border-orange-800 rounded-b-lg overflow-hidden shadow-sm"></div>
                 </div>
-                <!-- TABLA DIFERIDOS (SALDOS ARRASTRADOS) -->
-                <div id="audit-deferred-bac" class="flex flex-col gap-2 mt-4 hidden">
-                    <div class="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-t-lg flex justify-between items-center">
-                        <h4 class="text-xs font-bold text-blue-700 dark:text-blue-400 uppercase flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Saldos Pendientes (Diferidos para Futuro)
-                        </h4>
-                    </div>
-                    <div id="table-deferred-bac" class="h-[200px] border border-blue-200 dark:border-blue-800 rounded-b-lg overflow-hidden shadow-sm"></div>
-                </div>
-
-                <!-- TABLA CONCILIACIONES MANUALES -->
-                <div id="audit-manual-bac" class="flex flex-col gap-2 mt-4 hidden group/manual">
-                    <div class="px-4 py-2 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-t-lg flex justify-between items-center">
-                        <h4 class="text-xs font-bold text-purple-700 dark:text-purple-400 uppercase flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Historial de Conciliaciones Manuales
-                        </h4>
-                        <span class="text-[10px] text-purple-600 dark:text-purple-300 bg-purple-100 dark:bg-purple-800 px-2 py-0.5 rounded-full font-bold shadow-sm">
-                            Registros Ajustados por Usuario
-                        </span>
-                    </div>
-                    <div id="table-manual-bac" class="h-[250px] border border-purple-200 dark:border-purple-800 rounded-b-lg overflow-hidden shadow-sm"></div>
-                </div>
 
             </div>
         </div>
@@ -158,6 +134,24 @@
             
             <!-- Panel Control Scotia -->
             <div class="grid grid-cols-12 gap-3 h-32 shrink-0">
+
+                <!-- Drop Pagado -->
+                <div id="drop-scotia-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 group transition-all relative z-50">
+                    <svg class="w-8 h-8 text-slate-300 group-hover:text-green-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 9l-3 6m0-6l3 6"></path></svg>
+                    <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Arrastra<br>Pagado Scotia</span>
+                    <input type="file" id="file-scotia-pagado" class="hidden pointer-events-auto" accept=".xlsx, .xls">
+                    <span id="status-scotia-pagado" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
+                </div>
+
+                <!-- Tarjeta Pagado -->
+                <div id="card-scotia-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden group cursor-pointer transition-all" onclick="window.ConciliacionFunctions.openPopup('scotia_pagado')">
+                    <div class="absolute top-2 right-2 p-1 bg-green-100 dark:bg-green-800 rounded-full text-green-600 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                    </div>
+                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1">Total Banco</span>
+                    <span id="sc-total-pagado" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
+                </div>
+                
                 <!-- Drop Detalle -->
                 <div id="drop-scotia-detalle" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 group transition-all relative z-50">
                     <svg class="w-8 h-8 text-slate-300 group-hover:text-red-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 9l-3 6m0-6l3 6"></path></svg>
@@ -176,23 +170,6 @@
                         <!-- Ancho Mínimo Fijo para la tabla de 3 filas -->
                         <div id="scotia-summary-container" class="h-full flex items-center justify-center min-w-[500px]"></div>
                     </div>
-                </div>
-
-                <!-- Drop Pagado -->
-                <div id="drop-scotia-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 group transition-all relative z-50">
-                    <svg class="w-8 h-8 text-slate-300 group-hover:text-green-500 mb-1 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 9l-3 6m0-6l3 6"></path></svg>
-                    <span class="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 uppercase text-center leading-tight pointer-events-none">Arrastra<br>Pagado Scotia</span>
-                    <input type="file" id="file-scotia-pagado" class="hidden pointer-events-auto" accept=".xlsx, .xls">
-                    <span id="status-scotia-pagado" class="text-[9px] text-slate-400 truncate w-full px-1 mt-1 hidden"></span>
-                </div>
-
-                <!-- Tarjeta Pagado -->
-                <div id="card-scotia-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden group cursor-pointer transition-all" onclick="window.ConciliacionFunctions.openPopup('scotia_pagado')">
-                    <div class="absolute top-2 right-2 p-1 bg-green-100 dark:bg-green-800 rounded-full text-green-600 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                    </div>
-                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1">Total Banco</span>
-                    <span id="sc-total-pagado" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
                 </div>
             </div>
 
