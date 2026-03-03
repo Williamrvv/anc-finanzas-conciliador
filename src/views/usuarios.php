@@ -80,7 +80,7 @@
 
 <!-- Modal Formulario -->
 <div id="modal-usuario" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 dark:border-slate-700 transform transition-all flex flex-col max-h-[90vh]">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200 dark:border-slate-700 transform transition-all flex flex-col max-h-[90vh] animate-fade-in-up">
         
         <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center shrink-0">
             <h3 id="u-modal-title" class="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">Nuevo Usuario</h3>
@@ -116,7 +116,7 @@
                 </div>
 
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Institucional (Clave Única)</label>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo ANC</label>
                     <input type="email" name="email" id="u-email" required class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
                 </div>
                 

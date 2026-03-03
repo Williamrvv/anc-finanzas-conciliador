@@ -1,4 +1,4 @@
-<div class="flex flex-col min-h-full" id="conciliacion-module">
+<div class="flex flex-col min-h-full animate-fade-in-up" id="conciliacion-module">
     
     <!-- HEADER GLOBAL -->
     <header class="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700 shrink-0">
