@@ -344,9 +344,10 @@ window.BACLogic = {
                 rowsDet: group.rows.filter(r => r._type === 'Venta'),
                 rowsPag: group.rows.filter(r => r._type === 'Banco'),
                 _isManual: true, 
-                _groupID: group.id, // Enlace para deshacer
+                _groupID: group.id,
                 _manualReason: group.reason,
-                _rowClass: "bg-purple-50/50 dark:bg-purple-900/20 border-l-4 border-l-purple-500" // MARCO DE COLOR
+                // Añadido 'animate-pulse hover:animate-none' para homologarlo visualmente con Scotia
+                _rowClass: "bg-purple-100 dark:bg-purple-900/40 border-l-[6px] border-l-purple-600 text-purple-900 dark:text-purple-100 font-medium animate-pulse hover:animate-none" 
             });
         });
 
@@ -940,15 +941,10 @@ window.BACLogic = {
 
     // Inyectar filas de ajuste manual (creadas en el popup)
     injectAdjustments: function(newRows) {
-        console.log("Inyectando Ajustes:", newRows);
+        console.log("Inyectando Ajustes a Ventas BAC:", newRows);
         newRows.forEach(row => {
-            if (row._target === 'pag') {
-                this.data.pagado.push(row);
-            } else {
-                this.data.detalle.push(row);
-            }
+            this.data.detalle.push(row); 
         });
-        // Importante: No llama a runMatch aquí porque applyManualMatch lo hará inmediatamente después
     },
 
     // Recalcula los totales de la tarjeta verde (BAC Pagado)
@@ -1001,7 +997,7 @@ window.BACLogic = {
             <!DOCTYPE html>
             <html class="${isDark ? 'dark' : ''}">
             <head>
-                <title>Análisis: ${data.id}</title>
+                <title>Análisis BAC: ${data.id}</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <script>tailwind.config = { darkMode: 'class' }</script>
                 <script src="/js/vanilla_grid.js"></script>
@@ -1018,7 +1014,7 @@ window.BACLogic = {
                     <!-- ... (mismo header) ... -->
                     <div>
                         <h1 class="text-xl font-bold flex items-center gap-2">
-                            <span>🔎 Análisis de Transacción</span>
+                            <span>🔎 Análisis de ajuste BAC</span>
                             <span class="bg-blue-100 text-blue-800 text-sm px-2 py-0.5 rounded font-mono">${data.id}</span>
                         </h1>
                     </div>
@@ -1066,13 +1062,13 @@ window.BACLogic = {
                                 <div class="w-px h-8 bg-slate-300 dark:bg-slate-600"></div>
                                 
                                 <div class="flex flex-col">
-                                    <span class="text-[10px] text-slate-500 dark:text-slate-400 uppercase">Sel. Ventas</span>
-                                    <span id="sum-ventas" class="font-mono font-bold text-blue-600 dark:text-blue-400">₡0,00</span>
+                                    <span class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold">Sel. Pagado</span>
+                                    <span id="sum-banco" class="font-mono font-bold text-green-600 dark:text-green-400">₡0,00</span>
                                 </div>
                                 <div class="text-slate-400 dark:text-slate-500 font-bold">-</div>
                                 <div class="flex flex-col">
-                                    <span class="text-[10px] text-slate-500 dark:text-slate-400 uppercase">Sel. Banco</span>
-                                    <span id="sum-banco" class="font-mono font-bold text-green-600 dark:text-green-400">₡0,00</span>
+                                    <span class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold">Sel. Detallado</span>
+                                    <span id="sum-ventas" class="font-mono font-bold text-blue-600 dark:text-blue-400">₡0,00</span>
                                 </div>
                                 <div class="text-slate-400 dark:text-slate-500 font-bold">=</div>
                                 <div class="flex flex-col">
@@ -1127,9 +1123,6 @@ window.BACLogic = {
                         
                         <!-- Body Modal -->
                         <div class="p-6 overflow-y-auto flex-grow custom-scrollbar space-y-5">
-                            
-                            <!-- Oculto: Destino Forzado a Detallado -->
-                            <input type="hidden" id="fm-target" value="det">
 
                             <!-- Tipo de Ajuste -->
                             <div class="bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-100 dark:border-purple-800">
@@ -1347,15 +1340,11 @@ window.BACLogic = {
                     };
 
                     // --- ELIMINAR AJUSTE MANUAL AL VUELO ---
-                    window.deleteAdj = function(uid, target) {
+                    window.deleteAdj = function(uid) {
                         if(!confirm("¿Eliminar este ajuste manual insertado?")) return;
-                        if(target === 'det') {
-                            gVentas.updateData(gVentas.displayData.filter(r => r._uid !== uid));
-                        } else {
-                            gBanco.updateData(gBanco.displayData.filter(r => r._uid !== uid));
-                        }
+                        gVentas.updateData(gVentas.displayData.filter(r => r._uid !== uid));
                         updateCalc();
-                        hideGlobalTooltip(); // Limpiar residuos visuales
+                        hideGlobalTooltip(); 
                     };
 
                     // --- CONSTRUCCIÓN DE COLUMNAS INTELIGENTE ---
@@ -1468,9 +1457,9 @@ window.BACLogic = {
                             headerDiffEl.className = "text-xl font-mono font-bold " + (Math.abs(currentGlobalDiff) > 5 ? 'text-red-500' : 'text-green-500');
                         }
 
-                        // --- Actualizar Calculadora de Selección Inferior ---
-                        const diff = sumV - sumB;
-                        currentFooterDiff = diff; // Guardar el valor puro matemático (sin formato CR)
+                        // --- Actualiza la Calculadora de Selección Inferior ---
+                        const diff = sumB - sumV;
+                        currentFooterDiff = diff; 
                         
                         document.getElementById('sum-ventas').innerText = fmt(sumV);
                         document.getElementById('sum-banco').innerText = fmt(sumB);
@@ -1730,7 +1719,6 @@ window.BACLogic = {
                                 _isAdjustment: true,
                                 _selected: true,
                                 _sourceFile: 'Registro Manual',
-                                _target: 'det', // Siempre a detallado según regla
                                 _adjType: type,
                                 _adjReason: reason,
                                 _adjEvidence: evB64.value, 
@@ -1739,7 +1727,7 @@ window.BACLogic = {
                                 _tarjeta: document.getElementById('fm-tarjeta').value,
                                 _auth: document.getElementById('fm-auth').value,
                                 
-                                // Variables BAC Nativas
+                                // Variables BAC Nativas (Van directo a Ventas)
                                 _id: document.getElementById('fm-afil').value,
                                 _liq: document.getElementById('fm-liq').value,
                                 "3": document.getElementById('fm-comercio').value,
@@ -1748,10 +1736,11 @@ window.BACLogic = {
                                 _retV: res.rv,
                                 _retR: res.rr,
                                 _aciOrig: res.aci, 
-                                _neto: (res.venta - res.com - res.rv - res.rr), // Neto bruto sin ACI
-                                _netoACI: res.neto, // El Neto final que digitó el usuario
+                                _neto: (res.venta - res.com - res.rv - res.rr), 
+                                _netoACI: res.netoFinal
                             };
 
+                            // Inyección Directa y Única a Ventas
                             const newData = [...gVentas.displayData, newRow];
                             gVentas.updateData(newData);
                             
