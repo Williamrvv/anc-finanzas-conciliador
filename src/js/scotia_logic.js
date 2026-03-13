@@ -419,8 +419,8 @@ window.ScotiaLogic = {
                 _isManual: true, 
                 _groupID: group.id,
                 _manualReason: group.reason,
-                // UI: Fondo sólido morado para Scotia + Borde + Animación
-                _rowClass: "bg-purple-100 dark:bg-purple-900/40 border-l-[6px] border-l-purple-600 text-purple-900 dark:text-purple-100 font-medium animate-pulse hover:animate-none" 
+                // UI: Azul pastel translúcido estático
+                _rowClass: "bg-blue-50 dark:bg-blue-900/20 border-l-[4px] border-l-blue-400 font-medium text-slate-800 dark:text-slate-200" 
             });
         });
 
@@ -430,6 +430,11 @@ window.ScotiaLogic = {
             
             const det = detGroup[id] || { count:0, neto:0, rows: [] };
             const pag = pagGroup[id] || { sum:0, rows: [] };
+
+            // DETECCIÓN DE SALDO ANTERIOR
+            const isHistorical = det.rows.some(r => r._isHistorical) || pag.rows.some(r => r._isHistorical);
+            const classRow = isHistorical ? "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium" : "";
+            
             const diff = det.neto - pag.sum;
             
             const isMatch = Math.abs(diff) < 1 && det.neto > 0 && pag.sum > 0;
@@ -442,7 +447,10 @@ window.ScotiaLogic = {
                 pagado: pag.sum,
                 diferencia_val: diff, // Columna neutral
                 rowsDet: det.rows,
-                rowsPag: pag.rows
+                rowsPag: pag.rows,
+                // PROPAGACIÓN DE HISTÓRICOS (Color Ámbar)
+                _isHistoricalGroup: isHistorical,
+                _rowClass: classRow
             };
 
             if (isMatch) {
@@ -458,6 +466,8 @@ window.ScotiaLogic = {
                     
                     if (matchIdx !== -1) {
                         const pRow = unmatchedPag.splice(matchIdx, 1)[0]; // Sacarlo
+                        const isResHistorical = dRow._isHistorical || pRow._isHistorical;
+                        
                         gridData.push({
                             uuid: `${timeKey}-${id}-resc-${dRow._uid}`,
                             id: `${id} (Rescate)`,
@@ -466,7 +476,9 @@ window.ScotiaLogic = {
                             pagado: pRow._monto,
                             diferencia_val: dRow._neto - pRow._monto,
                             rowsDet: [dRow],
-                            rowsPag: [pRow]
+                            rowsPag: [pRow],
+                            _isHistoricalGroup: isResHistorical,
+                            _rowClass: isResHistorical ? "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium" : ""
                         });
                     } else {
                         unmatchedDet.push(dRow);
@@ -673,9 +685,16 @@ window.ScotiaLogic = {
             timestamp: new Date()
         });
 
-        // Recalcular
+        // Recalcular Y FORZAR RENDERIZADO DE TABLA
         this.updateScotiaCard();
         this.recalculateScotiaPagado();
+        this.runMatchScotiabank();
+        
+        SysUI.alert(`Conciliación manual de Scotiabank aplicada.\nMotivo: "${reason}"`, "Éxito", "success");
+        setTimeout(() => {
+            const table = document.getElementById('table-result-scotia');
+            if (table) { table.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        }, 500);
     },
 
     undoManualScotiaMatch: function(groupID) {
@@ -854,7 +873,7 @@ window.ScotiaLogic = {
             <!DOCTYPE html>
             <html class="${isDark ? 'dark' : ''}">
             <head>
-                <title>Análisis Davibank: ${data.id}</title>
+                <title>IRI - Análisis Scotia: ${data.id}</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <script>
                     tailwind.config = { darkMode: 'class', theme: { extend: { animation: { 'fade-in-up': 'fadeInUp 0.4s ease-out forwards' }, keyframes: { fadeInUp: { '0%': { opacity: '0', transform: 'translateY(20px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } } } } } }
@@ -872,14 +891,14 @@ window.ScotiaLogic = {
                 <div class="flex justify-between items-center mb-4 pb-2 border-b border-slate-200 dark:border-slate-700 shrink-0">
                     <div>
                         <h1 class="text-xl font-bold flex items-center gap-2">
-                            <span>🔎 Análisis de Ajuste Davibank</span>
+                            <span>🔎 IRI - Análisis de Ajuste Scotia</span>   
                             <span class="bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300 text-sm px-2 py-0.5 rounded font-mono">${data.id}</span>
                         </h1>
                     </div>
                      <div class="text-right ${isReadOnly ? 'hidden' : ''}">
                         <span class="text-xs text-slate-400 uppercase font-bold mr-2">Diferencia Total:</span>
                         <span id="header-diff-display" class="text-xl font-mono font-bold ${Math.abs(diff) > 5 ? 'text-red-500' : 'text-green-500'}">
-                            0.00
+                            ${this.formatMoney(diff)}
                         </span>
                     </div>
                 </div>
@@ -1029,9 +1048,8 @@ window.ScotiaLogic = {
                                     </div>
 
                                     <!-- Identificación -->
-                                    <div class="grid grid-cols-3 gap-4">
-                                        <div class="col-span-1"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">MerID</label><input type="text" id="fm-afil" placeholder="MerID" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none"></div>
-                                        <div class="col-span-1"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Lote / Ref</label><input type="text" id="fm-liq" placeholder="Lote / Ref" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none font-mono"></div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div class="col-span-1"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">MerID (Afiliado)</label><input type="text" id="fm-afil" placeholder="MerID" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none"></div>
                                         <div class="col-span-1"><label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Comercio</label><input type="text" id="fm-comercio" placeholder="Comercio" class="w-full p-2 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none"></div>
                                     </div>
 
@@ -1059,9 +1077,9 @@ window.ScotiaLogic = {
                                             <div>
                                                 <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Tasa Com. Banco</label>
                                                 <select id="fm-tasa" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 text-slate-700 dark:text-slate-300 outline-none cursor-pointer">
+                                                    <option value="0" selected>0.00%</option>
                                                     <option value="0.0195">1.95%</option>
                                                     <option value="0.025">2.50%</option>
-                                                    <option value="0">0.00%</option>
                                                 </select>
                                             </div>
                                             <div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Comisión (Dinero)</label><input type="number" id="fm-com" class="w-full p-1.5 text-xs border rounded bg-white dark:bg-slate-900 dark:border-slate-600 text-red-600 dark:text-red-400 outline-none font-mono" placeholder="0.00"></div>
@@ -1101,7 +1119,20 @@ window.ScotiaLogic = {
                                 </button>
                             </div>
                         </div>
+                        <!-- Barra Status Autosuma Global (VanillaGrid busca este ID) -->
+                        <div id="global-table-stats" class="fixed bottom-[60px] left-0 w-full bg-slate-100 dark:bg-slate-800 border-t border-slate-300 dark:border-slate-700 py-1 px-4 flex justify-end items-center gap-6 text-xs font-mono hidden z-50 shadow-md">
+                            <div class="text-slate-500">SELECCIÓN:</div>
+                            <div class="flex gap-2"><span class="text-slate-500">CNT:</span><span id="gst-count" class="font-bold">0</span></div>
+                            <div class="flex gap-2"><span class="text-slate-500">SUM:</span><span id="gst-sum" class="font-bold">0</span></div>
+                        </div>
                     \`);
+
+                    // --- Búsqueda Inteligente de Índices (Lo subimos para que el Modal lo use) ---
+                    const idxMerId = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('merid')) || "MERID_NO_FOUND";
+                    const idxAuth = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('autori')) || "AUTH_NO_FOUND";
+                    
+                    // Aseguramos capturar "Fantasía", "Comercio" o "Razón Social" (Exclusivo de Scotia)
+                    const idxComercio = Object.keys(headersDet).find(k => headersDet[k] && (headersDet[k].toLowerCase().includes('fantas') || headersDet[k].toLowerCase().includes('comercio') || headersDet[k].toLowerCase().includes('raz'))) || "2";
 
                     // --- LÓGICA DE CALCULADORA SCOTIABANK ---
                     const elNeto = document.getElementById('fm-neto');
@@ -1125,7 +1156,8 @@ window.ScotiaLogic = {
 
                     window.calcFinanzas = (e) => {
                         let neto = parseFloat(elNeto.value) || 0;
-                        let tasaComision = parseFloat(elTasa.value) || 0.0195;
+                        let tasaVal = elTasa.value;
+                        let tasaComision = tasaVal === "" ? 0 : parseFloat(tasaVal);
                         let isMantenimiento = elType.value === 'Mantenimiento';
 
                         if (!e || e.target === elNeto || e.target === elTasa || e.target === elType) {
@@ -1156,40 +1188,48 @@ window.ScotiaLogic = {
                     const btnAddAdj = document.getElementById('btn-add-adj');
                     if (btnAddAdj) {
                         btnAddAdj.onclick = function() {
-                            const seleccionados = gVentas.displayData.filter(r => r._selected);
+                            // Ignoramos filas de ajuste previas para no copiar datos en blanco
+                            const seleccionados = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
                             const filaBase = seleccionados.length > 0 ? seleccionados[seleccionados.length - 1] : null;
 
                             document.getElementById('fm-afil').value = filaBase ? filaBase[idxMerId] : '';
-                            document.getElementById('fm-liq').value = filaBase ? filaBase[idxLote] : '';
                             
-                            let comercioIdx = Object.keys(headersDet).find(k => headersDet[k] && (headersDet[k].toLowerCase().includes('comercio') || headersDet[k].toLowerCase().includes('fantasia')));
-                            if (!comercioIdx) comercioIdx = "2"; 
-                            
-                            let comValue = filaBase ? filaBase[comercioIdx] : '';
-                            if (String(comValue).toLowerCase() === 'crc') comValue = ''; 
+                            // USAR EL ÍNDICE GLOBAL DECLARADO PREVIAMENTE
+                            let comValue = filaBase ? filaBase[idxComercio] : '';
+                            if (String(comValue).toLowerCase() === 'crc' || !isNaN(comValue)) comValue = ''; 
                             
                             document.getElementById('fm-comercio').value = comValue;
+
+                            const today = new Date().toISOString().split('T')[0];
+                            document.getElementById('fm-ftrans').value = today;
+                            document.getElementById('fm-fpago').value = today;
                             
-                            if (currentFooterDiff !== 0) elNeto.value = (currentFooterDiff * -1).toFixed(2);
+                            if (currentFooterDiff !== 0) elNeto.value = currentFooterDiff.toFixed(2);
                             else elNeto.value = '';
 
                             elType.value = '';
-                            elTasa.value = '0.0195';
+                            elTasa.value = '0';
                             elDynamicTitle.innerText = "Monto Bruto Final";
                             window.calcFinanzas();
                             document.getElementById('modal-adj').classList.remove('hidden');
                         };
                     }
 
+                    // BLOQUE 3 (Reemplazo BtnSaveAdj Scotia - Inyección real):
                     // GUARDAR AJUSTE SCOTIA (Este botón vive dentro del modal, siempre existe, pero lo protegemos por seguridad)
                     const btnSaveAdj = document.getElementById('btn-save-adj');
                     if (btnSaveAdj) {
                         btnSaveAdj.onclick = function() {
                             const type = elType.value;
+                            const ftrans = document.getElementById('fm-ftrans').value;
+                            
                             if(!type) return alert("Seleccione un tipo de ajuste.");
+                            if(!ftrans) return alert("La Fecha de Transacción es obligatoria.");
                             
                             const res = window.calcFinanzas();
                             if(res.bruto === 0 && res.neto === 0) return alert("Ingrese un Monto válido.");
+
+                            let comercioIdx = Object.keys(headersDet).find(k => headersDet[k] && (headersDet[k].toLowerCase().includes('comercio') || headersDet[k].toLowerCase().includes('fantasia') || headersDet[k].toLowerCase().includes('raz'))) || "2";
 
                             const newRow = {
                                 _uid: 'sco_man_' + Date.now(),
@@ -1199,13 +1239,14 @@ window.ScotiaLogic = {
                                 _adjType: type,
                                 _adjReason: document.getElementById('fm-reason').value,
                                 _adjEvidence: document.getElementById('fm-evidence-b64').value,
-                                _fecha: document.getElementById('fm-ftrans').value,
+                                _fecha: ftrans,
                                 _fechaPago: document.getElementById('fm-fpago').value,
                                 _tarjeta: document.getElementById('fm-tarjeta').value,
                                 _auth: document.getElementById('fm-auth').value,
                                 
                                 [idxMerId]: document.getElementById('fm-afil').value,
-                                [idxLote]: document.getElementById('fm-liq').value,
+                                [comercioIdx]: document.getElementById('fm-comercio').value,
+                                [idxAuth]: document.getElementById('fm-auth').value,
                                 _bruto: res.bruto,
                                 _neto: res.neto,
                                 "Monto Comisión": res.com,
@@ -1213,9 +1254,19 @@ window.ScotiaLogic = {
                                 "Retención ISR": res.isr
                             };
 
-                            gVentas.updateData([...gVentas.displayData, newRow]);
+                            // Inyección directa al grid del popup
+                            const newData = [...gVentas.displayData, newRow];
+                            gVentas.updateData(newData);
+                            
                             document.getElementById('modal-adj').classList.add('hidden');
-                            document.getElementById('fm-ev-clear').click(); 
+                            
+                            // Limpiar campos visuales tras guardar
+                            [elNeto, elCom, elIva, elIsr, document.getElementById('fm-tarjeta'), document.getElementById('fm-auth'), document.getElementById('fm-reason')].forEach(e => e.value = '');
+                            
+                            // Disparar click en limpiar evidencia si existe
+                            const btnClearEv = document.getElementById('fm-ev-clear');
+                            if(btnClearEv && !btnClearEv.classList.contains('hidden')) btnClearEv.click();
+                            
                             updateCalc();
                         };
                     }
@@ -1223,7 +1274,7 @@ window.ScotiaLogic = {
                     // CONCILIAR MANUALMENTE SCOTIA
                     const btnManual = document.getElementById('btn-manual');
                     if (btnManual) {
-                        btnManual.onclick = function() {
+                        btnManual.onclick = async function() { // AHORA ES ASÍNCRONA
                             const selection = {
                                 det: gVentas.displayData.filter(r => r._selected).map(r => r._uid),
                                 pag: gBanco.displayData.filter(r => r._selected).map(r => r._uid)
@@ -1237,7 +1288,8 @@ window.ScotiaLogic = {
                                     finalReason = "Ajuste Manual: " + adjustments.map(a => a._adjType).join(', ');
                                     window.opener.ConciliacionLogic.injectScotiaAdjustments(adjustments);
                                 } else {
-                                    const userReason = prompt("Justificación:", "Ajuste manual");
+                                    // INYECTAMOS EL NUEVO SYSUI PROMPT MODERNO
+                                    const userReason = await window.SysUI.prompt("Ingrese una justificación para forzar esta conciliación:", "Justificación Requerida", "Ajuste manual");
                                     if(!userReason) return;
                                     finalReason = userReason;
                                 }
@@ -1317,42 +1369,53 @@ window.ScotiaLogic = {
                         }
                     };
 
-                    // Sincronización final al modificar checkboxes atrás
+                    // Búsqueda inteligente de índices originales (Reutilizamos variables ya declaradas)
                     const originalUpdateCalc = updateCalc;
                     updateCalc = function() {
                         originalUpdateCalc();
                         const modalAdj = document.getElementById('modal-adj');
                         if (modalAdj && !modalAdj.classList.contains('hidden')) {
-                            if (currentFooterDiff !== 0) elNeto.value = (currentFooterDiff * -1).toFixed(2);
+                            if (currentFooterDiff !== 0) elNeto.value = currentFooterDiff.toFixed(2);
                             else elNeto.value = '';
                             window.calcFinanzas();
                         }
                     };
 
-                    // Búsqueda inteligente de índices originales
-                    const idxMerId = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('merid')) || "MERID_NO_FOUND";
-                    const idxAuth = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('autori')) || "AUTH_NO_FOUND";
-                    const idxLote = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('lote')) || "LOTE_NO_FOUND";
+                    // (Aquí borraste las 4 líneas conflictivas)
 
                     // COLUMNAS SCOTIA (DETALLE)
                     const colsVentas = [];
                     if(!isReadOnly) colsVentas.push({ title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 });
+                    
                     colsVentas.push(
                         { title: "Fecha", field: "_fecha", width: 80, cssClass: "text-[10px] text-slate-500", formatter: (cell) => window.opener.ConciliacionLogic.formatDateCR(cell.getValue()) },
                         { title: headersDet[idxMerId] || "MerID", field: idxMerId, headerFilter: true, width: 100, cssClass: "font-mono font-bold text-slate-700" },
-                        { title: headersDet[idxLote] || "Lote", field: idxLote, headerFilter: true, width: 80, cssClass: "text-[10px]" },
                         { title: headersDet[idxAuth] || "Autorización", field: idxAuth, headerFilter: true, width: 90, cssClass: "font-mono" },
                         { title: "Monto Bruto", field: "_bruto", formatter: "money", hozAlign: "right", cssClass: "text-slate-500" },
                         { title: "Monto Neto", field: "_neto", formatter: "money", hozAlign: "right", cssClass: "font-bold text-red-600" },
                         {
-                            title: "Estado / Info", field: "_sourceFile", width: 120, headerFilter: true,
+                            title: "Estado / Info", field: "_sourceFile", width: 140, headerFilter: true,
                             formatter: (cell) => {
                                 const row = cell.getRow();
-                                const isAjuste = row._mode === 'AJUSTE'; // Modo Inverso de Scotia (Punto 11)
                                 const b64Gen = btoa(unescape(encodeURIComponent(generateGenericTooltip(row, true))));
                                 
+                                // SI ES UNA FILA FICTICIA INYECTADA (Ajuste Manual Modal)
+                                if(row._isAdjustment) {
+                                    // Todo está escapado (\$) porque vive dentro de un Template String (\`) que será escrito en un documento hijo.
+                                    return \`
+                                        <div class="flex justify-between items-center w-full h-full">
+                                            <div onmouseenter="showGlobalTooltip(this, '\${b64Gen}')" onmouseleave="hideGlobalTooltip()" class="flex items-center gap-1 cursor-help">
+                                                <span class="bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 px-1.5 py-0.5 rounded text-[9px] font-bold border border-red-200 dark:border-red-700 truncate">\${row._adjType || 'Ajuste'} ℹ️</span>
+                                            </div>
+                                            \${isReadOnly ? '' : \`<button onclick="window.deleteAdj('\${row._uid}')" class="text-red-500 hover:bg-red-100 dark:hover:bg-red-900/50 px-1.5 rounded shadow-sm transition-colors text-[10px]" title="Eliminar Ajuste">✖</button>\`}
+                                        </div>
+                                    \`;
+                                }
+
+                                // SI ES UNA FILA NORMAL O UN AJUSTE LOTE DEL BANCO
+                                const isAjusteBanco = row._mode === 'AJUSTE';
                                 let fileStr = \`<span class="text-[9px] text-slate-400 truncate w-[90px]" title="\${row._sourceFile}">\${row._sourceFile}</span>\`;
-                                if(isAjuste) fileStr = \`<span class="bg-red-100 text-red-700 px-1 rounded font-bold text-[9px]">AJUSTE LOTE</span>\`;
+                                if(isAjusteBanco) fileStr = \`<span class="bg-red-100 text-red-700 px-1 rounded font-bold text-[9px] border border-red-200">AJUSTE LOTE</span>\`;
 
                                 return \`<div class="flex justify-between items-center w-full h-full group/info">
                                     \${fileStr}
@@ -1417,6 +1480,17 @@ window.ScotiaLogic = {
                             btn.disabled = true;
                             btn.className = "bg-purple-100 dark:bg-slate-700 text-purple-400 dark:text-slate-500 px-4 py-2 rounded text-sm font-bold flex items-center gap-2 cursor-not-allowed transition-colors border border-transparent shadow-sm";
                             elDiff.className = "font-mono font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200 transition-colors";
+                        }
+
+                        // SINCRONIZACIÓN DIRECTA CON EL MODAL (Elimina la necesidad del hack)
+                        const modalAdj = document.getElementById('modal-adj');
+                        if (modalAdj && !modalAdj.classList.contains('hidden') && typeof window.calcFinanzas === 'function') {
+                            const elNeto = document.getElementById('fm-neto');
+                            if (elNeto) {
+                                if (currentFooterDiff !== 0) elNeto.value = currentFooterDiff.toFixed(2);
+                                else elNeto.value = '';
+                                window.calcFinanzas();
+                            }
                         }
                     }
 

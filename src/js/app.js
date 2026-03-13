@@ -60,11 +60,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- SPA Router Logic ---
-window.loadView = function(viewName, pushHistory = true) {
+window.loadView = async function(viewName, pushHistory = true) {
     const app = document.getElementById('app');
     if(!app) return;
 
-    // Loader
+    // --- 1. INTERCEPCIÓN DE ESTADO (Borradores Locales) ---
+    // Si estamos saliendo de conciliación o recargándola y hay datos en memoria
+    if (window.ConciliacionLogic && typeof window.ConciliacionLogic.hasUnsavedData === 'function') {
+        if (window.ConciliacionLogic.hasUnsavedData()) {
+            const choice = await window.SysUI._createModal(
+                "Progreso sin guardar",
+                "Tiene archivos cargados o cambios en curso en el módulo de consolidación.\n\n¿Qué desea hacer antes de salir o recargar?",
+                [
+                    { text: 'Cancelar', value: 'cancel', class: 'bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg font-bold hover:bg-slate-100 transition-colors' },
+                    { text: 'Descartar y Limpiar', value: 'clear', class: 'bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors' },
+                    { text: 'Guardar Proceso Local', value: 'save', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors' }
+                ],
+                "warning"
+            );
+
+            if (!choice || choice === 'cancel') return; // Abortar navegación
+            
+            if (choice === 'save') {
+                window.ConciliacionLogic.saveDraftToLocal();
+            }
+            if (choice === 'clear') {
+                window.ConciliacionLogic.resetState();
+                localStorage.removeItem('conciliacion_draft');
+            }
+        } else {
+            // Si no hay archivos, de todas formas purgamos la memoria para matar las "Tablas Fantasmas"
+            window.ConciliacionLogic.resetState();
+        }
+    }
+
+    // --- 2. CARGA DE VISTA NORMAL ---
     app.innerHTML = '<div class="flex justify-center p-10 animate-fade-in"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>';
 
     fetch(`router.php?view=${viewName}`)

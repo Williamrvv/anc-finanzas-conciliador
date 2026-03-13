@@ -8,7 +8,10 @@ session_start();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cierre de cajas ANC</title>
+    <!-- Favicon Oficial -->
+    <link rel="icon" type="image/png" href="assets/logo-iri.png">
+    
+    <title>IRI - Integración Regional de Ingresos</title>
     <!-- Tailwind CSS (CDN para desarrollo ágil) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -61,8 +64,13 @@ session_start();
     <nav class="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50">
         <div class="w-full px-4 sm:px-6 lg:px-8">
             <div class="flex h-16 justify-between items-center">
-                <div class="flex items-center gap-4">
-                    <span class="text-xl font-bold text-slate-800 dark:text-white">ANC<span class="text-blue-600">Finanzas</span></span>
+                <div class="flex items-center gap-6">
+                    <!-- LOGO OFICIAL IRI (Grande y Legible) -->
+                    <!-- Contenedor premium: se adapta al navbar (h-16), protege el fondo blanco y tiene sombras suaves -->
+                    <div class="flex items-center select-none bg-white px-3 py-1.5 rounded-xl shadow-sm border border-slate-200 dark:border-none ring-1 ring-black/5 dark:ring-white/10 transition-transform hover:scale-[1.02]">
+                        <!-- h-10 en móviles, h-12 (48px) en pantallas grandes -->
+                        <img src="assets/logo-iri.png" alt="IRI - Integración Regional de Ingresos" class="h-10 sm:h-12 w-auto object-contain">
+                    </div>
                     <!-- Navegación simple SPA -->
                     <div class="hidden md:flex ml-10 space-x-4">
                         <button onclick="loadView('dashboard')" class="text-slate-600 dark:text-slate-300 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Inicio</button>
@@ -109,7 +117,7 @@ session_start();
     <footer class="bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 mt-auto">
         <div class="mx-auto max-w-7xl px-6 py-4">
             <p class="text-center text-xs leading-5 text-slate-500 dark:text-slate-400">
-                &copy; <?php echo date('Y'); ?> ANC Renting S.A. - Departamento de Finanzas.
+                &copy; <?php echo date('Y'); ?> Grupo ANC - Departamento de Finanzas.
             </p>
         </div>
     </footer>
@@ -126,7 +134,9 @@ session_start();
             <span id="gst-sum" class="font-bold text-slate-800 dark:text-white">0</span>
         </div>
     </div>
-
+    
+    <!-- Motor de Modales Moderno -->
+    <script src="js/sys_ui.js"></script>
     <!-- Cargar nuestro nuevo motor -->
     <script src="js/vanilla_grid.js"></script>
     <!-- SheetJS (Excel) -->

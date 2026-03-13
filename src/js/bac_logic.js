@@ -254,29 +254,39 @@ window.BACLogic = {
         const fmt = this.formatMoney;
 
         const html = `
-            <div class="grid grid-cols-12 gap-4 items-center w-full h-full px-2">
-                <div class="col-span-3 flex flex-col justify-center border-r border-slate-100 dark:border-slate-700 pr-2">
-                    <span class="text-[9px] text-slate-400 uppercase font-bold tracking-wider mb-1">Ventas Totales</span>
-                    <span class="font-mono font-bold text-slate-700 dark:text-slate-200 text-sm truncate" title="${fmt(s.v)}">${fmt(s.v)}</span>
+            <div class="flex flex-row justify-between items-center w-full h-full px-2 py-1">
+                <!-- 1. VENTAS BRUTAS -->
+                <div class="flex flex-col justify-center px-3 border-r border-slate-200 dark:border-slate-700 shrink-0">
+                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Ventas Totales</span>
+                    <span class="font-mono font-black text-slate-800 dark:text-white text-2xl truncate drop-shadow-sm">${fmt(s.v)}</span>
                 </div>
-                <div class="col-span-5 flex flex-col justify-center text-[10px] space-y-1 border-r border-slate-100 dark:border-slate-700 pr-2">
-                    <div class="flex justify-between">
-                        <span class="text-red-400">Comisión</span>
-                        <span class="font-mono text-red-500 font-bold">-${fmt(s.c)}</span>
+
+                <!-- 2. DEDUCCIONES (Línea de Ensamblaje) -->
+                <div class="flex items-center justify-center flex-grow px-2 gap-2 sm:gap-4 overflow-hidden">
+                    <div class="flex flex-col items-center">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-red-500 uppercase bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full mb-1 border border-red-100 dark:border-red-800 tracking-wide">Comis 1.95%</span>
+                        <span class="text-xs font-mono font-bold text-red-600 dark:text-red-400 truncate">-${fmt(s.c)}</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-orange-400">Ret. Ventas (5.31%)</span>
-                        <span class="font-mono text-orange-500">-${fmt(s.rv)}</span>
+                    <span class="text-slate-300 dark:text-slate-600 text-lg font-light">-</span>
+                    
+                    <div class="flex flex-col items-center">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-orange-500 uppercase bg-orange-50 dark:bg-orange-900/30 px-2 py-0.5 rounded-full mb-1 border border-orange-100 dark:border-orange-800 tracking-wide">R.Ven 5.31%</span>
+                        <span class="text-xs font-mono font-bold text-orange-600 dark:text-orange-400 truncate">-${fmt(s.rv)}</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-orange-400">Ret. Renta (1.76%)</span>
-                        <span class="font-mono text-orange-500">-${fmt(s.rr)}</span>
+                    <span class="text-slate-300 dark:text-slate-600 text-lg font-light">-</span>
+                    
+                    <div class="flex flex-col items-center">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-amber-600 uppercase bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full mb-1 border border-amber-100 dark:border-amber-800 tracking-wide">R.Ren 1.76%</span>
+                        <span class="text-xs font-mono font-bold text-amber-600 dark:text-amber-400 truncate">-${fmt(s.rr)}</span>
                     </div>
                 </div>
-                <div class="col-span-4 flex flex-col justify-center items-end pl-2">
-                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-lg px-3 py-2 w-full text-center border border-blue-100 dark:border-blue-800">
-                        <span class="text-[9px] text-blue-500 uppercase font-bold block mb-1">Neto Esperado (-ACI)</span>
-                        <span class="font-mono font-bold text-blue-700 dark:text-blue-300 text-base block truncate">${fmt(s.n_aci)}</span>
+
+                <!-- 3. NETO ESPERADO -->
+                <div class="flex flex-col justify-center min-w-[160px] pl-3 border-l border-slate-200 dark:border-slate-700 shrink-0">
+                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-xl px-3 py-2 w-full text-center border border-blue-200 dark:border-blue-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div>
+                        <span class="text-[9px] text-blue-600 dark:text-blue-400 uppercase font-black block mb-0.5 tracking-widest pl-1">Neto Esperado</span>
+                        <span class="font-mono font-black text-blue-700 dark:text-blue-400 text-2xl block truncate pl-1">${fmt(s.n_aci)}</span>
                     </div>
                 </div>
             </div>
@@ -346,8 +356,8 @@ window.BACLogic = {
                 _isManual: true, 
                 _groupID: group.id,
                 _manualReason: group.reason,
-                // Añadido 'animate-pulse hover:animate-none' para homologarlo visualmente con Scotia
-                _rowClass: "bg-purple-100 dark:bg-purple-900/40 border-l-[6px] border-l-purple-600 text-purple-900 dark:text-purple-100 font-medium animate-pulse hover:animate-none" 
+                // UI: Azul pastel translúcido estático
+                _rowClass: "bg-blue-50 dark:bg-blue-900/20 border-l-[4px] border-l-blue-400 font-medium text-slate-800 dark:text-slate-200" 
             });
         });
 
@@ -355,6 +365,10 @@ window.BACLogic = {
             const dObj = det[id] || { count:0, sumNeto:0, rows:[] };
             const pObj = pag[id] || { sum:0, rows:[] };
             
+            // DETECCIÓN DE SALDOS ANTERIORES:
+            const isHistorical = dObj.rows.some(r => r._isHistorical) || pObj.rows.some(r => r._isHistorical);
+            const classRow = isHistorical ? "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium" : "";
+
             const diff = dObj.sumNeto - pObj.sum;
             const isMatch = Math.abs(diff) < 1 && dObj.sumNeto > 0 && pObj.sum > 0;
 
@@ -366,16 +380,28 @@ window.BACLogic = {
                     count: dObj.count,
                     neto: dObj.sumNeto,
                     pagado: pObj.sum,
-                    diferencia_val: diff, // CAMBIADO PARA EVITAR CSS HARDCODE
+                    diferencia_val: diff, 
                     rowsDet: dObj.rows,
-                    rowsPag: pObj.rows
+                    rowsPag: pObj.rows,
+                    // PROPAGACIÓN DE HISTÓRICOS (Color Ámbar para recuperaciones)
+                    _isHistoricalGroup: isHistorical,
+                    _rowClass: classRow
                 });
             } else {
                 // CASO B: Rescate por Liquidación
                 const rescueResult = this.tryMatchByLiquidation(dObj.rows, pObj.rows, id, timeKey);
                 
                 if (rescueResult.matched.length > 0) {
-                    gridData.push(...rescueResult.matched);
+                    // Propagar la clase histórica a las filas rescatadas
+                    const markedMatched = rescueResult.matched.map(m => {
+                        const mIsHistorical = m.rowsDet.some(r => r._isHistorical) || m.rowsPag.some(r => r._isHistorical);
+                        return {
+                            ...m,
+                            _isHistoricalGroup: mIsHistorical,
+                            _rowClass: mIsHistorical ? "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium" : ""
+                        };
+                    });
+                    gridData.push(...markedMatched);
                 }
 
                 if (rescueResult.residue.rowsDet.length > 0 || rescueResult.residue.rowsPag.length > 0) {
@@ -410,10 +436,13 @@ window.BACLogic = {
         const columns = [
             { title: "ID Ref", field: "uuid", width: 140, headerFilter: true, visible: false }, 
             { 
-                title: "Afiliado / LIQ", field: "id", width: 180, 
+                title: "Afiliado / LIQ", field: "id", width: 220, 
                 formatter: (cell) => {
                     const r = cell.getRow(); 
                     let content = `<span class="font-bold">${r.id}</span>`;
+                    
+                    // Inyectar Badge si es histórico
+                    if(r._isHistoricalGroup) content += `<span class="ml-2 bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm tracking-wider" title="Contiene saldos pendientes de días anteriores">⏳ PENDIENTE</span>`;
                     if(r._isManual) {
                         content += `<span class="ml-2 text-purple-600" title="${r._manualReason}">🤝</span>`;
                         // BOTÓN ELIMINAR DIRECTO EN LA TABLA
@@ -848,12 +877,24 @@ window.BACLogic = {
             timestamp: new Date()
         });
 
-        // 4. Recalcular Todo
+        // 4. FORZAR RECALCULO VISUAL (Esto hace que la fila desaparezca y pase a conciliados)
         this.recalculateDetalle();
         this.runMatch();
-        this.renderManualMatchesTable(); // Nueva tabla visual
+        if (typeof this.renderManualMatchesTable === 'function') this.renderManualMatchesTable();
+
+        SysUI.alert(`Se han conciliado manualmente las transacciones bajo el motivo: "${reason}"`, "Conciliación Exitosa", "success");
         
-        alert("✅ Conciliación manual aplicada correctamente.");
+        // Animación de enfoque en la fila
+        setTimeout(() => {
+            const tableContainer = document.getElementById('table-manual-bac');
+            if (tableContainer) {
+                tableContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Resaltar temporalmente (Flash Verde)
+                tableContainer.classList.add('ring-4', 'ring-green-400', 'bg-green-50', 'transition-all', 'duration-1000');
+                setTimeout(() => tableContainer.classList.remove('ring-4', 'ring-green-400', 'bg-green-50'), 2000);
+            }
+        }, 500);
+        
     },
 
     // Renderiza la tabla de conciliados manuales con UX mejorada
@@ -997,10 +1038,11 @@ window.BACLogic = {
             <!DOCTYPE html>
             <html class="${isDark ? 'dark' : ''}">
             <head>
-                <title>Análisis BAC: ${data.id}</title>
+                <title>IRI - Análisis BAC: ${data.id}</title>
                 <script src="https://cdn.tailwindcss.com"></script>
                 <script>tailwind.config = { darkMode: 'class' }</script>
                 <script src="/js/vanilla_grid.js"></script>
+                <script src="/js/sys_ui.js"></script>
                 <style>
                     ::-webkit-scrollbar { width: 8px; height: 8px; }
                     ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
@@ -1014,7 +1056,7 @@ window.BACLogic = {
                     <!-- ... (mismo header) ... -->
                     <div>
                         <h1 class="text-xl font-bold flex items-center gap-2">
-                            <span>🔎 Análisis de ajuste BAC</span>
+                            <span>🔎 IRI - Análisis de Ajuste BAC</span>
                             <span class="bg-blue-100 text-blue-800 text-sm px-2 py-0.5 rounded font-mono">${data.id}</span>
                         </h1>
                     </div>
@@ -1347,14 +1389,19 @@ window.BACLogic = {
                         hideGlobalTooltip(); 
                     };
 
-                    // --- CONSTRUCCIÓN DE COLUMNAS INTELIGENTE ---
+                     // --- CONSTRUCCIÓN DE COLUMNAS INTELIGENTE ---
+                    let idxComercio = Object.keys(headersDet).find(k => headersDet[k] && (headersDet[k].toLowerCase().includes('comercio') || headersDet[k].toLowerCase().includes('fantasia'))) || "3";
+                    let idxAuth = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('autori')) || "11";
+
                     const colsVentas = [];
                     if(!isReadOnly) colsVentas.push({ title: "Sel", field: "_selected", formatter: "checkbox", hozAlign: "center", width: 40 });
                     
                     colsVentas.push(
                         { title: "Fecha", field: "_fecha", width: 80, cssClass: "text-[10px] text-slate-500", formatter: (cell) => window.opener.ConciliacionLogic.formatDateCR(cell.getValue()) },
-                        { title: "Comercio", field: "3", headerFilter: true, width: 140, cssClass: "text-[10px] truncate" },
+                        { title: "Comercio", field: idxComercio, headerFilter: true, width: 140, cssClass: "text-[10px] truncate" },
                         { title: "Liquidación", field: "_liq", headerFilter: true, width: 90, cssClass: "font-mono text-blue-700 font-bold text-[10px]" },
+                        { title: "Autorización", field: idxAuth, headerFilter: true, width: 90, cssClass: "font-mono text-[10px]" },
+                        { title: "Monto Venta", field: "_venta", formatter: "money", hozAlign: "right", cssClass: "text-slate-500 font-mono" },
                         { title: "Neto (-ACI)", field: "_netoACI", formatter: "money", hozAlign: "right", cssClass: "font-bold" },
                         { 
                             title: "Origen / Detalles", field: "_sourceFile", width: 150, headerFilter: true,
@@ -1468,11 +1515,10 @@ window.BACLogic = {
                         
                         // --- SINCRONIZACIÓN DINÁMICA CON EL MODAL ---
                         const modalAdj = document.getElementById('modal-adj');
-                        // Si el modal está activo (incluso minimizado), actualizamos sus valores matemáticos
                         if (modalAdj && !modalAdj.classList.contains('hidden')) {
                             const elNeto = document.getElementById('fm-neto');
                             if (currentFooterDiff !== 0) {
-                                elNeto.value = (currentFooterDiff * -1).toFixed(2);
+                                elNeto.value = currentFooterDiff.toFixed(2); 
                             } else {
                                 elNeto.value = '';
                             }
@@ -1661,12 +1707,12 @@ window.BACLogic = {
 
                         // 5. Abrir Modal y Autocompletar
                         document.getElementById('btn-add-adj').onclick = function() {
-                            // Buscar las filas seleccionadas en DETALLADO (Ventas)
-                            const seleccionados = gVentas.displayData.filter(r => r._selected);
+                            // Filtrar las filas seleccionadas ignorando los ajustes manuales previos
+                            const seleccionados = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
                             let filaBase = null;
 
                             if (seleccionados.length > 0) {
-                                // Tomar el último seleccionado como referencia
+                                // Tomar el último seleccionado válido como referencia
                                 filaBase = seleccionados[seleccionados.length - 1];
                             }
 
@@ -1688,9 +1734,8 @@ window.BACLogic = {
                             document.getElementById('fm-fpago').value = today;
 
                             // Leer Diferencia matemática pura de la variable global (Evita bug de comas/puntos)
-                            // Si hay diferencia en la selección, se la asignamos al Neto invertida para cerrarla
                             if (currentFooterDiff !== 0) {
-                                elNeto.value = (currentFooterDiff * -1).toFixed(2);
+                                elNeto.value = currentFooterDiff.toFixed(2); 
                             } else {
                                 elNeto.value = '';
                             }
@@ -1708,11 +1753,17 @@ window.BACLogic = {
                         document.getElementById('btn-save-adj').onclick = function() {
                             const type = elType.value;
                             const reason = document.getElementById('fm-reason').value;
+                            const ftrans = document.getElementById('fm-ftrans').value;
                             
                             if(!type) return alert("Debe seleccionar un Tipo de Ajuste.");
+                            if(!ftrans) return alert("La Fecha de Transacción es obligatoria.");
                             
                             const res = window.calcFinanzas();
                             if(res.venta === 0 && res.neto === 0) return alert("Debe ingresar un Monto Neto válido.");
+
+                            // Obtener el índice real de Comercio para guardarlo donde VanillaGrid lo busca
+                            let idxComercio = Object.keys(headersDet).find(k => headersDet[k] && (headersDet[k].toLowerCase().includes('comercio') || headersDet[k].toLowerCase().includes('fantasia'))) || "3";
+                            let idxAuth = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('autori')) || "11";
 
                             const newRow = {
                                 _uid: 'man_' + Date.now(),
@@ -1722,7 +1773,7 @@ window.BACLogic = {
                                 _adjType: type,
                                 _adjReason: reason,
                                 _adjEvidence: evB64.value, 
-                                _fecha: document.getElementById('fm-ftrans').value,
+                                _fecha: ftrans,
                                 _fechaPago: document.getElementById('fm-fpago').value,
                                 _tarjeta: document.getElementById('fm-tarjeta').value,
                                 _auth: document.getElementById('fm-auth').value,
@@ -1730,14 +1781,15 @@ window.BACLogic = {
                                 // Variables BAC Nativas (Van directo a Ventas)
                                 _id: document.getElementById('fm-afil').value,
                                 _liq: document.getElementById('fm-liq').value,
-                                "3": document.getElementById('fm-comercio').value,
+                                [idxComercio]: document.getElementById('fm-comercio').value,
+                                [idxAuth]: document.getElementById('fm-auth').value,
                                 _venta: res.venta,
                                 _comision: res.com,
                                 _retV: res.rv,
                                 _retR: res.rr,
                                 _aciOrig: res.aci, 
-                                _neto: (res.venta - res.com - res.rv - res.rr), 
-                                _netoACI: res.netoFinal
+                                _neto: res.neto, 
+                                _netoACI: res.neto
                             };
 
                             // Inyección Directa y Única a Ventas
@@ -1752,7 +1804,7 @@ window.BACLogic = {
                         };
 
                         // 7. Conciliar Manualmente
-                        document.getElementById('btn-manual').onclick = function() {
+                        document.getElementById('btn-manual').onclick = async function() {
                             const selection = updateCalc();
                             
                             if(window.opener && window.opener.ConciliacionLogic) {
@@ -1766,20 +1818,14 @@ window.BACLogic = {
                                     const totalAjuste = adjustments.reduce((s, a) => s + (parseFloat(a._netoACI || a._monto) || 0), 0);
                                     finalReason = "Ajuste Manual (" + c + " fila/s) ₡ " + totalAjuste.toFixed(2);
                                 } else {
-                                    const userReason = prompt("Justificación (Opcional):", "Ajuste manual");
-                                    if(userReason === null) return;
-                                    if(userReason) finalReason = userReason;
+                                    // CAMBIO AL NUEVO PROMPT
+                                    const userReason = await SysUI.prompt("Ingrese una justificación para forzar esta conciliación:", "Justificación Requerida", "Ajuste manual");
+                                    if(!userReason) return;
+                                    finalReason = userReason;
                                 }
 
-                                if(adjustments.length > 0 && typeof window.opener.ConciliacionLogic.injectAdjustments === 'function') {
-                                    window.opener.ConciliacionLogic.injectAdjustments(adjustments);
-                                }
-
-                                if(typeof window.opener.ConciliacionLogic.applyManualMatch === 'function') {
-                                    window.opener.ConciliacionLogic.applyManualMatch(selection, finalReason);
-                                } else {
-                                    alert("El módulo actual aún no soporta Conciliación Manual.");
-                                }
+                                if(adjustments.length > 0) window.opener.ConciliacionLogic.injectAdjustments(adjustments);
+                                window.opener.ConciliacionLogic.applyManualMatch(selection, finalReason);
                                 window.close();
                             }
                         };

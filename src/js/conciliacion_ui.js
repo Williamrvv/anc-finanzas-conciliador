@@ -174,102 +174,362 @@ window.ConciliacionLogic = {
     // data: { detalle: [], pagado: [] },
     table: null,
 
-    init: function() {
+    init: async function() {
         // Fusión de Lógica Modular
         if(window.BACLogic) Object.assign(this, window.BACLogic);
         if(window.ScotiaLogic) Object.assign(this, window.ScotiaLogic);
         if(window.TSDLogic) Object.assign(this, window.TSDLogic);
         
-        console.log("Sistema Conciliación Iniciado", this.processCSV ? "con BAC" : "SIN BAC");
+        console.log("Sistema Conciliación Iniciado");
         
-        this.setupUploads();
+        // Evitar que el drag&drop se duplique al recargar la vista
+        if (!this._uploadsConfigured) {
+            this.setupUploads();
+            this._uploadsConfigured = true;
+        }
+        
         this.fetchExchangeRate();
+        
+        // --- MOTOR DE RECUPERACIÓN LOCAL (DRAFT) ---
+        const draftStr = localStorage.getItem('conciliacion_draft');
+        if (draftStr) {
+            const choice = await window.SysUI.confirm(
+                "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
+                "Borrador Encontrado", 
+                "info"
+            );
+            if (choice) {
+                this.restoreDraftFromLocal(draftStr);
+            } else {
+                localStorage.removeItem('conciliacion_draft');
+                this.loadPendientes(); // Si rechaza el borrador, cargar los pendientes frescos de la BD
+            }
+        } else {
+            // Flujo Normal: Traer saldos arrastrados de la BD
+            this.loadPendientes();
+        }
+
+        // INICIAR RELOJ DE AUTO-GUARDADO
+        this.startAutoSave();
+    },
+
+    // --- GESTIÓN DE ESTADO LOCAL ---
+    resetState: function() {
+        console.log("🧹 Purgando estado de memoria y DOM fantasma...");
+        
+        // Apagar el reloj si se cierra o limpia la sesión
+        if (this._autoSaveInterval) {
+            clearInterval(this._autoSaveInterval);
+            this._autoSaveInterval = null;
+        }
+
+        this.data = {
+            detalle: [], pagado: [], scotia_detalle: [], scotia_pagado: [], tsd: [],
+            files: { bac_detalle: [], bac_pagado: [], scotia_detalle: [], scotia_pagado: [], tsd: [] },
+            headers: {}, processed: {}
+        };
+        // Destruir las instancias de los grids para forzar su re-creación
+        this.grids = { bac: null, scotia: null, bac_audit: null, scotia_audit: null, bac_manual: null, bac_deferred: null };
+        
+        // Reset Variables Locales de Módulos
+        if (this.manualMatches) this.manualMatches = [];
+        if (this.manualMatchesScotia) this.manualMatchesScotia = [];
+        if (this.deferredRows) this.deferredRows = { det: [], pag: [] };
+    },
+
+    hasUnsavedData: function() {
+        // Verifica si hay archivos cargados ignorando el "Saldos Históricos" (porque eso viene de BD automáticamente)
+        const checkFiles = (arr) => arr && arr.filter(f => f !== 'Saldos Históricos').length > 0;
+        return checkFiles(this.data.files.bac_detalle) || 
+               checkFiles(this.data.files.bac_pagado) || 
+               checkFiles(this.data.files.scotia_detalle) || 
+               checkFiles(this.data.files.scotia_pagado);
+    },
+
+    saveDraftToLocal: function(isAutoSave = false) {
+        try {
+            const draft = {
+                data: this.data,
+                manualBAC: this.manualMatches || [],
+                manualScotia: this.manualMatchesScotia || [],
+                deferred: this.deferredRows || { det: [], pag: [] }
+            };
+            localStorage.setItem('conciliacion_draft', JSON.stringify(draft));
+            
+            if (!isAutoSave) {
+                // Guardado por salida (Router): Purgamos la pantalla
+                this.resetState(); 
+                console.log("💾 Borrador guardado por navegación en LocalStorage.");
+            } else {
+                // Auto-Guardado en segundo plano: Dejamos la pantalla intacta y mostramos Toast
+                console.log(`⏱️ [Auto-Save] Progreso respaldado automáticamente a las ${new Date().toLocaleTimeString()}`);
+                this.showAutoSaveToast();
+            }
+        } catch (e) {
+            console.error("Fallo al guardar en LocalStorage:", e);
+            // Solo molestamos al usuario con el alert si fue manual, si es auto-save fallamos silenciosamente
+            if (!isAutoSave) alert("El volumen de datos es demasiado grande para el almacenamiento local del navegador.");
+        }
+    },
+
+    // --- MOTOR DE AUTO-GUARDADO (CADA 3 MINUTOS) ---
+    startAutoSave: function() {
+        // 1. Limpiar cualquier intervalo fantasma anterior
+        if (this._autoSaveInterval) clearInterval(this._autoSaveInterval);
+        
+        // 2. Ejecutar cada 180,000 milisegundos (3 minutos)
+        this._autoSaveInterval = setInterval(() => {
+            // Solo guardar si realmente hay archivos cargados (para no sobreescribir borradores útiles con vacíos)
+            if (this.hasUnsavedData()) {
+                this.saveDraftToLocal(true); // true = Modo silencioso
+            }
+        }, 180000); 
+    },
+
+    showAutoSaveToast: function() {
+        let toast = document.getElementById('auto-save-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'auto-save-toast';
+            toast.className = 'fixed bottom-4 left-4 bg-slate-800 border border-slate-700 text-slate-300 text-[10px] px-3 py-1.5 rounded-full shadow-lg z-[9999] opacity-0 transition-opacity duration-500 flex items-center gap-2 pointer-events-none select-none';
+            toast.innerHTML = '<span class="text-green-400 animate-pulse">●</span> Progreso guardado';
+            document.body.appendChild(toast);
+        }
+        
+        // Mostrar
+        toast.classList.remove('opacity-0');
+        
+        // Ocultar suavemente después de 3 segundos
+        setTimeout(() => {
+            toast.classList.add('opacity-0');
+        }, 3000);
+    },
+
+    restoreDraftFromLocal: function(draftStr) {
+        console.log("📦 Restaurando borrador local...");
+        const draft = JSON.parse(draftStr);
+        
+        this.data = draft.data;
+        this.manualMatches = draft.manualBAC || [];
+        this.manualMatchesScotia = draft.manualScotia || [];
+        this.deferredRows = draft.deferred || { det: [], pag: [] };
+
+        // Disparar las funciones de renderizado para re-dibujar las pantallas
+        setTimeout(() => {
+            this.updateFileList('bac_detalle');
+            this.updateFileList('bac_pagado');
+            this.updateScotiaFileList('scotia_detalle');
+            this.updateScotiaFileList('scotia_pagado');
+
+            if (this.data.files.bac_detalle.length || this.data.files.bac_pagado.length) {
+                // Forzar visualización de tarjetas BAC
+                if(this.data.files.bac_detalle.length) document.getElementById('card-bac-detalle')?.classList.remove('hidden');
+                if(this.data.files.bac_pagado.length) document.getElementById('card-bac-pagado')?.classList.remove('hidden');
+                
+                if(this.recalculateDetalle) this.recalculateDetalle();
+                if(this.recalculateBACPagado) this.recalculateBACPagado();
+                if(this.renderManualMatchesTable) this.renderManualMatchesTable();
+                if(this.renderDeferredTable) this.renderDeferredTable();
+            }
+            if (this.data.files.scotia_detalle.length || this.data.files.scotia_pagado.length) {
+                // Forzar visualización de tarjetas Scotia
+                if(this.data.files.scotia_detalle.length) document.getElementById('card-scotia-detalle')?.classList.remove('hidden');
+                if(this.data.files.scotia_pagado.length) document.getElementById('card-scotia-pagado')?.classList.remove('hidden');
+
+                if(this.updateScotiaCard) this.updateScotiaCard();
+                if(this.recalculateScotiaPagado) this.recalculateScotiaPagado();
+            }
+        }, 100);
+    },
+
+    // ==========================================================
+    // MOTOR DE ARRASTRE DE SALDOS (HISTÓRICOS)
+    // ==========================================================
+    loadPendientes: async function() {
+        try {
+            const res = await fetch('api/get_pendientes.php');
+            const json = await res.json();
+            
+            if (!json.success || !json.data || json.data.length === 0) return;
+
+            let counts = { bac: 0, scotia: 0 };
+            
+            json.data.forEach(r => {
+                // Color Ámbar para diferenciar lo histórico
+                const historyClass = "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium";
+                let fechaCr = r.FechaTransaccion ? r.FechaTransaccion.split('-').reverse().join('/') : '';
+                
+                const baseObj = {
+                    _uid: r.IdTransaccion,
+                    _fecha: fechaCr,
+                    _enabled: true,
+                    _isHistorical: true,
+                    _rowClass: historyClass,
+                    _sourceFile: "Arrastre " + (r.DiasAntiguedad ? `(${r.DiasAntiguedad} días)` : '(Pendiente)')
+                };
+
+                if (r.Origen === 'AJUSTE') {
+                    baseObj._isAdjustment = true;
+                    baseObj._adjType = r.TipoAjuste;
+                    baseObj._adjReason = r.Justificacion;
+                    baseObj._adjEvidence = r.EvidenciaB64;
+                }
+
+                if (r.Banco === 'BAC') {
+                    counts.bac++;
+                    if (r.Origen === 'DETALLADO' || r.Origen === 'AJUSTE') {
+                        this.data.detalle.push({
+                            ...baseObj,
+                            _id: r.Afiliado_MerID,
+                            _liq: r.Liquidacion || r.Autorizacion,
+                            _venta: parseFloat(r.MontoBruto || 0),
+                            _netoACI: parseFloat(r.MontoNeto || 0),
+                            _comision: parseFloat(r.BacComision || 0),
+                            _retV: parseFloat(r.RetencionVentas || 0),
+                            _retR: parseFloat(r.RetencionRenta || 0),
+                            _aciOrig: parseFloat(r.AjusteACI || 0),
+                            "3": "Saldo Histórico", // Comercio fallback
+                            "11": r.Autorizacion // Auth fallback
+                        });
+                    } else if (r.Origen === 'PAGADO') {
+                        this.data.pagado.push({
+                            ...baseObj,
+                            _extractedId: r.Afiliado_MerID,
+                            _liqRef: r.Autorizacion,
+                            _monto: parseFloat(r.MontoNeto || 0),
+                            _desc: `Arrastre: ${r.Afiliado_MerID} LIQ ${r.Autorizacion}`
+                        });
+                    }
+                } 
+                else if (r.Banco === 'SCOTIA') {
+                    counts.scotia++;
+                    if (r.Origen === 'DETALLADO' || r.Origen === 'AJUSTE') {
+                        this.data.scotia_detalle.push({
+                            ...baseObj,
+                            _bruto: parseFloat(r.MontoBruto || 0),
+                            _neto: parseFloat(r.MontoNeto || 0),
+                            _mode: (r.Lote === 'AJUSTE' || r.Origen === 'AJUSTE') ? 'AJUSTE' : 'LOTE',
+                            "MerID": r.Afiliado_MerID, // Usamos la llave visual para el PopUp
+                            "Autorizacion": r.Autorizacion,
+                            "Monto Comisión": parseFloat(r.ScotiaComision || 0),
+                            "Retención IVA": parseFloat(r.RetencionIVA || 0),
+                            "Retención ISR": parseFloat(r.RetencionISR || 0)
+                        });
+                    } else if (r.Origen === 'PAGADO') {
+                        this.data.scotia_pagado.push({
+                            ...baseObj,
+                            _extractedId: r.Afiliado_MerID,
+                            _monto: parseFloat(r.MontoNeto || 0),
+                            _desc: `Arrastre Scotia: ${r.Afiliado_MerID}`
+                        });
+                    }
+                }
+            });
+
+            // Actualizar visualmente si se encontraron datos
+            if (counts.bac > 0) {
+                this.data.files.bac_detalle = ["Saldos Históricos"];
+                this.updateFileList('bac_detalle');
+                if(this.recalculateDetalle) this.recalculateDetalle();
+                console.log(`📥 Rescatados ${counts.bac} saldos históricos de BAC`);
+            }
+            if (counts.scotia > 0) {
+                this.data.files.scotia_detalle = ["Saldos Históricos"];
+                this.updateFileList('scotia_detalle');
+                if(this.updateScotiaCard) this.updateScotiaCard();
+                if(this.runMatchScotiabank) this.runMatchScotiabank();
+                console.log(`📥 Rescatados ${counts.scotia} saldos históricos de Scotia`);
+            }
+
+        } catch (err) {
+            console.error("Error cargando históricos:", err);
+        }
     },
 
     
 
-    // --- 1. CONFIGURACIÓN TABULATOR ---
-    getTableConfig: function(data, columns) {
-        return {
-            data: data,
-            columns: columns,
+    // // --- 1. CONFIGURACIÓN TABULATOR ---
+    // getTableConfig: function(data, columns) {
+    //     return {
+    //         data: data,
+    //         columns: columns,
             
-            // Layout
-            layout: "fitColumns",
-            height: "550px", // Altura fija para forzar scroll y footer sticky
+    //         // Layout
+    //         layout: "fitColumns",
+    //         height: "550px", // Altura fija para forzar scroll y footer sticky
             
-            // Comportamiento Excel
-            keybindings: true,
-            selectableRange: 1,
-            selectableRangeColumns: true,
-            selectableRangeRows: true,
-            clipboard: "copy",
-            clipboardCopyRowRange: "range",
-            clipboardCopyConfig: { columnHeaders: false },
-            movableColumns: true,
+    //         // Comportamiento Excel
+    //         keybindings: true,
+    //         selectableRange: 1,
+    //         selectableRangeColumns: true,
+    //         selectableRangeRows: true,
+    //         clipboard: "copy",
+    //         clipboardCopyRowRange: "range",
+    //         clipboardCopyConfig: { columnHeaders: false },
+    //         movableColumns: true,
 
-            // EVENTO CLAVE: Conectar selección con TU barra de HTML
-            rangeSelectionChanged: function(range) {
-                window.ConciliacionLogic.calculateStats(range);
-            },
+    //         // EVENTO CLAVE: Conectar selección con TU barra de HTML
+    //         rangeSelectionChanged: function(range) {
+    //             window.ConciliacionLogic.calculateStats(range);
+    //         },
             
-            // Limpieza al perder foco (opcional)
-            dataLoaded: function() {
-                document.getElementById('global-table-stats')?.classList.add('hidden');
-            }
-        };
-    },
+    //         // Limpieza al perder foco (opcional)
+    //         dataLoaded: function() {
+    //             document.getElementById('global-table-stats')?.classList.add('hidden');
+    //         }
+    //     };
+    // },
 
-    // --- 2. LÓGICA DE AUTOSUMA (Conectada a index.php) ---
-    calculateStats: function(range) {
-        // Usamos TUS IDs del index.php
-        const bar = document.getElementById('global-table-stats');
-        if(!bar) return; 
+    // // --- 2. LÓGICA DE AUTOSUMA (Conectada a index.php) ---
+    // calculateStats: function(range) {
+    //     // Usamos TUS IDs del index.php
+    //     const bar = document.getElementById('global-table-stats');
+    //     if(!bar) return; 
 
-        const cells = range.getCells();
+    //     const cells = range.getCells();
         
-        // Ocultar si hay menos de 2 celdas
-        if(cells.length < 2) {
-            bar.classList.add('hidden');
-            return;
-        }
+    //     // Ocultar si hay menos de 2 celdas
+    //     if(cells.length < 2) {
+    //         bar.classList.add('hidden');
+    //         return;
+    //     }
 
-        let sum = 0;
-        let countNums = 0;
+    //     let sum = 0;
+    //     let countNums = 0;
 
-        cells.forEach(cell => {
-            const val = cell.getValue();
-            let num = 0;
+    //     cells.forEach(cell => {
+    //         const val = cell.getValue();
+    //         let num = 0;
             
-            // Limpieza financiera
-            if(typeof val === 'number') num = val;
-            else if(typeof val === 'string') {
-                // Quitar simbolos, letras y normalizar (1.000,00 -> 1000.00)
-                let clean = val.replace(/[₡\sA-Za-z]/g, '');
-                if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
-                else if (clean.includes(',')) clean = clean.replace(',', '.');
-                num = parseFloat(clean);
-            }
+    //         // Limpieza financiera
+    //         if(typeof val === 'number') num = val;
+    //         else if(typeof val === 'string') {
+    //             // Quitar simbolos, letras y normalizar (1.000,00 -> 1000.00)
+    //             let clean = val.replace(/[₡\sA-Za-z]/g, '');
+    //             if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
+    //             else if (clean.includes(',')) clean = clean.replace(',', '.');
+    //             num = parseFloat(clean);
+    //         }
 
-            if(!isNaN(num)) {
-                sum += num;
-                if(num !== 0) countNums++;
-            }
-        });
+    //         if(!isNaN(num)) {
+    //             sum += num;
+    //             if(num !== 0) countNums++;
+    //         }
+    //     });
 
-        // Formateador
-        const fmt = new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'});
+    //     // Formateador
+    //     const fmt = new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'});
 
-        // Inyectar en TUS IDs: gst-count, gst-sum, gst-avg
-        document.getElementById('gst-count').innerText = cells.length;
-        document.getElementById('gst-sum').innerText = fmt.format(sum);
+    //     // Inyectar en TUS IDs: gst-count, gst-sum, gst-avg
+    //     document.getElementById('gst-count').innerText = cells.length;
+    //     document.getElementById('gst-sum').innerText = fmt.format(sum);
         
-        // Promedio (Opcional, si el elemento existe en el HTML lo llenamos)
-        const avgEl = document.getElementById('gst-avg');
-        if(avgEl) avgEl.innerText = countNums > 0 ? fmt.format(sum/countNums) : '-';
+    //     // Promedio (Opcional, si el elemento existe en el HTML lo llenamos)
+    //     const avgEl = document.getElementById('gst-avg');
+    //     if(avgEl) avgEl.innerText = countNums > 0 ? fmt.format(sum/countNums) : '-';
         
-        bar.classList.remove('hidden');
-    },
+    //     bar.classList.remove('hidden');
+    // },
 
     // --- 3. PROCESAMIENTO DE ARCHIVOS ---
     setupUploads: function() {
@@ -549,7 +809,7 @@ window.ConciliacionLogic = {
                  // CORRECCIÓN CRÍTICA: Usamos 'idx' como field
                  ...realHeaders.map((h, idx) => ({
                      title: h, 
-                     field: String(idx), // <--- ESTO ES LO IMPORTANTE (Match con row["0"])
+                     field: String(idx), 
                      headerFilter: true,
                      width: 130,
                      formatter: (h.includes('Monto') || h.includes('%')) ? 'money' : undefined,
@@ -565,7 +825,7 @@ window.ConciliacionLogic = {
                  // CORRECCIÓN VISUAL: Usamos String(idx) para encontrar los datos
                  ...realHeaders.map((h, idx) => ({
                      title: h, 
-                     field: String(idx), // <--- Coincide con rowObj["0"]
+                     field: String(idx), 
                      headerFilter: true,
                      formatter: (h.toLowerCase().includes('monto')) ? 'money' : undefined,
                      hozAlign: (h.toLowerCase().includes('monto')) ? 'right' : 'left'
@@ -584,13 +844,13 @@ window.ConciliacionLogic = {
              ];
              
              // Columnas Dinámicas (Defensivo contra huecos en headers)
-             // Usamos forEach para asegurar que 'idx' sea el índice real del array original
+             // Usa forEach para asegurar que 'idx' sea el índice real del array original
              realHeaders.forEach((h, idx) => {
                  // Solo agregamos la columna si el header tiene texto (evita columnas fantasmas/null)
                  if (h && String(h).trim() !== '') {
                      columns.push({
                          title: h, 
-                         field: String(idx), // Mantenemos el índice original como llave de datos
+                         field: String(idx), // Mantiene el índice original como llave de datos
                          headerFilter: true, 
                          width: 120
                      });
@@ -881,16 +1141,222 @@ window.ConciliacionLogic = {
         }
     },
 
+    // ==========================================================
+    // MÓDULO DE PERSISTENCIA (GUARDADO INDEPENDIENTE)
+    // ==========================================================
+    preparePayload: function(bancoObjetivo) {
+        const payload = {
+            fecha_cierre: document.getElementById('process-date').value,
+            transacciones: []
+        };
+        const processedUids = new Set();
+
+        const processGroup = (group, banco) => {
+            const diff = group.diferencia_val !== undefined ? group.diferencia_val : group.diff;
+            const isMatch = Math.abs(diff) < 1 || group._isManual === true;
+            const estado = isMatch ? 'CONCILIADO' : 'PENDIENTE';
+            const idMatch = isMatch ? group.uuid : null; 
+
+            (group.rowsDet || []).forEach(r => {
+                if (processedUids.has(r._uid)) return;
+                processedUids.add(r._uid);
+                payload.transacciones.push(this.formatTransactionRecord(r, banco, 'DETALLADO', estado, idMatch));
+            });
+
+            (group.rowsPag || []).forEach(r => {
+                if (processedUids.has(r._uid)) return;
+                processedUids.add(r._uid);
+                payload.transacciones.push(this.formatTransactionRecord(r, banco, 'PAGADO', estado, idMatch));
+            });
+        };
+
+        // ESCANEAR SOLO EL BANCO SELECCIONADO
+        if (bancoObjetivo === 'bac' && this.data.processed && this.data.processed.bac_matches) {
+            Object.values(this.data.processed.bac_matches).forEach(g => processGroup(g, 'BAC'));
+            
+            if (this.deferredRows) {
+                (this.deferredRows.det || []).forEach(r => {
+                    if(!processedUids.has(r._uid)) {
+                        processedUids.add(r._uid);
+                        payload.transacciones.push(this.formatTransactionRecord(r, 'BAC', 'DETALLADO', 'PENDIENTE', null));
+                    }
+                });
+                (this.deferredRows.pag || []).forEach(r => {
+                    if(!processedUids.has(r._uid)) {
+                        processedUids.add(r._uid);
+                        payload.transacciones.push(this.formatTransactionRecord(r, 'BAC', 'PAGADO', 'PENDIENTE', null));
+                    }
+                });
+            }
+        }
+
+        if (bancoObjetivo === 'scotia' && this.data.processed && this.data.processed.scotia_matches) {
+            Object.values(this.data.processed.scotia_matches).forEach(g => processGroup(g, 'SCOTIA'));
+        }
+
+        return payload;
+    },
+
+    formatTransactionRecord: function(r, banco, defaultOrigen, estado, idMatch) {
+        const isAjuste = r._isAdjustment === true;
+        const origen = isAjuste ? 'AJUSTE' : defaultOrigen;
+
+        // Rescate de Referencia para los Pagados (Como no van a la tabla detalle, lo guardamos en Autorizacion)
+        let authVal = r._auth;
+        if (defaultOrigen === 'PAGADO') authVal = r._liqRef || r.Lote || r._auth || null;
+
+        let record = {
+            IdTransaccion: r._uid, Banco: banco, Origen: origen, Estado: estado, IdMatch: idMatch,
+            Afiliado_MerID: r._id || r._extractedId || null, Autorizacion: authVal, 
+            MontoBruto: r._venta || r._bruto || r._monto || 0,
+            MontoNeto: r._netoACI !== undefined ? r._netoACI : (r._neto !== undefined ? r._neto : (r._monto || 0)),
+            ArchivoOrigen: r._sourceFile || 'Sistema Local',
+            TipoAjuste: r._adjType || null, Justificacion: r._adjReason || r._manualReason || null, EvidenciaB64: r._adjEvidence || null,
+            Liquidacion: r._liq || r._liqRef || null, Comision: r._comision || r['Monto Comisión'] || 0,
+            RetencionVentas: r._retV || 0, RetencionRenta: r._retR || 0, AjusteACI: (r._neto && r._netoACI) ? (r._neto - r._netoACI) : (r._aciOrig || 0),
+            Lote: r._mode === 'AJUSTE' ? 'AJUSTE' : null, RetencionIVA: r['Retención IVA'] || 0, RetencionISR: r['Retención IS'] || r['Retención ISR'] || 0
+        };
+
+        if (banco === 'SCOTIA' && origen !== 'PAGADO') {
+            const headSc = this.data.headers.scotia_detalle || [];
+            const idxLote = headSc.findIndex(h => h && h.toLowerCase().includes('lote'));
+            const idxAuth = headSc.findIndex(h => h && h.toLowerCase().includes('autori'));
+            if (idxLote !== -1 && r[idxLote]) record.Lote = String(r[idxLote]).trim();
+            if (idxAuth !== -1 && r[idxAuth]) record.Autorizacion = String(r[idxAuth]).trim();
+        }
+        if (banco === 'BAC' && origen !== 'PAGADO' && !record.Autorizacion) {
+             const headBac = this.data.headers.detalle || [];
+             const idxAuth = headBac.findIndex(h => h && h.toLowerCase().includes('autori'));
+             if (idxAuth !== -1 && r[idxAuth]) record.Autorizacion = String(r[idxAuth]).trim();
+        }
+
+        // BLINDAJE ABSOLUTO DE FECHAS PARA SQL SERVER (Debe ser YYYY-MM-DD)
+        if (r._fecha) {
+            let d = String(r._fecha).trim().split(' ')[0]; // Cortar la hora si viene pegada
+            
+            // Si trae formato Excel numérico por error (ej. 45310), usar nuestra función de rescate global
+            if (!isNaN(d) && Number(d) > 10000) {
+                d = this.formatDateCR(d); // Lo convierte a DD/MM/YYYY localmente
+            }
+
+            if (d.includes('/') || d.includes('-')) {
+                let parts = d.split(/[\/-]/);
+                if (parts.length === 3) {
+                    // Determinar qué parte es el año
+                    if (parts[0].length === 4) {
+                        // Formato YYYY-MM-DD (Ya está perfecto, solo nos aseguramos del relleno)
+                        record.FechaTransaccion = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
+                    } else if (parts[2].length === 4) {
+                        // Viene como DD/MM/YYYY o MM/DD/YYYY
+                        let day = parseInt(parts[0]);
+                        let month = parseInt(parts[1]);
+                        
+                        // Heurística de Scotiabank: Si el "mes" es mayor a 12, es porque está al revés (Formato Gringo: M/D/Y)
+                        if (month > 12) { 
+                            let temp = day; 
+                            day = month; 
+                            month = temp; 
+                        }
+                        
+                        record.FechaTransaccion = `${parts[2]}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                    } else {
+                        record.FechaTransaccion = null; // Formato incomprensible, mandar nulo para no crashear
+                    }
+                } else {
+                    record.FechaTransaccion = null;
+                }
+            } else {
+                record.FechaTransaccion = null; // Cadena sucia, mandar nulo
+            }
+        } else { 
+            record.FechaTransaccion = null; 
+        }
+
+        return record;
+    },
+
+    saveSnapshot: async function() {
+        const bancoActual = this.activeTab; 
+        
+        if (bancoActual === 'tsd') return alert("El módulo TSD aún no está configurado para guardado.");
+
+        const nombreBanco = bancoActual === 'bac' ? 'BAC Credomatic' : 'Davibank';
+        const payload = this.preparePayload(bancoActual);
+        
+        if (payload.transacciones.length === 0) {
+            return alert(`No hay transacciones procesadas de ${nombreBanco} para guardar.`);
+        }
+
+        // Calcular Estadísticas y Total de Dinero Conciliado
+        const stats = { conciliados: 0, pendientes: 0 };
+        let totalDinero = 0;
+
+        payload.transacciones.forEach(t => {
+            // Evaluamos ÚNICAMENTE el Detallado (Esperado) para no duplicar conteos con el Banco
+            if (t.Origen === 'DETALLADO') {
+                if (t.Estado === 'CONCILIADO') {
+                    stats.conciliados++;
+                    totalDinero += parseFloat(t.MontoNeto || 0);
+                } else {
+                    stats.pendientes++;
+                }
+            }
+        });
+
+        // Adjuntar el total calculado al payload para enviarlo a PHP
+        payload.total_conciliado = totalDinero;
+
+        // Se eliminó el símbolo '₡' manual porque formatMoney ya lo incluye nativamente
+        const confMsg = `Se procederá a consolidar y aislar las excepciones en Base de Datos.\n\n` +
+                        `• Transacciones Conciliadas: <b class="text-green-600">${stats.conciliados}</b>\n` +
+                        `• Transacciones Pendientes: <b class="text-red-500">${stats.pendientes}</b>\n` +
+                        `• Total Procesado: <b class="text-blue-600">${this.formatMoney(totalDinero)}</b>`;
+
+        if (!(await SysUI.confirm(confMsg, `¿Registrar Cierre de ${nombreBanco}?`, "warning"))) return;
+
+        const btn = document.getElementById('btn-save-snapshot');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = 'Guardando...';
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('api/save_conciliacion.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                // Éxito: Limpiamos borrador, mostramos mensaje y reiniciamos la vista limpiamente
+                localStorage.removeItem('conciliacion_draft');
+                await SysUI.alert(`Transacciones guardadas en Base de Datos: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre de ${nombreBanco} Exitoso`, "success");
+                
+                window.ConciliacionLogic.resetState();
+                window.loadView('conciliacion', false); // Recargar pantalla automáticamente
+            } else {
+                throw new Error(data.error || "Error desconocido");
+            }
+        } catch (error) {
+            console.error(error);
+            alert("❌ Fallo al guardar: " + error.message);
+        } finally {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    },
+
     
 };
 
-// --- SHIM LEGACY (Para botón "X" de estadísticas) ---
-window.TableFramework = {
-    clear: function() {
-        document.getElementById('global-table-stats').classList.add('hidden');
-        // VanillaGrid maneja su propia selección, solo ocultamos la barra visual.
-    }
-};
+// // --- SHIM LEGACY (Para botón "X" de estadísticas) ---
+// window.TableFramework = {
+//     clear: function() {
+//         document.getElementById('global-table-stats').classList.add('hidden');
+//         // VanillaGrid maneja su propia selección, solo ocultamos la barra visual.
+//     }
+// };
 
 // 1. Inicializador (Punto de entrada desde el Router)
 window.initConciliacion = function() { 
@@ -924,5 +1390,10 @@ window.ConciliacionFunctions = {
         if(window.ConciliacionLogic && window.ConciliacionLogic.updateExchangeRate) {
             window.ConciliacionLogic.updateExchangeRate(v);
         }
+    },
+    
+    saveSnapshot: function() {
+        window.ConciliacionLogic.saveSnapshot();
     }
 };
+
