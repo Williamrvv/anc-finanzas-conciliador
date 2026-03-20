@@ -272,18 +272,18 @@ window.ConciliacionLogic = {
         }
     },
 
-    // --- MOTOR DE AUTO-GUARDADO (CADA 3 MINUTOS) ---
+    // --- MOTOR DE AUTO-GUARDADO (CADA 1 MINUTOS) ---
     startAutoSave: function() {
         // 1. Limpiar cualquier intervalo fantasma anterior
         if (this._autoSaveInterval) clearInterval(this._autoSaveInterval);
         
         // 2. Ejecutar cada 180,000 milisegundos (3 minutos)
         this._autoSaveInterval = setInterval(() => {
-            // Solo guardar si realmente hay archivos cargados (para no sobreescribir borradores útiles con vacíos)
+            // Solo sobrescribir el archivo si hay datos (no acumula, reemplaza)
             if (this.hasUnsavedData()) {
-                this.saveDraftToLocal(true); // true = Modo silencioso
+                this.saveDraftToLocal(true);
             }
-        }, 180000); 
+        }, 60000);
     },
 
     showAutoSaveToast: function() {
@@ -1022,7 +1022,7 @@ window.ConciliacionLogic = {
                 } else if (parts[2].length === 4) { // DD/MM/YYYY o MM/DD/YYYY
                     let d = parseInt(parts[0]);
                     let m = parseInt(parts[1]);
-                    if (m > 12) { let temp = d; d = m; m = temp; } // Intercambiar si es gringo
+                    if (m > 12) { let temp = d; d = m; m = temp; } 
                     return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${parts[2]}`;
                 }
             }
@@ -1394,6 +1394,12 @@ window.ConciliacionFunctions = {
     
     saveSnapshot: function() {
         window.ConciliacionLogic.saveSnapshot();
+    },
+
+    forceLocalSave: function() {
+        if(window.ConciliacionLogic) {
+            window.ConciliacionLogic.saveDraftToLocal(true);
+        }
     }
 };
 
