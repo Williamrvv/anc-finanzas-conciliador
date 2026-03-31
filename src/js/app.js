@@ -60,21 +60,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- SPA Router Logic ---
-window.loadView = async function(viewName, pushHistory = true) {
+window.loadView = function(viewName, pushHistory = true) {
     const app = document.getElementById('app');
     if(!app) return;
 
-    // --- 1. INTERCEPCIÓN DE ESTADO (Auto-Guardado Silencioso) ---
-    if (window.ConciliacionLogic && typeof window.ConciliacionLogic.hasUnsavedData === 'function') {
-        if (window.ConciliacionLogic.hasUnsavedData()) {
-            // Guardar foto local en silencio antes de destruir la vista
-            window.ConciliacionLogic.saveDraftToLocal(true); 
-        }
-        // Siempre purgamos la RAM para evitar tablas fantasmas al regresar
-        window.ConciliacionLogic.resetState();
-    }
-
-    // --- 2. CARGA DE VISTA NORMAL ---
+    // Loader
     app.innerHTML = '<div class="flex justify-center p-10 animate-fade-in"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div></div>';
 
     fetch(`router.php?view=${viewName}`)
@@ -94,6 +84,9 @@ window.loadView = async function(viewName, pushHistory = true) {
                 requestAnimationFrame(() => window.ConciliacionLogic.init());
             } else if (viewName === 'usuarios' && window.UsuariosLogic) {
                 requestAnimationFrame(() => window.UsuariosLogic.init());
+            } else if (viewName === 'cierre_cajas' && window.CierreCajasLogic) {
+                // Aquí es donde la magia ocurre: Llama al init() en cuanto carga el HTML
+                requestAnimationFrame(() => window.CierreCajasLogic.init());
             }
         })
         .catch(err => {
