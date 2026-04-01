@@ -2,6 +2,7 @@ window.CierreCajasLogic = {
     currentICD: null,
     headerData: null,
     transacciones: [],
+    pendientesData: [],
     currentUser: window.CURRENT_USER_NAME || 'Analista',
 
     init: function() {
@@ -47,6 +48,7 @@ window.CierreCajasLogic = {
             const json = await res.json();
             
             if (json.success) {
+                this.pendientesData = json.data;
                 if (sucursalCode) {
                     this.renderSucursalBandeja(json.data);
                 } else {
@@ -69,74 +71,85 @@ window.CierreCajasLogic = {
         // 1. Limpiar lista anterior
         list.innerHTML = '';
         
-        if (data && data.length > 0) {
-            console.log(`✅ Dibujando ${data.length} casos pendientes en el Home...`);
+        // 2. Filtrar ESTRICTAMENTE solo los 'NO_REPORTADO'
+        const noReportados = data ? data.filter(c => c.Estado === 'NO_REPORTADO') : [];
+        
+        if (noReportados.length > 0) {
+            console.log(`✅ Dibujando ${noReportados.length} casos pendientes en tarjetas...`);
             
-            // 2. Actualizar contador
+            // Actualizar contadores
             const countBadge = document.getElementById('cc-mi-count');
-            if (countBadge) countBadge.innerText = data.length;
+            if (countBadge) countBadge.innerText = noReportados.length;
             
-            // 3. Forzar Ocultamiento del Emoji Gigante
+            // Ocultar Emoji Gigante
             if (emptyState) {
                 emptyState.style.setProperty('display', 'none', 'important');
                 emptyState.classList.add('hidden');
             }
             
-            // 4. Mostrar botón de reporte solo si hay 'NO_REPORTADO'
-            const hayNoReportados = data.some(c => c.Estado === 'NO_REPORTADO');
+            // Mostrar Botón de Reporte
             if (btnReport) {
-                if (hayNoReportados) {
-                    btnReport.classList.remove('hidden');
-                    btnReport.style.display = 'flex';
-                } else {
-                    btnReport.classList.add('hidden');
-                    btnReport.style.display = 'none';
-                }
+                btnReport.classList.remove('hidden');
+                btnReport.style.display = 'flex';
             }
 
-            // 5. Dibujar filas
-            list.innerHTML = data.map(c => {
-                let isNoRep = c.Estado === 'NO_REPORTADO';
-                let isResuelto = c.Estado === 'RESUELTO';
-                
-                let statusColor = "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400";
-                if(isNoRep) statusColor = "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/50 dark:text-amber-300";
-                if(isResuelto) statusColor = "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/50 dark:text-green-300";
-                if(c.Estado === 'PENDIENTE_VISTO_BUENO') statusColor = "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300";
-                
-                let atrasoHtml = c.DiasAtraso > 2 ? `<span class="text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-1 rounded ml-2">${c.DiasAtraso}d Atraso</span>` : '';
+            // 3. Dibujar Tarjetas (Cards)
+            list.innerHTML = noReportados.map(c => {
+                let statusColor = "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700";
+                let atrasoHtml = c.DiasAtraso > 2 
+                    ? `<span class="text-[9px] font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded shadow-sm border border-red-200 dark:border-red-800">${c.DiasAtraso}d ATRASO</span>` 
+                    : '';
 
-                // Input Reactivo
-                let motivoHtml = isNoRep
-                    ? `<input type="text" id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-2 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded focus:ring-1 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors" placeholder="Escriba aquí para justificar..." value="${c.MotivoAgente || ''}" oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">`
-                    : `<span class="text-xs text-slate-500 truncate block w-64" title="${c.MotivoAgente}">${c.MotivoAgente || 'Sin detalle'}</span>`;
+                // Input Reactivo para reportar
+                let motivoHtml = `<textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Escriba aquí para justificar y reportar a la Jefatura..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>`;
 
                 return `
-                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
-                    <td class="p-3">
-                        <span class="text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${statusColor}">${c.Estado.replace(/_/g, ' ')}</span>
-                        ${atrasoHtml}
-                    </td>
-                    <td class="p-3">
-                        <div class="text-sm font-black text-slate-800 dark:text-white leading-tight">${c.NumeroContrato}</div>
-                        <div class="text-[10px] text-slate-500 truncate w-48">${c.NombreCliente}</div>
-                        <div class="text-[9px] text-slate-400 uppercase font-bold mt-1">${c.Sucursal_Relacionada}</div>
-                    </td>
-                    <td class="p-3 font-mono text-xs text-indigo-600 dark:text-indigo-400 font-bold">${c.ICD_Relacionado}</td>
-                    <td class="p-3 text-right font-black text-slate-700 dark:text-slate-300">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                    <td class="p-3 pr-4">${motivoHtml}</td>
-                </tr>`;
+                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all flex flex-col justify-between group h-full relative overflow-hidden">
+                    <!-- Borde superior de color -->
+                    <div class="absolute top-0 left-0 w-full h-1 bg-amber-400"></div>
+                    
+                    <div>
+                        <!-- Header de la Tarjeta -->
+                        <div class="flex justify-between items-start mb-3 mt-1">
+                            <span class="text-[9px] font-black px-2 py-0.5 rounded-md border uppercase tracking-widest ${statusColor}">${c.Estado.replace(/_/g, ' ')}</span>
+                            ${atrasoHtml}
+                        </div>
+                        
+                        <!-- Datos Principales -->
+                        <div class="mb-3">
+                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Contrato: <span class="text-slate-700 dark:text-slate-300">${c.NumeroContrato}</span></div>
+                            <h3 class="text-sm font-black text-indigo-900 dark:text-white leading-tight uppercase line-clamp-2" title="${c.NombreCliente}">${c.NombreCliente}</h3>
+                            <div class="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-900 inline-block px-1.5 py-0.5 rounded mt-1.5 uppercase border border-slate-200 dark:border-slate-700">🏢 ${c.Sucursal_Relacionada}</div>
+                        </div>
+
+                        <!-- Metadatos (Monto e ICD) -->
+                        <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700 mb-4">
+                            <div>
+                                <span class="block text-[9px] text-slate-400 uppercase font-bold">ICD Origen</span>
+                                <span class="text-xs font-mono font-bold text-indigo-600 dark:text-indigo-400">${c.ICD_Relacionado}</span>
+                            </div>
+                            <div class="text-right border-l border-slate-200 dark:border-slate-700 pl-3">
+                                <span class="block text-[9px] text-slate-400 uppercase font-bold">Monto Afectado</span>
+                                <span class="text-sm font-black text-slate-700 dark:text-slate-300">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Zona Interactiva (Input de Motivo) -->
+                    <div class="mt-auto">
+                        ${motivoHtml}
+                    </div>
+                </div>`;
             }).join('');
             
-            // 6. Forzar Visualización del Contenedor de la Tabla
+            // 6. Forzar Visualización
             if (container) {
                 container.style.setProperty('display', 'block', 'important');
                 container.classList.remove('hidden');
             }
 
         } else {
-            console.log("ℹ️ No hay casos pendientes para este usuario.");
-            // Si no hay datos, ocultar bandeja y mostrar emoji
+            console.log("ℹ️ No hay casos NO_REPORTADOS.");
             if (container) {
                 container.style.display = 'none';
                 container.classList.add('hidden');
@@ -173,7 +186,7 @@ window.CierreCajasLogic = {
                         <span>ICD: <span class="font-mono text-slate-700 dark:text-slate-300">${c.ICD_Relacionado}</span></span>
                         <span class="text-amber-700 dark:text-amber-500">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                     </div>
-                    <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Escriba aquí para ayudar a reportar..." value="${c.MotivoAgente || ''}">
+                    <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-white rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Escriba aquí para ayudar a reportar..." value="${c.MotivoAgente || ''}">
                 </div>
             `).join('');
             
@@ -186,15 +199,24 @@ window.CierreCajasLogic = {
     enviarSeleccionadosAJefatura: async function(origen = 'home') {
         const inputClass = origen === 'home' ? '.cc-motivo-input-home' : '.cc-motivo-input-suc';
         const inputsMotivo = document.querySelectorAll(inputClass);
+        
         const casosData = [];
+        const jefesInvolucrados = new Set(); // Evita jefes duplicados en la alerta
 
         inputsMotivo.forEach(input => {
             const motivo = input.value.trim();
             if (motivo !== '') {
-                // El id de caso está al final del ID del input (ej: motivo-home-15)
                 const parts = input.id.split('-');
                 const idCaso = parts[parts.length - 1];
                 casosData.push({ id_caso: idCaso, motivo: motivo });
+
+                // Extraemos el jefe desde la memoria que guardamos
+                const casoBd = this.pendientesData.find(c => c.IdCaso == idCaso);
+                if (casoBd) {
+                    const nombreJefes = casoBd.NombreJefe || 'Jefatura no asignada';
+                    const emailJefes = casoBd.EmailJefe || 'Sin correo registrado';
+                    jefesInvolucrados.add(`👤 ${nombreJefes} \n   ✉️ ${emailJefes}`);
+                }
             }
         });
 
@@ -202,7 +224,11 @@ window.CierreCajasLogic = {
             return SysUI.alert("Debe escribir una justificación en al menos un caso para poder reportarlo.", "Ningún caso justificado", "warning");
         }
 
-        const confirm = await SysUI.confirm(`Se reportarán ${casosData.length} casos a la Jefatura de Sucursal correspondiente.\n\n¿Desea proceder?`, "Confirmar Reporte", "info");
+        // Armamos el mensaje final mostrando la lista de correos
+        let listaJefesHtml = Array.from(jefesInvolucrados).join('\n\n');
+        const msg = `Se enviará el reporte de ${casosData.length} caso(s) a los siguientes responsables:\n\n${listaJefesHtml}\n\n¿Desea proceder con el envío?`;
+
+        const confirm = await SysUI.confirm(msg, "Confirmar Reporte a Jefatura", "info");
         if (!confirm) return;
 
         try {
@@ -214,7 +240,7 @@ window.CierreCajasLogic = {
             const data = await res.json();
 
             if (data.success) {
-                await SysUI.alert("Los casos han sido reportados exitosamente a las Jefaturas.", "Reportado", "success");
+                await SysUI.alert("Los casos han sido reportados exitosamente a las Jefaturas correspondientes.", "Reportado", "success");
                 
                 // Recargar la bandeja correcta
                 if (origen === 'home') {
@@ -319,12 +345,25 @@ window.CierreCajasLogic = {
                 if (t._selected) continue; 
                 let authBD = t.Numero_Autorizacion ? String(t.Numero_Autorizacion).trim().toUpperCase() : '';
                 
+                // 1ra Condición: Autorización Exacta
                 if (authBD === authVal) {
+                    
+                    // 2da Condición: Monto con Tolerancia (Margen 3%)
                     let montoBD = parseFloat(t.Conversion || 0);
-                    let tolerancia = montoBD * 0.03; 
-                    if (montoVal >= (montoBD - tolerancia) && montoVal <= (montoBD + tolerancia)) {
+                    
+                    // Usamos Math.abs para asegurar que la tolerancia siempre sea un valor positivo
+                    let toleranciaAbsoluta = Math.abs(montoBD) * 0.03; 
+                    
+                    // Ordenamos los límites para que funcione igual con positivos y negativos
+                    let limiteMinimo = Math.min(montoBD - toleranciaAbsoluta, montoBD + toleranciaAbsoluta);
+                    let limiteMaximo = Math.max(montoBD - toleranciaAbsoluta, montoBD + toleranciaAbsoluta);
+
+                    // Imprime en consola para auditoría visual si el monto está cerca
+                    if (montoVal >= limiteMinimo && montoVal <= limiteMaximo) {
                         matchIndex = i;
                         break; 
+                    } else {
+                        console.warn(`Monto ingresado (${montoVal}) fuera del rango permitido (${limiteMinimo.toFixed(2)} a ${limiteMaximo.toFixed(2)}) para la autorización ${authVal}`);
                     }
                 }
             }
@@ -559,5 +598,38 @@ window.CierreCajasLogic = {
             btn.disabled = false;
             btn.innerHTML = originalText;
         }
+    },
+
+    
+};
+
+// =========================================================================
+// HERRAMIENTA DE AUDITORÍA: REVELAR DATOS OCULTOS DEL ICD ACTUAL (F12)
+// Ejecutar en consola: window.revelarSecretosICD()
+// =========================================================================
+window.rev = function() {
+    console.log("🕵️‍♂️ Buscando datos enmascarados en la RAM...");
+    
+    // Verificamos si el módulo está abierto y tiene transacciones cargadas
+    if (!window.CierreCajasLogic || !window.CierreCajasLogic.transacciones || window.CierreCajasLogic.transacciones.length === 0) {
+        console.warn("⚠️ No hay un ICD activo con transacciones cargadas en memoria.");
+        return;
     }
+
+    const t = window.CierreCajasLogic.transacciones;
+    console.log(`✅ Mostrando ${t.length} transacciones originales del ICD: ${window.CierreCajasLogic.currentICD}`);
+
+    // Mapeamos solo los campos que están ocultos por el "Doble Ciego" para que el analista pueda verlos en una tabla limpia
+    const datosOcultos = t.map((fila, index) => ({
+        "# Fila": index + 1,
+        "Contrato": fila.Numero_Contrato,
+        "Cliente": `${fila.Nombre} ${fila.Apellido}`.trim(),
+        "Estado": fila._selected ? "✅ MATCH" : "❌ OCULTO",
+        "AUTORIZACIÓN REAL": fila.Numero_Autorizacion || 'SIN_AUT',
+        "MONTO EXACTO (CRC)": `₡${parseFloat(fila.Conversion || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits:2})}`,
+        "Monto Origen (USD)": `$${parseFloat(fila.Monto_Pago || 0).toFixed(2)}`
+    }));
+
+    // Imprimimos la tabla formateada nativamente en la consola
+    console.table(datosOcultos);
 };

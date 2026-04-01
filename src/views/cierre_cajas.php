@@ -32,8 +32,9 @@
             <span class="text-sm text-slate-500 text-center font-medium">Ingrese el número de ICD en el buscador<br>para iniciar el cuadre de caja.</span>
         </div>
 
-        <!-- Mi Bandeja de Pendientes (Tabla de Alta Densidad) -->
+        <!-- Mi Bandeja de Pendientes (Tarjetas Expandibles) -->
         <div id="cc-mi-bandeja" class="hidden animate-fade-in-up w-full mt-2">
+            
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
                 <h2 class="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span>
@@ -46,22 +47,11 @@
                 </button>
             </div>
             
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm w-full overflow-x-auto">
-                <table class="w-full text-left whitespace-nowrap min-w-[800px]">
-                    <thead class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-                        <tr>
-                            <th class="p-3 w-28">Estado</th>
-                            <th class="p-3">Contrato / Cliente</th>
-                            <th class="p-3 w-32">ICD Origen</th>
-                            <th class="p-3 w-32 text-right">Monto ₡</th>
-                            <th class="p-3 w-72">Motivo / Justificación</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cc-mi-list" class="text-sm divide-y divide-slate-100 dark:divide-slate-700/50">
-                        <!-- Filas inyectadas por JS -->
-                    </tbody>
-                </table>
+            <!-- Grid de Tarjetas en lugar de Tabla -->
+            <div id="cc-mi-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 pb-10">
+                <!-- Tarjetas inyectadas por JS -->
             </div>
+            
         </div>
     </div>
 

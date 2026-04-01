@@ -8,23 +8,51 @@ $view = preg_replace('/[^a-zA-Z0-9_-]/', '', $raw_view);
 if (!isset($_SESSION['user'])) {
     $view = 'login_view';
 } else {
-    // 2. Control de Acceso Basado en Roles (RBAC)
+    // 2. CONTROL DE ACCESO BASADO EN ROLES (RBAC) - LISTA BLANCA
     $role = $_SESSION['user']['role'] ?? 'visitante';
-
-    // Reglas de Bloqueo (Actualizado con el Súper Permiso)
     $canManage = $_SESSION['user']['can_manage'] ?? false;
-    $isAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
     
-    // Si no tiene el súper permiso Y TAMPOCO es admin, lo bloqueamos
-    if ($view === 'usuarios' && !$canManage && !$isAdmin) {
-        $view = 'dashboard';
+    // Todos los usuarios logueados pueden ver el inicio por defecto
+    $allowed_views = ['dashboard'];
+
+    // Permisos Dinámicos según el Rol oficial
+    switch ($role) {
+        case 'admin':
+            // El admin tiene acceso absoluto a todo
+            $allowed_views = ['dashboard', 'conciliacion', 'cierre_cajas', 'usuarios'];
+            break;
+            
+        case 'conciliador':
+            // Solo ve la parte de bancos
+            $allowed_views = ['dashboard', 'conciliacion'];
+            break;
+            
+        case 'jefe':
+        case 'agente':
+            // Los de TSD solo ven su módulo de cierres
+            $allowed_views = ['dashboard', 'cierre_cajas'];
+            break;
+            
+        case 'visitante':
+            // El visitante se queda con el dashboard básico
+            $allowed_views = ['dashboard'];
+            break;
     }
-    
-    if ($view === 'conciliacion' && $role === 'visitante') {
-        $view = 'dashboard'; // El visitante no puede conciliar
+
+    // 3. Reglas Especiales (Super Permisos Inter-Roles)
+    // Si un Agente o Jefe tiene el "interruptor" encendido, se le abre la puerta del panel de usuarios
+    if ($canManage && !in_array('usuarios', $allowed_views)) {
+        $allowed_views[] = 'usuarios';
+    }
+
+    // 4. El Veredicto Final
+    // Si la vista que el usuario escribió en la URL no está en su lista personal de permisos, lo devolvemos al inicio.
+    if (!in_array($view, $allowed_views)) {
+        $view = 'dashboard';
     }
 }
 
+// 5. Cargar el Archivo Seguro
 $file = __DIR__ . "/views/$view.php";
 
 if (file_exists($file)) {
