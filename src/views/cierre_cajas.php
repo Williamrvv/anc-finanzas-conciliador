@@ -9,12 +9,84 @@
             </h1>
             <p class="text-xs text-slate-500 mt-1">Conciliación de vouchers vs Registro TSD.</p>
         </div>
-        
-        <div class="flex items-center gap-2">
-            <input type="text" id="cc-icd-input" class="w-full md:w-64 px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold uppercase transition-all text-slate-800 dark:text-white" placeholder="Ej: SJOT71-23876" autocomplete="off">
-            <button onclick="window.CierreCajasLogic.searchICD()" id="btn-search-icd" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors">Buscar</button>
-        </div>
     </header>
+
+    <!-- PESTAÑAS DE NAVEGACIÓN -->
+    <div class="flex overflow-x-auto custom-scrollbar space-x-1 border-b border-slate-200 dark:border-slate-700 mb-6 mt-2">
+        <button onclick="window.CierreCajasLogic.switchTab('workspace')" id="tab-workspace" class="whitespace-nowrap px-6 py-2.5 text-sm font-bold rounded-t-lg transition-colors border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20">
+            Módulo de Trabajo
+        </button>
+        <button onclick="window.CierreCajasLogic.switchTab('history')" id="tab-history" class="whitespace-nowrap px-6 py-2.5 text-sm font-bold rounded-t-lg transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:text-slate-300">
+            Trazabilidad de Casos
+        </button>
+        <button onclick="window.CierreCajasLogic.switchTab('audit')" id="tab-audit" class="whitespace-nowrap px-6 py-2.5 text-sm font-bold rounded-t-lg transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:text-slate-300">
+            Auditoría de ICD
+        </button>
+    </div>
+
+    <!-- BUSCADOR ICD (Exclusivo del Módulo de Trabajo) -->
+    <div id="cc-search-section" class="flex flex-col sm:flex-row items-center gap-3 mb-6 bg-indigo-50/50 dark:bg-indigo-900/10 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/30 transition-all">
+        <span class="text-sm font-black text-indigo-800 dark:text-indigo-400 hidden sm:block uppercase tracking-widest ml-2 whitespace-nowrap">Cargar ICD</span>
+        <div class="flex-grow w-full relative">
+            <input type="text" id="cc-icd-input" onkeydown="if(event.key === 'Enter') { event.preventDefault(); window.CierreCajasLogic.searchICD(); }" class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold uppercase transition-all text-slate-800 dark:text-white shadow-sm" placeholder="Digite el número de ICD... Ej: SJOT71-12345" autocomplete="off">
+            <span class="absolute left-3 top-2.5 text-slate-400">📄</span>
+        </div>
+        <button onclick="window.CierreCajasLogic.searchICD()" id="btn-search-icd" class="w-full sm:w-32 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-colors flex items-center justify-center gap-2">
+            Buscar
+        </button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- VISTA AUDITORÍA (Busca y revisa cualquier ICD) -->
+    <!-- ========================================== -->
+    <div id="cc-audit-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
+        
+        <div class="flex flex-col sm:flex-row items-center gap-3 mb-6 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+            <span class="text-sm font-black text-slate-500 dark:text-slate-400 hidden sm:block uppercase tracking-widest ml-2 whitespace-nowrap">Auditar ICD</span>
+            <div class="flex-grow w-full relative">
+                <input type="text" id="audit-icd-input" onkeydown="if(event.key === 'Enter') { event.preventDefault(); window.CierreCajasLogic.searchAuditICD(); }" class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-500 outline-none text-sm font-bold uppercase transition-all text-slate-800 dark:text-white shadow-sm" placeholder="Digite el número de ICD para auditar..." autocomplete="off">
+                <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
+            </div>
+            <button onclick="window.CierreCajasLogic.searchAuditICD()" class="w-full sm:w-32 bg-slate-600 hover:bg-slate-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-colors flex items-center justify-center gap-2">
+                Buscar
+            </button>
+        </div>
+
+        <div id="audit-empty" class="flex flex-col items-center justify-center py-10 opacity-70">
+            <span class="text-5xl mb-3 drop-shadow-sm">📋</span>
+            <span class="text-sm text-slate-500 text-center font-medium">Busque un ICD para ver su estado actual<br>y el estatus individual de cada transacción.</span>
+        </div>
+
+        <div id="audit-content" class="hidden flex-col flex-grow">
+            <!-- Metadatos Auditoría -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm w-full mb-4 p-5 grid grid-cols-2 md:grid-cols-4 gap-6 items-start relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-slate-400"></div>
+                <div class="pl-2 lg:pl-4">
+                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">ICD Auditado</span>
+                    <span id="ad-icd" class="text-base sm:text-lg font-black text-slate-700 dark:text-slate-300 font-mono block truncate"></span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Sucursal TSD</span>
+                    <span id="ad-sucursal" class="text-sm font-bold text-slate-700 dark:text-slate-200 block truncate"></span>
+                </div>
+                <div>
+                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Creado en TSD</span>
+                    <span id="ad-fecha-tsd" class="text-sm font-bold text-slate-700 dark:text-slate-200 block truncate"></span>
+                </div>
+                <div class="bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Estado del Cierre</span>
+                    <span id="ad-estado-cierre" class="text-sm font-black flex items-center gap-1.5"></span>
+                </div>
+            </div>
+
+            <!-- Tabla de Vouchers -->
+            <div class="flex justify-between items-center mb-2 mt-4">
+                <h3 class="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Desglose de Transacciones</h3>
+                <span class="text-[10px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Doble clic para ver historial</span>
+            </div>
+            <div id="audit-grid" class="w-full flex-grow min-h-[400px]"></div>
+        </div>
+    </div>
 
     <div id="cc-loading" class="hidden flex-col items-center justify-center py-10">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2"></div>
@@ -25,16 +97,12 @@
     <!-- 1. VISTA HOME (Bandeja Global del Usuario) -->
     <!-- ========================================== -->
     <div id="cc-home-view" class="flex flex-col w-full py-4 transition-all">
-        
-        <!-- Estado Vacío (Aparece si la bandeja no tiene datos) -->
         <div id="cc-empty-state" class="flex flex-col items-center justify-center opacity-70 mb-8 transition-all duration-300">
             <span class="text-5xl mb-3 drop-shadow-sm">🧾</span>
             <span class="text-sm text-slate-500 text-center font-medium">Ingrese el número de ICD en el buscador<br>para iniciar el cuadre de caja.</span>
         </div>
 
-        <!-- Mi Bandeja de Pendientes (Tarjetas Expandibles) -->
         <div id="cc-mi-bandeja" class="hidden animate-fade-in-up w-full mt-2">
-            
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
                 <h2 class="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span>
@@ -43,15 +111,10 @@
                 </h2>
                 <button onclick="window.CierreCajasLogic.enviarSeleccionadosAJefatura('home')" id="cc-btn-report-home" class="hidden bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg font-bold shadow-sm transition-colors items-center gap-2 text-xs">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-                    Reportar a Jefatura
+                    Reportar
                 </button>
             </div>
-            
-            <!-- Grid de Tarjetas en lugar de Tabla -->
-            <div id="cc-mi-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 pb-10">
-                <!-- Tarjetas inyectadas por JS -->
-            </div>
-            
+            <div id="cc-mi-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 pb-10"></div>
         </div>
     </div>
 
@@ -60,39 +123,31 @@
     <!-- ========================================== -->
     <div id="cc-workspace" class="hidden flex-col gap-4 flex-grow overflow-hidden">
         
-        <!-- Tarjeta de Metadatos y Escáner Minimalista -->
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm w-full mb-4 flex flex-col overflow-hidden shrink-0">
-            <!-- Zona Superior: Metadatos -->
             <div class="p-4 lg:p-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-6 items-start relative">
                 <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-                
                 <div class="pl-2 lg:pl-4">
                     <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Número ICD</span>
                     <span id="meta-icd" class="text-base sm:text-lg font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight truncate block"></span>
                 </div>
-                
                 <div>
                     <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Sucursal</span>
                     <span id="meta-sucursal" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight truncate block"></span>
                 </div>
-                
                 <div>
                     <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Marca Operativa</span>
                     <span id="meta-marca" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold shadow-sm transition-colors mt-0.5"></span>
                 </div>
-                
                 <div>
                     <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Registrado TSD</span>
                     <span id="meta-usuario" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight truncate block"></span>
                 </div>
-                
                 <div>
                     <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Fecha / Hora</span>
                     <span id="meta-fecha" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight truncate block"></span>
                 </div>
             </div>
 
-            <!-- Zona Inferior: Escáner Doble Ciego -->
             <div class="bg-indigo-50/50 dark:bg-indigo-900/20 p-4 lg:p-5 border-t border-indigo-100 dark:border-indigo-800/50 flex flex-col md:flex-row items-center gap-4 lg:gap-6">
                 <div class="shrink-0 w-full md:w-auto text-center md:text-left">
                     <span class="block text-sm font-black text-indigo-700 dark:text-indigo-300">🔍 Doble Ciego</span>
@@ -112,10 +167,8 @@
             </div>
         </div>
 
-        <!-- Lista de Vouchers del ICD -->
         <div id="cc-transactions-list" class="space-y-2 px-1 pb-10"></div>
 
-        <!-- BANDEJA COLABORATIVA DE SUCURSAL (Al final de los vouchers) -->
         <div id="cc-sucursal-bandeja" class="hidden mt-4 border-t-2 border-dashed border-slate-200 dark:border-slate-700 pt-6">
             <div class="flex justify-between items-end mb-4">
                 <h3 class="text-sm font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest flex items-center gap-2">
@@ -124,34 +177,162 @@
                 </h3>
                 <button onclick="window.CierreCajasLogic.enviarSeleccionadosAJefatura('sucursal')" id="cc-btn-report-suc" class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-1.5 rounded-lg font-bold shadow-sm transition-colors text-xs flex items-center gap-2 hidden">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-                    Ayudar a Reportar
+                    Reportar
                 </button>
             </div>
             
-            <!-- Grid Colaborativo (Tarjetas) -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="cc-suc-list">
-                <!-- Se inyectan por JS -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" id="cc-suc-list"></div>
+        </div>
+
+        <!-- BARRA INFERIOR DE ACCIÓN (Pertenece estructuralmente al Workspace) -->
+        <div id="cc-action-bar" class="fixed bottom-0 left-0 w-full bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-3 sm:p-4 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] flex justify-between items-center z-40 animate-fade-in-up">
+            <div class="flex items-center gap-4 sm:gap-6">
+                <div class="flex flex-col">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase">Match</span>
+                    <span class="text-xl font-black text-slate-800 dark:text-white font-mono"><span id="cc-sel-count" class="text-green-600">0</span> / <span id="cc-total-count">0</span></span>
+                </div>
+                <div class="flex flex-col border-l border-slate-200 dark:border-slate-700 pl-4 sm:pl-6">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase">Verificado</span>
+                    <span id="cc-sel-total" class="text-xl font-black text-green-600 dark:text-green-400 font-mono">₡0.00</span>
+                </div>
+            </div>
+
+            <button onclick="window.CierreCajasLogic.saveCierre()" id="btn-save-cierre" class="bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 sm:py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2" disabled>
+                <span id="btn-save-text">Guardar Cierre</span>
+                <svg class="w-5 h-5 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </button>
+        </div>
+
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 3. VISTA HISTORIAL (BPM con Sub-Pestañas) -->
+    <!-- ========================================== -->
+    <div id="cc-history-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
+        
+        <!-- Sub-Pestañas Internas (Activos vs Resueltos) -->
+        <div class="flex gap-4 mb-4 border-b border-slate-200 dark:border-slate-700">
+            <button onclick="window.CierreCajasLogic.switchSubTab('activos')" id="subtab-activos" class="pb-2 text-sm font-bold border-b-2 border-amber-500 text-amber-600 dark:text-amber-500 transition-colors">
+                Casos Activos (<span id="count-urgentes">0</span>)
+            </button>
+            <button onclick="window.CierreCajasLogic.switchSubTab('resueltos')" id="subtab-resueltos" class="pb-2 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
+                Histórico Resueltos (<span id="count-resueltos">0</span>)
+            </button>
+        </div>
+
+        <!-- SECCIÓN 1: ACTIVOS (Urgentes) -->
+        <div id="cc-section-activos" class="flex flex-col flex-grow">
+            <div class="mb-6 relative">
+                <input type="text" id="search-activos" oninput="window.CierreCajasLogic.filterActivos()" class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none shadow-sm transition-shadow placeholder-slate-400" placeholder="Buscar en casos activos (Contrato, Cliente, Sucursal)...">
+                <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
+            </div>
+            <div id="cc-urgentes-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                <!-- Tarjetas Activas -->
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: HISTÓRICO RESUELTOS (Con Paginación) -->
+        <div id="cc-section-resueltos" class="hidden flex-col flex-grow">
+            <div class="mb-6 relative">
+                <input type="text" id="search-resueltos" onkeydown="if(event.key === 'Enter') window.CierreCajasLogic.searchResueltosServer()" class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-shadow placeholder-slate-400" placeholder="Buscar en el histórico completo (Presione Enter)..." autocomplete="off">
+                <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
+            </div>
+            
+            <div id="cc-resueltos-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
+                <!-- Tarjetas Resueltas -->
+            </div>
+
+            <!-- Controles de Paginación -->
+            <div id="cc-pagination-controls" class="hidden flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mt-auto">
+                <span class="text-xs text-slate-500 font-bold">Página <span id="pag-current" class="text-indigo-600 dark:text-indigo-400">1</span> de <span id="pag-total">1</span></span>
+                <div class="flex gap-2">
+                    <button onclick="window.CierreCajasLogic.changeHistoryPage(-1)" id="btn-hist-prev" class="px-4 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Anterior</button>
+                    <button onclick="window.CierreCajasLogic.changeHistoryPage(1)" id="btn-hist-next" class="px-4 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Siguiente</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div id="cc-history-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
+        
+        <!-- Barra de Búsqueda Global -->
+        <div class="flex flex-col sm:flex-row gap-4 mb-6 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+            <div class="flex-grow relative">
+                <input type="text" id="hist-search" oninput="window.CierreCajasLogic.filterHistoryCards()" class="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Buscar por Contrato, Cliente o Sucursal...">
+                <span class="absolute left-3 top-2 text-slate-400">🔍</span>
+            </div>
+            <!-- Ocultamos el select de estados porque ahora está dividido en secciones -->
+        </div>
+        
+        <!-- SECCIÓN 1: URGENCIAS (No Reportados y Pendientes) -->
+        <div class="mb-8">
+            <h2 class="text-sm font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest flex items-center gap-2 mb-4">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span>
+                Casos Activos Requieren Atención (<span id="count-urgentes">0</span>)
+            </h2>
+            <div id="cc-urgentes-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                <!-- JS inyecta las tarjetas urgentes aquí -->
+            </div>
+        </div>
+
+        <!-- SECCIÓN 2: HISTORIAL (Resueltos con Paginación) -->
+        <div class="mt-4 border-t-2 border-dashed border-slate-200 dark:border-slate-700 pt-6">
+            <h2 class="text-sm font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-4">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                Casos Resueltos
+            </h2>
+            
+            <div id="cc-resueltos-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
+                <!-- JS inyecta las tarjetas resueltas aquí -->
+            </div>
+
+            <!-- Controles de Paginación -->
+            <div id="cc-pagination-controls" class="hidden flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <span class="text-xs text-slate-500 font-bold">Página <span id="pag-current" class="text-indigo-600">1</span> de <span id="pag-total">1</span></span>
+                <div class="flex gap-2">
+                    <button onclick="window.CierreCajasLogic.changeHistoryPage(-1)" id="btn-hist-prev" class="px-3 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">Anterior</button>
+                    <button onclick="window.CierreCajasLogic.changeHistoryPage(1)" id="btn-hist-next" class="px-3 py-1 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">Siguiente</button>
+                </div>
             </div>
         </div>
 
     </div>
 
-    <!-- BARRA INFERIOR DE ACCIÓN -->
-    <div id="cc-action-bar" class="fixed bottom-0 left-0 w-full bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-3 sm:p-4 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] flex justify-between items-center transform translate-y-full transition-transform duration-300 z-40">
-        <div class="flex items-center gap-4 sm:gap-6">
-            <div class="flex flex-col">
-                <span class="text-[10px] font-bold text-slate-500 uppercase">Match</span>
-                <span class="text-xl font-black text-slate-800 dark:text-white font-mono"><span id="cc-sel-count" class="text-green-600">0</span> / <span id="cc-total-count">0</span></span>
+</div> <!-- FIN DEL CONTENEDOR ANIMADO -->
+
+<!-- ========================================== -->
+<!-- MODAL LÍNEA DE TIEMPO INTERACTIVA (BPM)    -->
+<!-- (Movido a la raíz para arreglar Bug de Blur)-->
+<!-- ========================================== -->
+<div id="modal-timeline" class="fixed inset-0 bg-slate-500/30 dark:bg-slate-900/60 backdrop-blur-sm z-[9999] hidden flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-700 transform transition-all flex flex-col max-h-[90vh] animate-fade-in-up">
+        
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center shrink-0">
+            <h3 class="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                Gestión de Caso #<span id="tl-id"></span>
+            </h3>
+            <button type="button" onclick="document.getElementById('modal-timeline').classList.add('hidden')" class="text-slate-400 hover:text-red-500 transition-colors">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto custom-scrollbar flex-grow bg-slate-50 dark:bg-slate-900/20">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div><span class="block text-[10px] text-slate-500 uppercase font-bold">Contrato</span><span id="tl-contrato" class="font-bold text-sm dark:text-white"></span></div>
+                <div class="col-span-2"><span class="block text-[10px] text-slate-500 uppercase font-bold">Cliente</span><span id="tl-cliente" class="font-bold text-sm dark:text-white truncate block"></span></div>
+                <div><span class="block text-[10px] text-slate-500 uppercase font-bold">Colones</span><span id="tl-monto" class="font-bold text-sm text-red-600 font-mono"></span></div>
+                <div><span class="block text-[10px] text-slate-500 uppercase font-bold">Dólares</span><span id="tl-usd" class="font-bold text-sm text-green-600 font-mono"></span></div>
             </div>
-            <div class="flex flex-col border-l border-slate-200 dark:border-slate-700 pl-4 sm:pl-6">
-                <span class="text-[10px] font-bold text-slate-500 uppercase">Verificado</span>
-                <span id="cc-sel-total" class="text-xl font-black text-green-600 dark:text-green-400 font-mono">₡0.00</span>
+            
+            <h4 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 ml-2">Línea de Tiempo de Auditoría</h4>
+            <div class="relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 md:ml-4 space-y-6 pb-4" id="tl-events">
+                <!-- Eventos Historial -->
             </div>
         </div>
 
-        <button onclick="window.CierreCajasLogic.saveCierre()" id="btn-save-cierre" class="bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 sm:py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2" disabled>
-            <span id="btn-save-text">Guardar Cierre</span>
-            <svg class="w-5 h-5 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-        </button>
+        <div id="tl-action-zone" class="px-6 py-4 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0 hidden">
+            <!-- Se inyectan los inputs y botones por JS -->
+        </div>
     </div>
 </div>

@@ -138,9 +138,26 @@
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rol de Acceso Base</label>
-                        <select name="idRol" id="u-rol" required class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                        <select name="idRol" id="u-rol" required onchange="window.UsuariosLogic.toggleSucursales()" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
                             <!-- JS inyecta roles -->
                         </select>
+                    </div>
+                </div>
+
+                <!-- CONTENEDOR MULTI-SELECT SUCURSALES (Solo visible para Jefes) -->
+                <div id="u-sucursales-container" class="hidden bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 flex flex-col overflow-visible">
+                    <label class="block text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase mb-2">Sucursales Asignadas a la Jefatura <span class="text-red-500">*</span></label>
+                    
+                    <!-- Píldoras Seleccionadas -->
+                    <div id="u-selected-branches" class="flex flex-wrap gap-2 mb-3 empty:hidden"></div>
+
+                    <!-- Buscador Desplegable -->
+                    <div class="relative">
+                        <input type="text" id="u-search-branch" oninput="window.UsuariosLogic.filterBranches()" onfocus="window.UsuariosLogic.filterBranches()" placeholder="Buscar por ID o Nombre de sucursal..." class="w-full p-2.5 pl-9 text-sm border border-amber-300 dark:border-amber-700/50 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 transition-shadow placeholder-amber-300/80" autocomplete="off">
+                        <span class="absolute left-3 top-2.5 text-amber-500">🔍</span>
+                        
+                        <!-- Lista Desplegable (Flotante) -->
+                        <ul id="u-branch-list" class="absolute z-[60] w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden custom-scrollbar"></ul>
                     </div>
                 </div>
 

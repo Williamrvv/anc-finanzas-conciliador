@@ -4,15 +4,12 @@ window.ConciliacionLogic = {
         pagado: [], 
         scotia_detalle: [], 
         scotia_pagado: [], 
-        // Estructura completa desde el inicio
         files: {
             bac_detalle: [],
             bac_pagado: [],
             scotia_detalle: [],
-            scotia_pagado: [],
-            tsd: []
+            scotia_pagado: []
         },
-        
     },
     grids: { bac: null, scotia: null }, // <--- Almacén de instancias
     activeTab: 'bac', // Estado actual
@@ -22,21 +19,18 @@ window.ConciliacionLogic = {
         
         const tabs = {
             bac: document.getElementById('tab-bac'),
-            scotia: document.getElementById('tab-scotia'),
-            tsd: document.getElementById('tab-tsd')
+            scotia: document.getElementById('tab-scotia')
         };
         const workspaces = {
             bac: document.getElementById('workspace-bac'),
-            scotia: document.getElementById('workspace-scotia'),
-            tsd: document.getElementById('workspace-tsd')
+            scotia: document.getElementById('workspace-scotia')
         };
 
         // Blindaje
-        if (!tabs.bac || !tabs.scotia || !tabs.tsd) return;
+        if (!tabs.bac || !tabs.scotia) return;
 
         const activeClass = "bg-white text-purple-600 shadow-sm dark:bg-slate-700 dark:text-white font-bold";
-        // Ajusta color según el tab activo (Rojo BAC, Rojo Scotia, Morado TSD)
-        const getActiveColor = (t) => t === 'bac' ? 'text-red-600' : (t === 'scotia' ? 'text-slate-800 dark:text-white' : 'text-purple-600');
+        const getActiveColor = (t) => t === 'bac' ? 'text-red-600' : 'text-slate-800 dark:text-white';
         
         const inactiveClass = "text-slate-500 hover:text-slate-700 dark:text-slate-400 font-medium hover:bg-slate-200 dark:hover:bg-slate-800";
 
@@ -178,7 +172,6 @@ window.ConciliacionLogic = {
         // Fusión de Lógica Modular
         if(window.BACLogic) Object.assign(this, window.BACLogic);
         if(window.ScotiaLogic) Object.assign(this, window.ScotiaLogic);
-        if(window.TSDLogic) Object.assign(this, window.TSDLogic);
         
         console.log("Sistema Conciliación Iniciado");
         
@@ -224,8 +217,8 @@ window.ConciliacionLogic = {
         }
 
         this.data = {
-            detalle: [], pagado: [], scotia_detalle: [], scotia_pagado: [], tsd: [],
-            files: { bac_detalle: [], bac_pagado: [], scotia_detalle: [], scotia_pagado: [], tsd: [] },
+            detalle: [], pagado: [], scotia_detalle: [], scotia_pagado: [],
+            files: { bac_detalle: [], bac_pagado: [], scotia_detalle: [], scotia_pagado: [] },
             headers: {}, processed: {}
         };
         // Destruir las instancias de los grids para forzar su re-creación
@@ -540,8 +533,7 @@ window.ConciliacionLogic = {
             'drop-bac-detalle': { input: 'file-bac-detalle', type: 'csv' },
             'drop-bac-pagado': { input: 'file-bac-pagado', type: 'excel' },
             'drop-scotia-detalle': { input: 'file-scotia-detalle', type: 'scotia_detalle' },
-            'drop-scotia-pagado': { input: 'file-scotia-pagado', type: 'scotia_pagado' },
-            'drop-tsd': { input: 'file-tsd', type: 'tsd' }
+            'drop-scotia-pagado': { input: 'file-scotia-pagado', type: 'scotia_pagado' }
         };
 
         // 1. CLICK DELEGADO (Atrapa clicks en cualquier parte del documento)
@@ -692,8 +684,6 @@ window.ConciliacionLogic = {
         // Ya vienen con formato de Grid (llaves "0", "1"...) y no necesitan conversión.
         if (type === 'scotia_detalle') return this.data.scotia_detalle;
 
-        if (type === 'tsd') return this.data.tsd;
-
         const isDet = type === 'detalle';
         const rawData = isDet ? this.data.detalle : this.data.pagado;
         
@@ -735,7 +725,6 @@ window.ConciliacionLogic = {
         if (isDet) rawData = this.data.detalle;
         else if (isScotia) rawData = this.data.scotia_detalle;
         else if (type === 'scotia_pagado') rawData = this.data.scotia_pagado; 
-        else if (type === 'tsd') rawData = this.data.tsd; 
         else rawData = this.data.pagado;
         
         if (!rawData || !rawData.length) return alert("Sin datos para mostrar");
@@ -831,31 +820,6 @@ window.ConciliacionLogic = {
                      hozAlign: (h.toLowerCase().includes('monto')) ? 'right' : 'left'
                  }))
              ];
-        } else if (type === 'tsd') {
-             // Configuración TSD
-             const realHeaders = this.data.headers.tsd || [];
-             
-             // Columnas Fijas
-             columns = [
-                 { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
-                 { title: "Auth", field: "_auth", headerFilter: true, width: 100, cssClass: "font-bold bg-purple-50" },
-                 { title: "Monto Original", field: "_monto_usd", formatter: "money", hozAlign: "right" },
-                 { title: "Monto CRC", field: "_monto", formatter: "money", hozAlign: "right", cssClass: "text-purple-700" }
-             ];
-             
-             // Columnas Dinámicas (Defensivo contra huecos en headers)
-             // Usa forEach para asegurar que 'idx' sea el índice real del array original
-             realHeaders.forEach((h, idx) => {
-                 // Solo agregamos la columna si el header tiene texto (evita columnas fantasmas/null)
-                 if (h && String(h).trim() !== '') {
-                     columns.push({
-                         title: h, 
-                         field: String(idx), // Mantiene el índice original como llave de datos
-                         headerFilter: true, 
-                         width: 120
-                     });
-                 }
-             });
 
         } else {
             // EXCEL GENÉRICO (BAC PAGADO): Usar headers reales si existen
@@ -1134,11 +1098,6 @@ window.ConciliacionLogic = {
         this.updateScotiaCard(); // Scotia Detalle (Tarjeta)
         this.recalculateScotiaPagado(); // Scotia Pagado (Tarjeta) -> Tabla Scotia (runMatchScotiabank)
 
-        // 2. Recalcular TSD (Depende de los datos frescos de los bancos)
-        // Si hay datos TSD cargados, corremos su cruce.
-        if (this.data.tsd && this.data.tsd.length > 0) {
-            this.runMatchTSD();
-        }
     },
 
     // ==========================================================
@@ -1277,8 +1236,6 @@ window.ConciliacionLogic = {
 
     saveSnapshot: async function() {
         const bancoActual = this.activeTab; 
-        
-        if (bancoActual === 'tsd') return alert("El módulo TSD aún no está configurado para guardado.");
 
         const nombreBanco = bancoActual === 'bac' ? 'BAC Credomatic' : 'Davibank';
         const payload = this.preparePayload(bancoActual);

@@ -118,13 +118,9 @@ ORDER BY D.ID DESC";
     $stmtD = $pdo->prepare($sqlDetails);
     $stmtD->execute([$icd]);
     $details = $stmtD->fetchAll();
-
-    // --- NUEVO: BUSCAR CASOS "NO REPORTADOS" DE ESTA SUCURSAL EN BD LOCAL ---
-    require_once '../db.php';
-    $pdoLocal = Database::connect();
     
     // Extraer solo el código de la sucursal (Ej: 'SJOT71' de 'SJOT71 - Nombre')
-    $locCode = $header['LOC_CODE']; 
+    $locCode = $header['LOC_CODE'];
     
     $sqlPendientes = "
         SELECT C.IdCaso, C.ICD_Relacionado, C.NumeroContrato, C.NombreCliente, C.MontoCRC, C.FechaCreacion, C.DiasAtraso, C.EmailCreador, 

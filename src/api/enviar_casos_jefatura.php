@@ -80,11 +80,16 @@ try {
     }
 
     // 3. PROCESAR BD Y ENVIAR CORREOS INDIVIDUALIZADOS POR GRUPO
-    $sqlUpdate = "UPDATE Tbl_Casos_TSD SET Estado = 'PENDIENTE_VISTO_BUENO', MotivoAgente = ?, TokenAprobacionJefe = ? WHERE IdCaso = ?";
+    $dominioLocal = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    
+    // Cambiamos el estado unificado a PENDIENTE_RESOLUCION
+    $sqlUpdate = "UPDATE Tbl_Casos_TSD SET Estado = 'PENDIENTE_RESOLUCION', MotivoAgente = ?, TokenAprobacionJefe = ?, TokenResolucionCS = ? WHERE IdCaso = ?";
     $stmtUpdate = $pdo->prepare($sqlUpdate);
 
-    $sqlHist = "INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'ENVIADO_JEFATURA', ?, 'Caso escalado a la jefatura.')";
+    $sqlHist = "INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'ENVIADO_RESOLUCION', ?, 'Caso escalado a Jefatura y SC para corrección.')";
     $stmtHist = $pdo->prepare($sqlHist);
+
+    $todosLosCasosParaCS = []; // Acumulador para el correo masivo de CS
 
     foreach ($gruposPorJefe as $emailDestino => $grupo) {
         $htmlBody = "";
@@ -95,10 +100,18 @@ try {
             $motivo = $item['motivo'];
             $r = $item['datos_bd'];
             
-            $token = bin2hex(random_bytes(16)); 
+            $tokenJefe = bin2hex(random_bytes(16)); 
+            $tokenCS = bin2hex(random_bytes(16)); // Nuevo token para SC
             
-            // Actualizar BD
-            $stmtUpdate->execute([$motivo, $token, $idC]);
+            // Actualizar BD con ambos tokens
+            $stmtUpdate->execute([$motivo, $tokenJefe, $tokenCS, $idC]);
+            
+            // Guardamos el caso para el correo de Servicio al Cliente
+            $todosLosCasosParaCS[] = [
+                'datos' => $r,
+                'motivo' => $motivo,
+                'token' => $tokenCS
+            ];
             $stmtHist->execute([$idC, $emailUsuario]);
 
             // Construir tarjeta HTML
@@ -125,6 +138,9 @@ try {
                         <b style='display: block; margin-bottom: 5px;'>Justificación del Agente Rentista:</b>
                         $motivo
                     </div>
+                    <div style='text-align: center; margin-top: 10px;'>
+                        <a href='https://$dominioLocal/resolver_caso_cc.php?token=$tokenJefe&actor=" . urlencode($emailDestino) . "' style='display: block; width: 100%; background-color: #10b981; color: #ffffff; text-decoration: none; padding: 12px 0; border-radius: 6px; font-weight: bold; font-size: 14px;'>Resolver Caso</a>
+                    </div>
                 </li>";
         }
 
@@ -132,12 +148,12 @@ try {
         $bodyFinal = "
         <div style='font-family: Arial, Helvetica, sans-serif; color: #334155; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;'>
             <div style='background-color: #4f46e5; color: #ffffff; padding: 25px 20px; text-align: center;'>
-                <h2 style='margin: 0; font-size: 22px; font-weight: bold;'>Aprobación Requerida</h2>
+                <h2 style='margin: 0; font-size: 22px; font-weight: bold;'>Resolución Requerida en TSD</h2>
                 <p style='margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;'>Integración Regional de Ingresos (IRI)</p>
             </div>
             <div style='padding: 30px 20px; background-color: #ffffff;'>
                 <p>Estimada Jefatura <b>({$grupo['nombreJefe']})</b>,</p>
-                <p>El usuario <b>$nombreReal</b> ha reportado las siguientes inconsistencias en su sucursal detectadas durante el Cierre de Cajas que requieren su visto bueno para ser escaladas a Servicio al Cliente.</p>
+                <p>El usuario <b>$nombreReal</b> ha reportado inconsistencias en su sucursal. Por favor, realice los ajustes correspondientes en TSD y marque el caso como resuelto.</p>
                 <ul style='list-style-type: none; padding: 0; margin: 20px 0;'>
                     $htmlBody
                 </ul>
@@ -147,6 +163,56 @@ try {
         if (class_exists('Mailer')) {
             Mailer::send($emailDestino, "Aprobación Requerida: Inconsistencias TSD reportadas por $nombreReal", $bodyFinal);
         }
+    }
+
+    // --- 4. ENVIAR CORREO PARALELO A SERVICIO AL CLIENTE (CS) ---
+    if (!empty($todosLosCasosParaCS) && class_exists('Mailer')) {
+        $csEmail = 'william.valverde+SC@grupoanc.com';
+        $dominioLocal = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $csHtmlBody = "";
+
+        foreach ($todosLosCasosParaCS as $c) {
+            $r = $c['datos'];
+            $montoFmt = number_format((float)$r['MontoCRC'], 2, '.', ',');
+            $urlResolucion = "https://$dominioLocal/resolver_caso_cc.php?token={$c['token']}&actor=" . urlencode($csEmail);
+
+            $csHtmlBody .= "
+                <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
+                    <div style='display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;'>
+                        <div>
+                            <span style='color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: bold;'>Contrato</span>
+                            <div style='color: #0f172a; font-size: 16px; font-weight: bold;'>{$r['NumeroContrato']}</div>
+                        </div>
+                        <div style='text-align: right;'>
+                            <span style='color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: bold;'>Monto Afectado</span>
+                            <div style='color: #ef4444; font-size: 16px; font-weight: bold; font-family: monospace;'>₡$montoFmt</div>
+                        </div>
+                    </div>
+                    <div style='font-size: 13px; color: #475569; margin-bottom: 15px;'>
+                        <b>Sucursal:</b> {$r['Sucursal_Relacionada']}<br>
+                        <b>Cliente:</b> {$r['NombreCliente']}<br>
+                        <b>Agente:</b> $nombreReal
+                    </div>
+                    <div style='background-color: #fff; padding: 12px; border-left: 3px solid #3b82f6; font-size: 13px; color: #334155; margin-bottom: 15px;'>
+                        <i>\"{$c['motivo']}\"</i>
+                    </div>
+                    <a href='$urlResolucion' style='display: block; width: 100%; text-align: center; background-color: #10b981; color: white; text-decoration: none; padding: 12px 0; border-radius: 6px; font-weight: bold; font-size: 14px;'>Resolver Caso</a>
+                </div>";
+        }
+
+        $csBodyFinal = "
+        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+            <div style='text-align: center; padding: 20px 0;'>
+                <h2 style='color: #0f172a; margin: 0;'>Reporte TSD - Servicio al Cliente</h2>
+                <p style='color: #64748b; font-size: 14px; margin-top: 5px;'>Se han reportado nuevas inconsistencias en cajas.</p>
+            </div>
+            $csHtmlBody
+            <div style='text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;'>
+                <a href='https://$dominioLocal/' style='color: #3b82f6; text-decoration: none; font-size: 13px; font-weight: bold;'>Ver todos los casos en IRI &rarr;</a>
+            </div>
+        </div>";
+
+        Mailer::send($csEmail, "Alerta SC: " . count($todosLosCasosParaCS) . " casos reportados por $nombreReal", $csBodyFinal);
     }
 
     $pdo->commit();

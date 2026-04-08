@@ -3,6 +3,10 @@ window.UsuariosLogic = {
     filteredUsers: [], // Guarda la lista después de buscar
     roles: [],
     
+    sucursalesTSD: [], // Catálogo de Sucursales Core
+    asignacionesBD: [], // Asignaciones actuales guardadas
+    selectedBranches: new Map(), // Selección dinámica (UI)
+    
     // Configuración de Paginación
     currentPage: 1,
     itemsPerPage: 5,
@@ -24,8 +28,18 @@ window.UsuariosLogic = {
             
             this.allUsers = data.usuarios;
             this.roles = data.roles;
+            this.sucursalesTSD = data.sucursales_tsd || [];
+            this.asignacionesBD = data.asignaciones_jefes || [];
             
             this.renderRolesSelects();
+            
+            // Ocultar menú flotante al hacer clic afuera
+            document.addEventListener('click', (e) => {
+                if(!e.target.closest('#u-sucursales-container')) {
+                    const list = document.getElementById('u-branch-list');
+                    if(list) list.classList.add('hidden');
+                }
+            });
             this.applyFilters(); // Renderiza usando los filtros actuales (Activo por defecto)
         } catch (err) {
             tbody.innerHTML = `<tr><td colspan="4" class="text-center p-8 text-red-500 font-bold">${err.message}</td></tr>`;
@@ -149,6 +163,11 @@ window.UsuariosLogic = {
             document.getElementById('u-puesto').value = user.Puesto;
             document.getElementById('u-rol').value = user.Id_Rol;
             
+            // Cargar sucursales si es Jefe
+            this.selectedBranches.clear();
+            const susSucursales = this.asignacionesBD.filter(a => a.EmailJefe === user.Email);
+            susSucursales.forEach(s => this.selectedBranches.set(s.CodigoSucursal, s.NombreSucursal));
+            
             // Set Switches
             document.getElementById('u-activo').checked = user.Activo == 1;
             
@@ -171,9 +190,11 @@ window.UsuariosLogic = {
             toggleAdmin.checked = false;
             toggleAdmin.disabled = false;
             
+            this.selectedBranches.clear();
             passHelp.innerText = "La contraseña es opcional si el usuario utilizará Office 365.";
         }
 
+        this.toggleSucursales(); // Ejecuta lógica visual del rol
         document.getElementById('modal-usuario').classList.remove('hidden');
     },
 
@@ -197,6 +218,21 @@ window.UsuariosLogic = {
             formData.set('puedeAdmin', 'on');
         }
 
+        // Validación de Sucursales
+        const elRol = document.getElementById('u-rol');
+        const roleName = elRol.options[elRol.selectedIndex].text.toLowerCase();
+        
+        if (roleName === 'jefe') {
+            if (this.selectedBranches.size === 0) {
+                btn.disabled = false;
+                btn.innerText = "Guardar Cambios";
+                return alert("Debe seleccionar al menos una sucursal para el rol Jefe.");
+            }
+            // Adjuntar las sucursales como JSON
+            const arrSucs = Array.from(this.selectedBranches, ([id, nombre]) => ({ id, nombre }));
+            formData.append('sucursalesJSON', JSON.stringify(arrSucs));
+        }
+
         try {
             const res = await fetch('api/usuarios_api.php', { method: 'POST', body: formData });
             const data = await res.json();
@@ -213,5 +249,75 @@ window.UsuariosLogic = {
             btn.disabled = false;
             btn.innerText = "Guardar Cambios";
         }
+    },
+
+    // ==============================================
+    // LÓGICA DEL MULTI-SELECT DE SUCURSALES USUARIOS
+    // ==============================================
+    toggleSucursales: function() {
+        const elRol = document.getElementById('u-rol');
+        const container = document.getElementById('u-sucursales-container');
+        
+        if (!elRol || !container) return;
+        
+        const roleName = elRol.options[elRol.selectedIndex].text.toLowerCase();
+        
+        if (roleName === 'jefe') {
+            container.classList.remove('hidden');
+            this.renderPills();
+        } else {
+            container.classList.add('hidden');
+            // No limpiamos el Map() aquí por si cambia de rol por error y regresa a Jefe, que conserve su info.
+        }
+    },
+
+    filterBranches: function() {
+        const term = document.getElementById('u-search-branch').value.toLowerCase();
+        const list = document.getElementById('u-branch-list');
+        list.innerHTML = '';
+
+        // Filtramos: No mostrar las que ya están seleccionadas
+        const filtered = this.sucursalesTSD.filter(s => 
+            !this.selectedBranches.has(s.ID) && 
+            (s.ID.toLowerCase().includes(term) || s.NAME.toLowerCase().includes(term))
+        );
+
+        if (filtered.length === 0) {
+            list.innerHTML = '<li class="p-3 text-sm text-slate-500 text-center">No hay sucursales disponibles.</li>';
+        } else {
+            filtered.forEach(s => {
+                const li = document.createElement('li');
+                li.className = "p-2.5 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 flex justify-between";
+                li.innerHTML = `<span class="font-bold text-slate-800 dark:text-white">${s.ID}</span> <span class="text-slate-600 dark:text-slate-400 truncate ml-2">${s.NAME}</span>`;
+                li.onmousedown = (e) => { // mousedown dispara antes que blur del input
+                    e.preventDefault(); 
+                    this.selectedBranches.set(s.ID, s.NAME);
+                    document.getElementById('u-search-branch').value = '';
+                    this.renderPills();
+                    list.classList.add('hidden');
+                };
+                list.appendChild(li);
+            });
+        }
+        list.classList.remove('hidden');
+    },
+
+    renderPills: function() {
+        const container = document.getElementById('u-selected-branches');
+        container.innerHTML = '';
+        
+        this.selectedBranches.forEach((nombre, id) => {
+            container.innerHTML += `
+                <div class="flex items-center gap-1 bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-700/50 text-xs font-bold animate-fade-in-up">
+                    <span>${id} - ${nombre}</span>
+                    <button type="button" onclick="window.UsuariosLogic.removeBranch('${id}')" class="text-amber-500 hover:text-red-500 ml-1 font-black">&times;</button>
+                </div>
+            `;
+        });
+    }
+    ,
+    removeBranch: function(id) {
+        this.selectedBranches.delete(id);
+        this.renderPills();
     }
 };

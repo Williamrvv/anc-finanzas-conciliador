@@ -4,33 +4,21 @@ window.CierreCajasLogic = {
     transacciones: [],
     pendientesData: [],
     currentUser: window.CURRENT_USER_NAME || 'Analista',
+    vgHistory: null, // Motor VanillaGrid para el historial
+    activeTimelineId: null,
 
     init: function() {
         console.log("Módulo Cierre de Caja Iniciado");
-        
-        // Damos 50ms para garantizar que el DOM de la SPA ya está dibujado en pantalla
-        // setTimeout(() => {
-            const input = document.getElementById('cc-icd-input');
-            
-            if (input) {
-                input.onkeydown = (e) => {
-                    if(e.key === 'Enter') {
-                        e.preventDefault();
-                        this.searchICD();
-                    }
-                };
-            }
 
-            const homeView = document.getElementById('cc-home-view');
+        const homeView = document.getElementById('cc-home-view');
             const workspace = document.getElementById('cc-workspace');
             const actionBar = document.getElementById('cc-action-bar');
 
-            if (homeView) homeView.classList.remove('hidden');
-            if (workspace) workspace.classList.add('hidden');
-            if (actionBar) actionBar.classList.add('translate-y-full');
+            // Ocultamos las vistas iniciales
+            this.switchTab('workspace'); // Inicia en el workspace por defecto
             
             // Llama a la base de datos para traer los pendientes
-            window.CierreCajasLogic.loadBandejaPendientes()
+            this.loadBandejaPendientes();
             
         // }, 50);
     },
@@ -101,7 +89,7 @@ window.CierreCajasLogic = {
                     : '';
 
                 // Input Reactivo para reportar
-                let motivoHtml = `<textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Escriba aquí para justificar y reportar a la Jefatura..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>`;
+                let motivoHtml = `<textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Escriba aquí para justificar y reportar a Jefatura y SC..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>`;
 
                 return `
                 <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all flex flex-col justify-between group h-full relative overflow-hidden">
@@ -225,10 +213,13 @@ window.CierreCajasLogic = {
         }
 
         // Armamos el mensaje final mostrando la lista de correos
-        let listaJefesHtml = Array.from(jefesInvolucrados).join('\n\n');
-        const msg = `Se enviará el reporte de ${casosData.length} caso(s) a los siguientes responsables:\n\n${listaJefesHtml}\n\n¿Desea proceder con el envío?`;
+        let listaJefesHtml = Array.from(jefesInvolucrados).join('\n');
+        const msg = `Se enviará un reporte con ${casosData.length} caso(s) a los siguientes destinos:\n\n` + 
+                    `📋 Jefe de sucursal:\n${listaJefesHtml}\n\n` + 
+                    `📋 También a:\n👤 Servicio al Cliente\n\n` + 
+                    `¿Desea proceder con el envío?`;
 
-        const confirm = await SysUI.confirm(msg, "Confirmar Reporte a Jefatura", "info");
+        const confirm = await SysUI.confirm(msg, "Confirmar Envío de Reportes", "info");
         if (!confirm) return;
 
         try {
@@ -240,7 +231,7 @@ window.CierreCajasLogic = {
             const data = await res.json();
 
             if (data.success) {
-                await SysUI.alert("Los casos han sido reportados exitosamente a las Jefaturas correspondientes.", "Reportado", "success");
+                await SysUI.alert("Los casos han sido reportados exitosamente a las Jefaturas y a Servicio al Cliente.", "Reportes Enviados", "success");
                 
                 // Recargar la bandeja correcta
                 if (origen === 'home') {
@@ -286,7 +277,6 @@ window.CierreCajasLogic = {
                 this.loadBandejaPendientes(this.headerData.LOC_CODE);
                 
                 document.getElementById('cc-workspace').classList.remove('hidden');
-                document.getElementById('cc-action-bar').classList.remove('translate-y-full');
                 
                 setTimeout(() => {
                     const inputAuth = document.getElementById('cc-scan-auth');
@@ -465,11 +455,9 @@ window.CierreCajasLogic = {
         this.transacciones = [];
         
         const workspace = document.getElementById('cc-workspace');
-        const actionBar = document.getElementById('cc-action-bar');
         const sucBandeja = document.getElementById('cc-sucursal-bandeja');
         
         if(workspace) workspace.classList.add('hidden');
-        if(actionBar) actionBar.classList.add('translate-y-full');
         if(sucBandeja) sucBandeja.classList.add('hidden');
         
         document.getElementById('cc-transactions-list').innerHTML = '';
@@ -497,7 +485,6 @@ window.CierreCajasLogic = {
         const homeView = document.getElementById('cc-home-view');
         if(homeView) homeView.classList.remove('hidden');
         
-        this.loadBandejaPendientes();
     },
 
     saveCierre: async function() {
@@ -600,7 +587,439 @@ window.CierreCajasLogic = {
         }
     },
 
+    // =====================================================================
+    // MÓDULO DE HISTORIAL Y TRAZABILIDAD (BPM / SERVER-SIDE)
+    // =====================================================================
+    historyUserRole: '',
+    dataActivos: [], // Los activos siempre viven en memoria porque son pocos
     
+    // Parámetros Remotos para Resueltos
+    resueltosCurrentPage: 1,
+    resueltosSearchTerm: '',
+
+    switchTab: function(tab) {
+        const tabs = ['workspace', 'history', 'audit'];
+        const views = {
+            'workspace': ['cc-home-view', 'cc-workspace', 'cc-search-section'],
+            'history': ['cc-history-view'],
+            'audit': ['cc-audit-view']
+        };
+
+        const activeClass = "border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20".split(' ');
+        const inactiveClass = "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300".split(' ');
+
+        // 1. Limpiar y Ocultar TODO
+        tabs.forEach(t => {
+            const btn = document.getElementById(`tab-${t}`);
+            if (btn) {
+                btn.classList.remove(...activeClass, ...inactiveClass);
+                btn.classList.add(...inactiveClass);
+            }
+            
+            views[t].forEach(vId => {
+                const el = document.getElementById(vId);
+                if(el) el.classList.add('hidden');
+            });
+        });
+
+        // 2. Activar la Pestaña Seleccionada
+        const activeBtn = document.getElementById(`tab-${tab}`);
+        if (activeBtn) {
+            activeBtn.classList.remove(...inactiveClass);
+            activeBtn.classList.add(...activeClass);
+        }
+
+        // 3. Mostrar Vistas Correspondientes
+        if (tab === 'workspace') {
+            document.getElementById('cc-search-section').classList.remove('hidden');
+            if (this.currentICD) {
+                document.getElementById('cc-workspace').classList.remove('hidden');
+            } else {
+                document.getElementById('cc-home-view').classList.remove('hidden');
+            }
+        } 
+        else if (tab === 'history') {
+            document.getElementById('cc-history-view').classList.remove('hidden');
+            document.getElementById('cc-history-view').classList.add('flex');
+            this.loadHistoryData();
+        }
+        else if (tab === 'audit') {
+            document.getElementById('cc-audit-view').classList.remove('hidden');
+            document.getElementById('cc-audit-view').classList.add('flex');
+        }
+    },
+
+    loadHistoryData: async function(isSilent = false) {
+        const containerUrgentes = document.getElementById('cc-urgentes-cards');
+        const containerResueltos = document.getElementById('cc-resueltos-cards');
+        
+        if (!isSilent) {
+            containerUrgentes.innerHTML = '<div class="col-span-full flex justify-center py-6"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+            containerResueltos.innerHTML = '<div class="col-span-full flex justify-center py-6"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+        }
+
+        try {
+            // Pasamos los parámetros al backend
+            const term = encodeURIComponent(this.resueltosSearchTerm);
+            const url = `api/get_casos_historial_cc.php?page=${this.resueltosCurrentPage}&search=${term}`;
+            
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            if (!data.success) throw new Error(data.error);
+
+            this.historyUserRole = data.userRole; 
+            this.dataActivos = data.activos;
+            
+            // Actualizar contadores
+            document.getElementById('count-urgentes').innerText = this.dataActivos.length;
+            document.getElementById('count-resueltos').innerText = data.paginacion.total; // El real de la BD
+
+            // Disparar renderizado en memoria de Activos
+            this.filterActivos();
+            
+            // Disparar renderizado directo de los Resueltos traídos por el Backend
+            this.renderResueltosServer(data.resueltos, data.paginacion);
+
+            if (!isSilent) {
+                this.switchSubTab('activos');
+            }
+
+        } catch (e) {
+            if (!isSilent) containerUrgentes.innerHTML = `<div class="col-span-full text-center text-red-500 font-bold py-10">${e.message}</div>`;
+        }
+    },
+
+    switchSubTab: function(tab) {
+        const btnActivos = document.getElementById('subtab-activos');
+        const btnResueltos = document.getElementById('subtab-resueltos');
+        const secActivos = document.getElementById('cc-section-activos');
+        const secResueltos = document.getElementById('cc-section-resueltos');
+
+        const activeClass = "border-amber-500 text-amber-600 dark:text-amber-500".split(' ');
+        const inactiveClass = "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300".split(' ');
+
+        btnActivos.classList.remove(...activeClass, ...inactiveClass);
+        btnResueltos.classList.remove(...activeClass, ...inactiveClass);
+
+        if (tab === 'activos') {
+            btnActivos.classList.add(...activeClass);
+            btnResueltos.classList.add(...inactiveClass);
+            secActivos.classList.remove('hidden');
+            secActivos.classList.add('flex');
+            secResueltos.classList.add('hidden');
+            secResueltos.classList.remove('flex');
+        } else {
+            btnResueltos.classList.add(...activeClass);
+            btnActivos.classList.add(...inactiveClass);
+            secResueltos.classList.remove('hidden');
+            secResueltos.classList.add('flex');
+            secActivos.classList.add('hidden');
+            secActivos.classList.remove('flex');
+        }
+    },
+
+    filterActivos: function() {
+        const term = document.getElementById('search-activos').value.toLowerCase();
+        const contUrgentes = document.getElementById('cc-urgentes-cards');
+
+        // Búsqueda en memoria (RAM) porque los activos son pocos
+        const filtered = this.dataActivos.filter(c => {
+            return c.NumeroContrato.toLowerCase().includes(term) || 
+                   c.NombreCliente.toLowerCase().includes(term) || 
+                   c.Sucursal_Relacionada.toLowerCase().includes(term);
+        });
+
+        if (filtered.length === 0) {
+            contUrgentes.innerHTML = '<div class="col-span-full text-center py-10 text-slate-400 text-sm">No se encontraron casos activos.</div>';
+        } else {
+            contUrgentes.innerHTML = filtered.map(c => this.generateCardHTML(c)).join('');
+        }
+    },
+
+    // Nueva función: Se llama al apretar Enter en el buscador de resueltos
+    searchResueltosServer: function() {
+        this.resueltosSearchTerm = document.getElementById('search-resueltos').value.trim();
+        this.resueltosCurrentPage = 1; // Volver a pag 1 por si cambió la búsqueda
+        
+        document.getElementById('cc-resueltos-cards').innerHTML = '<div class="col-span-full flex justify-center py-6"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div></div>';
+        
+        this.loadHistoryData(true); // true = Carga silenciosa (No limpia las otras pestañas)
+    },
+
+    renderResueltosServer: function(casosArray, paginacion) {
+        const contResueltos = document.getElementById('cc-resueltos-cards');
+        
+        if (casosArray.length === 0) {
+            contResueltos.innerHTML = '<div class="col-span-full text-center py-10 text-slate-400 text-sm">No se encontraron resultados en el histórico de la base de datos.</div>';
+            document.getElementById('cc-pagination-controls').classList.add('hidden');
+            return;
+        }
+
+        contResueltos.innerHTML = casosArray.map(c => this.generateCardHTML(c)).join('');
+
+        // Controles Paginación
+        const maxPages = paginacion.total_paginas;
+        
+        document.getElementById('cc-pagination-controls').classList.remove('hidden');
+        document.getElementById('pag-current').innerText = this.resueltosCurrentPage;
+        document.getElementById('pag-total').innerText = maxPages;
+
+        document.getElementById('btn-hist-prev').disabled = (this.resueltosCurrentPage <= 1);
+        document.getElementById('btn-hist-next').disabled = (this.resueltosCurrentPage >= maxPages);
+    },
+
+    changeHistoryPage: function(direction) {
+        this.resueltosCurrentPage += direction;
+        
+        document.getElementById('cc-resueltos-cards').innerHTML = '<div class="col-span-full flex justify-center py-6"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div></div>';
+        
+        this.loadHistoryData(true);
+    },
+
+    // Extrajimos el HTML de la tarjeta para reutilizarlo en ambos lados
+    generateCardHTML: function(c) {
+        let colorBorder = 'border-slate-300 dark:border-slate-600';
+        let colorBadge = 'bg-slate-100 text-slate-600';
+        
+        if(c.Estado === 'NO_REPORTADO') { colorBorder = 'border-red-300'; colorBadge = 'bg-red-100 text-red-700'; }
+        if(c.Estado === 'PENDIENTE_CORRECCION_TSD') { colorBorder = 'border-amber-300'; colorBadge = 'bg-amber-100 text-amber-700'; }
+        if(c.Estado === 'RESUELTO') { colorBorder = 'border-blue-300 border-l-4'; colorBadge = 'bg-blue-100 text-blue-700'; }
+
+        const monto = parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2});
+
+        return `
+        <div onclick="window.CierreCajasLogic.showTimeline(${c.IdCaso})" class="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm hover:shadow-md cursor-pointer transition-all border ${colorBorder} flex flex-col h-full group animate-fade-in-up">
+            <div class="flex justify-between items-start mb-3">
+                <span class="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ${colorBadge}">${c.Estado.replace(/_/g, ' ')}</span>
+                <span class="text-[10px] text-slate-400 font-bold">${c.DiasAtraso > 0 ? c.DiasAtraso + 'd' : 'Hoy'}</span>
+            </div>
+            <h4 class="text-sm font-black text-slate-800 dark:text-white leading-tight mb-1 truncate" title="${c.NombreCliente}">${c.NombreCliente}</h4>
+            <div class="text-[11px] font-mono text-slate-500 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">CTO: ${c.NumeroContrato}</div>
+            
+            <div class="mt-auto flex justify-between items-end">
+                <div class="text-[10px] text-slate-500 uppercase font-bold max-w-[50%] truncate pr-2" title="${c.Sucursal_Relacionada}">
+                    🏢 ${c.Sucursal_Relacionada.split(' ')[0]}
+                </div>
+                <div class="text-base font-black text-slate-800 dark:text-white font-mono">₡${monto}</div>
+            </div>
+        </div>`;
+    },
+
+    showTimeline: async function(idCaso) {
+        this.activeTimelineId = idCaso;
+        const modal = document.getElementById('modal-timeline');
+        const eventContainer = document.getElementById('tl-events');
+        const actionZone = document.getElementById('tl-action-zone');
+        
+        eventContainer.innerHTML = '<div class="text-slate-400 text-sm animate-pulse">Cargando bitácora...</div>';
+        actionZone.classList.add('hidden');
+        actionZone.innerHTML = '';
+        modal.classList.remove('hidden');
+
+        try {
+            const res = await fetch(`api/get_timeline_cc.php?idCaso=${idCaso}`);
+            const data = await res.json();
+            
+            if(!data.success) throw new Error(data.error);
+            
+            const c = data.caso;
+            document.getElementById('tl-id').innerText = c.IdCaso;
+            document.getElementById('tl-contrato').innerText = c.NumeroContrato;
+            document.getElementById('tl-cliente').innerText = c.NombreCliente || 'Desconocido';
+            document.getElementById('tl-monto').innerText = `₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('tl-usd').innerText = `$${parseFloat(c.MontoUSD).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+
+            // 1. DIBUJAR HISTORIAL
+            eventContainer.innerHTML = data.historial.map(h => {
+                const dateObj = new Date(h.FechaAccion);
+                const fecha = dateObj.toLocaleDateString('es-CR') + ' ' + dateObj.toLocaleTimeString('es-CR', {hour: '2-digit', minute:'2-digit'});
+                
+                let dotColor = 'bg-slate-300';
+                if(h.Accion.includes('CREADO')) dotColor = 'bg-slate-800 dark:bg-slate-100';
+                if(h.Accion.includes('REPORTADO') || h.Accion.includes('ENVIADO')) dotColor = 'bg-amber-500';
+                if(h.Accion.includes('RESUELTO')) dotColor = 'bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900';
+
+                return `
+                <div class="relative">
+                    <span class="absolute -left-[21px] sm:-left-[25px] top-1.5 w-2.5 h-2.5 rounded-full ${dotColor}"></span>
+                    <div class="flex justify-between items-baseline mb-0.5">
+                        <h4 class="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase">${h.Accion.replace(/_/g, ' ')}</h4>
+                        <time class="text-[9px] font-bold text-slate-400">${fecha}</time>
+                    </div>
+                    <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed bg-white dark:bg-slate-900 p-2.5 rounded border border-slate-100 dark:border-slate-700">
+                        <span class="font-bold text-indigo-500 block mb-0.5 text-[10px]">👤 ${h.EmailActor || 'Sistema'}</span>
+                        ${h.ComentarioAdicional || 'Sin detalle.'}
+                    </div>
+                </div>`;
+            }).join('');
+
+            // 2. CONSTRUIR ZONA DE ACCIÓN BASADA EN ROLES Y ESTADO
+            const role = this.historyUserRole; // 'agente', 'jefe', 'servicio_cliente', 'admin'
+            let actionHtml = '';
+
+            if (c.Estado === 'NO_REPORTADO' && (role === 'agente' || role === 'jefe' || role === 'admin')) {
+                actionHtml = `
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Justificar Inconsistencia (Reportar)</label>
+                    <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 resize-none mb-3" placeholder="Explique el error para enviarlo a TSD..."></textarea>
+                    <div class="flex justify-end">
+                        <button onclick="window.CierreCajasLogic.executeTimelineAction('REPORTAR')" class="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors flex items-center gap-2">
+                            Enviar Reporte a SC
+                        </button>
+                    </div>
+                `;
+            } 
+            else if (c.Estado === 'PENDIENTE_CORRECCION_TSD' && (role === 'jefe' || role === 'servicio_cliente' || role === 'admin')) {
+                actionHtml = `
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Comentarios de Resolución en TSD</label>
+                            <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 resize-none" placeholder="Escriba la acción correctiva realizada..."></textarea>
+                        </div>
+                        <div class="flex justify-between items-center mt-2">
+                            ${role === 'jefe' || role === 'admin' ? `<button onclick="window.CierreCajasLogic.executeTimelineAction('REVERTIR')" class="text-xs text-slate-400 hover:text-red-500 font-bold underline transition-colors">Revertir a No Reportado</button>` : '<div></div>'}
+                            <button onclick="window.CierreCajasLogic.executeTimelineAction('RESOLVER')" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors">
+                                Marcar como Resuelto
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (actionHtml !== '') {
+                actionZone.innerHTML = actionHtml;
+                actionZone.classList.remove('hidden');
+            }
+
+        } catch (e) {
+            eventContainer.innerHTML = `<div class="text-red-500 text-sm font-bold">${e.message}</div>`;
+        }
+    },
+
+    executeTimelineAction: async function(actionType) {
+        const inputEl = document.getElementById('tl-input-action');
+        const comentario = inputEl ? inputEl.value.trim() : '';
+        
+        if ((actionType === 'REPORTAR' || actionType === 'RESOLVER') && !comentario) {
+            return SysUI.alert("Debe escribir un comentario para proceder.", "Campo requerido", "warning");
+        }
+
+        const msgs = {
+            'REPORTAR': "¿Enviar este caso a Servicio al Cliente para su corrección en TSD?",
+            'RESOLVER': "¿Confirmar que el caso ha sido corregido en TSD y marcar como resuelto?",
+            'REVERTIR': "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado."
+        };
+
+        const confirm = await SysUI.confirm(msgs[actionType], "Confirmar Acción", "info");
+        if (!confirm) return;
+
+        try {
+            const res = await fetch('api/procesar_accion_modal_cc.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    idCaso: this.activeTimelineId,
+                    accion: actionType,
+                    comentario: comentario
+                })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                document.getElementById('modal-timeline').classList.add('hidden');
+                SysUI.alert("Acción ejecutada correctamente.", "Éxito", "success");
+                this.loadHistoryData(); // Recarga las tarjetas
+                this.loadBandejaPendientes(); // Recarga insignias
+            } else {
+                throw new Error(data.error);
+            }
+        } catch (e) {
+            SysUI.alert("Error: " + e.message, "Error Crítico", "error");
+        }
+    },
+
+    // =====================================================================
+    // MÓDULO DE AUDITORÍA (ICD GLOBAL)
+    // =====================================================================
+    vgAudit: null,
+
+    searchAuditICD: async function() {
+        const input = document.getElementById('audit-icd-input');
+        const icdValue = input.value.trim().toUpperCase();
+        if(!icdValue) return SysUI.alert("Por favor digite un número de ICD a auditar.", "Campo Vacío", "warning");
+
+        document.getElementById('audit-empty').classList.add('hidden');
+        document.getElementById('audit-content').classList.add('hidden');
+        document.getElementById('cc-loading').classList.remove('hidden');
+        document.getElementById('cc-loading').classList.add('flex');
+
+        try {
+            const res = await fetch(`api/get_audit_icd_cc.php?icd=${encodeURIComponent(icdValue)}`);
+            const json = await res.json();
+            
+            document.getElementById('cc-loading').classList.add('hidden');
+            document.getElementById('cc-loading').classList.remove('flex');
+
+            if (!json.success) {
+                document.getElementById('audit-empty').classList.remove('hidden');
+                return SysUI.alert(json.error, "Auditoría", "warning");
+            }
+
+            // Llenar Metadatos
+            document.getElementById('ad-icd').innerText = json.header.ICD;
+            document.getElementById('ad-sucursal').innerText = json.header.Sucursal;
+            document.getElementById('ad-fecha-tsd').innerText = json.header.FechaTSD.split('.')[0];
+            
+            const badgeCierre = document.getElementById('ad-estado-cierre');
+            if (json.header.CerradoLocalmente) {
+                badgeCierre.className = "text-sm font-black flex items-center gap-1.5 text-green-600 dark:text-green-400";
+                badgeCierre.innerHTML = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> CERRADO`;
+                badgeCierre.title = `Cerrado por: ${json.header.CerradoPor}`;
+            } else {
+                badgeCierre.className = "text-sm font-black flex items-center gap-1.5 text-amber-500";
+                badgeCierre.innerHTML = `⚠️ NO CERRADO AÚN`;
+                badgeCierre.title = "Este ICD aún no ha sido procesado en el Módulo de Trabajo.";
+            }
+
+            // Preparar y Pintar Tabla
+            const statusFormatter = (cell) => {
+                const val = cell.getValue();
+                let color = 'bg-slate-100 text-slate-500 dark:bg-slate-800 border border-slate-200 dark:border-slate-700';
+                
+                if(val === 'MATCH EXACTO') color = 'bg-green-100 text-green-700 border border-green-200 dark:border-green-800';
+                if(val === 'NO REGISTRADO AÚN') color = 'bg-slate-100 text-slate-400 italic';
+                if(val === 'NO_REPORTADO') color = 'bg-red-100 text-red-700 border border-red-200 dark:border-red-800';
+                if(val.includes('PENDIENTE')) color = 'bg-amber-100 text-amber-700 border border-amber-200 dark:border-amber-800';
+                if(val === 'RESUELTO') color = 'bg-blue-100 text-blue-700 border border-blue-200 dark:border-blue-800';
+                
+                return `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${color}">${val.replace(/_/g, ' ')}</span>`;
+            };
+
+            const cols = [
+                { title: "Contrato", field: "Contrato" },
+                { title: "Cliente", field: "Cliente" },
+                { title: "Tarjeta", field: "Tarjeta" },
+                { title: "Monto", field: "MontoCRC", formatter: "money", hozAlign: "right", bottomCalc: "sum" },
+                { title: "Estado Actual", field: "Estado", formatter: statusFormatter },
+                { title: "Ticket #", field: "IdCaso", hozAlign: "center", formatter: (c) => c.getValue() ? `<span class="text-indigo-500 font-bold underline cursor-pointer">#${c.getValue()}</span>` : '-' }
+            ];
+
+            this.vgAudit = new VanillaGrid('#audit-grid', json.transacciones, cols, {
+                onRowDblClick: (row) => {
+                    if (row.IdCaso) this.showTimeline(row.IdCaso);
+                    else SysUI.alert("Esta transacción no posee un Ticket (Caso) asociado porque hizo Match exacto o aún no ha sido registrada.", "Sin Historial", "info");
+                }
+            });
+
+            document.getElementById('audit-content').classList.remove('hidden');
+            document.getElementById('audit-content').classList.add('flex');
+
+        } catch (e) {
+            console.error(e);
+            SysUI.alert("Error de red al auditar el ICD.", "Error", "error");
+            document.getElementById('audit-empty').classList.remove('hidden');
+        }
+    }
 };
 
 // =========================================================================
