@@ -181,8 +181,6 @@ window.ConciliacionLogic = {
             this._uploadsConfigured = true;
         }
         
-        this.fetchExchangeRate();
-        
         // --- MOTOR DE RECUPERACIÓN LOCAL (DRAFT) ---
         const draftStr = localStorage.getItem('conciliacion_draft');
         if (draftStr) {
@@ -555,13 +553,14 @@ window.ConciliacionLogic = {
         // 2. CHANGE DELEGADO (Detectar cuando el usuario eligió archivo)
         document.body.addEventListener('change', (e) => {
             if (e.target.tagName === 'INPUT' && e.target.type === 'file') {
-                // Buscar a qué dropzone pertenece este input
                 const dropId = Object.keys(zones).find(k => zones[k].input === e.target.id);
                 if (dropId) {
-                    console.log(`📂 Archivo seleccionado en input: ${e.target.id}`);
                     const config = zones[dropId];
-                    if(e.target.files[0]) {
-                        this.handleFileProcessing(e.target.files[0], dropId, config.type);
+                    // NUEVO: Iterar sobre todos los archivos seleccionados
+                    if(e.target.files.length > 0) {
+                        Array.from(e.target.files).forEach(file => {
+                            this.handleFileProcessing(file, dropId, config.type);
+                        });
                         e.target.value = ''; // Reset
                     }
                 }
@@ -572,7 +571,6 @@ window.ConciliacionLogic = {
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             document.body.addEventListener(eventName, (e) => {
                 const drop = e.target.closest('[id^="drop-"]');
-                // Si no es un dropzone, prevenir default para evitar que el navegador abra el archivo
                 if (!drop || !zones[drop.id]) return;
 
                 e.preventDefault();
@@ -580,8 +578,11 @@ window.ConciliacionLogic = {
 
                 if (eventName === 'drop') {
                     const config = zones[drop.id];
-                    if(e.dataTransfer.files[0]) {
-                        this.handleFileProcessing(e.dataTransfer.files[0], drop.id, config.type);
+                    // NUEVO: Iterar sobre todos los archivos arrastrados a la vez
+                    if(e.dataTransfer.files.length > 0) {
+                        Array.from(e.dataTransfer.files).forEach(file => {
+                            this.handleFileProcessing(file, drop.id, config.type);
+                        });
                     }
                     drop.classList.remove('bg-slate-100');
                 }
@@ -1189,6 +1190,19 @@ window.ConciliacionLogic = {
              if (idxAuth !== -1 && r[idxAuth]) record.Autorizacion = String(r[idxAuth]).trim();
         }
 
+        // --- NUEVO: CAPTURA INTELIGENTE DE TARJETA PARA EL MÓDULO TSD ---
+        let tarjetaVal = r._tarjeta || null; // Prioridad 1: Ajustes manuales del popup
+        if (!isAjuste && origen !== 'PAGADO') {
+            const headArr = banco === 'BAC' ? (this.data.headers.detalle || []) : (this.data.headers.scotia_detalle || []);
+            const idxTar = headArr.findIndex(h => h && h.toLowerCase().includes('tarjeta'));
+            if (idxTar !== -1 && r[idxTar]) {
+                // Limpiamos la tarjeta (quitamos espacios, guiones o asteriscos si quieres)
+                tarjetaVal = String(r[idxTar]).replace(/[\s-]/g, '').trim();
+            }
+        }
+        record.Tarjeta = tarjetaVal;
+        // ----------------------------------------------------------------
+
         // BLINDAJE ABSOLUTO DE FECHAS PARA SQL SERVER (Debe ser YYYY-MM-DD)
         if (r._fecha) {
             let d = String(r._fecha).trim().split(' ')[0]; // Cortar la hora si viene pegada
@@ -1341,12 +1355,6 @@ window.ConciliacionFunctions = {
     
     exportToExcel: function() { 
         alert("Exportar pendiente."); 
-    },
-
-    updateExchangeRate: function(v) {
-        if(window.ConciliacionLogic && window.ConciliacionLogic.updateExchangeRate) {
-            window.ConciliacionLogic.updateExchangeRate(v);
-        }
     },
     
     saveSnapshot: function() {

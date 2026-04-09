@@ -205,14 +205,14 @@
                         </span>
                         
                         <div class="flex items-center gap-3">
-                            <!-- Umbral Scotia -->
+                            <!-- Umbral Scotia
                             <div class="flex items-center bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 px-2 py-1">
                                 <span class="text-[10px] font-bold text-slate-400 mr-2 uppercase">Diff Max:</span>
                                 <span class="text-slate-400 font-bold text-xs mr-1">₡</span>
                                 <input type="number" id="threshold-scotia" value="2000" step="500" 
                                        oninput="window.ConciliacionFunctions.updateThreshold(this.value, 'scotia')" 
                                        class="w-16 bg-transparent border-none text-xs font-bold text-right outline-none p-0 text-slate-700 dark:text-white">
-                            </div>
+                            </div> -->
 
                             <!-- Buscador Scotia -->
                             <div class="relative w-64">

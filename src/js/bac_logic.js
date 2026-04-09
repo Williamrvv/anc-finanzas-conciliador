@@ -1,24 +1,23 @@
 window.BACLogic = {
     // Procesa el CSV de Detalle (BAC)
-    processCSV: function(text, filename) {
-        // 0. VALIDACIÓN DE DUPLICADOS (Seguridad)
+    // Procesa el CSV de Detalle (BAC) con Soporte Multi-Archivo Seguro
+    processCSV: async function(text, filename) {
+        // 0. VALIDACIÓN DE DUPLICADOS
         this.data.files = this.data.files || {};
         this.data.files.bac_detalle = this.data.files.bac_detalle || [];
         this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         
-        // Si el archivo ya está en la lista, detenemos todo.
         if (filename && this.data.files.bac_detalle.includes(filename)) {
-            alert(`⚠️ El archivo "${filename}" ya fue cargado previamente.\n\nSe omitirá para evitar duplicar datos.`);
-            
-            // Opcional: Feedback visual en el status
+            await SysUI.alert(`⚠️ El archivo "${filename}" ya fue cargado previamente.\n\nSe omitirá para evitar duplicar datos.`, "Archivo Duplicado", "warning");
             const status = document.getElementById('status-bac-detalle');
             if(status) {
                 const prev = status.innerHTML;
                 this.updateFileList('bac_detalle');
-                setTimeout(() => status.innerHTML = prev, 2000); // Restaurar vista anterior
+                setTimeout(() => status.innerHTML = prev, 2000); 
             }
             return; 
         }
+
         const rows = text.split(/\r\n|\n/).map(l => {
             if(!l.trim()) return null;
             let r=[], q=false, b=''; 
@@ -28,25 +27,43 @@ window.BACLogic = {
             r.push(b); return r;
         }).filter(r => r && r.length > 5);
 
-        const headerRow = rows[0].map(h => String(h).replace(/["']/g, '').trim());
-        // VALIDACIÓN DE ESTRUCTURA (Smart Check)
-        const strHeaders = headerRow.join(' ').toLowerCase();
-        // Debe tener al menos Neto y Comisión para ser un reporte válido de BAC
-        if (!strHeaders.includes('neto') || !strHeaders.includes('comis')) {
-            alert("⛔ Error de Formato:\n\nEl archivo no parece ser un reporte detallado de BAC.\nFaltan columnas clave ('Monto Neto' o 'Comisión').");
-            
-            // RESTAURAR ESTADO VISUAL SI YA HABÍA ARCHIVOS
-            this.updateFileList('bac_detalle'); 
-            return; // Salir sin tocar nada más
-        }
-        this.data.headers = this.data.headers || {};
-        this.data.headers.detalle = headerRow;
+        if (rows.length === 0) return;
 
-        const idxNeto = headerRow.findIndex(h => /Neto/i.test(h)); 
-        const idxACI = headerRow.findIndex(h => /Ajuste.*Comisi/i.test(h)); 
-        const idxLiq = headerRow.findIndex(h => /Liquidaci/i.test(h));
-        const idxFecha = headerRow.findIndex(h => /fecha/i.test(h)); 
-        console.log("DEBUG LIQ INDEX:", idxLiq);
+        // 1. IDENTIFICAR ENCABEZADOS DEL ARCHIVO ACTUAL
+        const currentHeaders = rows[0].map(h => String(h).replace(/["']/g, '').trim());
+        const strHeaders = currentHeaders.join(' ').toLowerCase();
+
+        if (!strHeaders.includes('neto') || !strHeaders.includes('comis')) {
+            await SysUI.alert("⛔ Error de Formato:\n\nEl archivo no parece ser un reporte detallado de BAC.\nFaltan columnas clave ('Monto Neto' o 'Comisión').", "Error", "error");
+            this.updateFileList('bac_detalle'); 
+            return; 
+        }
+
+        // 2. LÓGICA "MASTER HEADER" (Soporte Multi-Archivo)
+        this.data.headers = this.data.headers || {};
+        if (!this.data.headers.detalle || this.data.headers.detalle.length === 0) {
+            this.data.headers.detalle = [...currentHeaders];
+        }
+        const masterHeaders = this.data.headers.detalle;
+
+        // Mapa de traducción: IndiceArchivoActual -> IndiceMaster
+        const indexMap = {};
+        currentHeaders.forEach((currH, currIdx) => {
+            const masterIdx = masterHeaders.findIndex(mh => mh.toLowerCase() === currH.toLowerCase());
+            if (masterIdx !== -1) {
+                indexMap[currIdx] = masterIdx;
+            } else {
+                const newMasterIdx = masterHeaders.length;
+                masterHeaders.push(currH);
+                indexMap[currIdx] = newMasterIdx;
+            }
+        });
+
+        // 3. BUSCAR COLUMNAS CLAVE EN EL ARCHIVO ACTUAL
+        const idxNeto = currentHeaders.findIndex(h => /Neto/i.test(h)); 
+        const idxACI = currentHeaders.findIndex(h => /Ajuste.*Comisi/i.test(h)); 
+        const idxLiq = currentHeaders.findIndex(h => /Liquidaci/i.test(h));
+        const idxFecha = currentHeaders.findIndex(h => /fecha/i.test(h)); 
 
         const cleanNum = (val) => {
             if(!val) return 0;
@@ -57,15 +74,24 @@ window.BACLogic = {
             return Math.round((num + Number.EPSILON) * 100) / 100 || 0;
         };
 
+        // 4. EXTRAER Y MAPEAR FILAS
         const newRows = rows.slice(1).map(row => {
             const valNeto = idxNeto !== -1 ? cleanNum(row[idxNeto]) : cleanNum(row[12]);
             const valACI = idxACI !== -1 ? cleanNum(row[idxACI]) : 0;
 
             let valLiq = '';
             if (idxLiq !== -1 && row[idxLiq]) {
-                // Limpiar comillas y espacios
                 valLiq = String(row[idxLiq]).replace(/["']/g, '').trim();
             }
+
+            // Mapear celdas al Master Header
+            const mappedData = {};
+            currentHeaders.forEach((h, currIdx) => {
+                const mIdx = indexMap[currIdx];
+                let cellVal = row[currIdx];
+                if (currIdx === idxLiq) cellVal = String(cellVal || '').replace(/["']/g, '').trim();
+                mappedData[String(mIdx)] = cellVal;
+            });
 
             return {
                 _uid: 'det_' + Math.random().toString(36).substr(2, 9),
@@ -81,27 +107,17 @@ window.BACLogic = {
                 _netoACI: valNeto - valACI, 
                 _enabled: true, 
                 _sourceFile: filename,
-                ...headerRow.reduce((acc, h, idx) => {
-                    let val = row[idx];
-                    if (idx === idxLiq) val = String(val || '').replace(/["']/g, '').trim();
-                    acc[String(idx)] = val;
-                    return acc;
-                }, {})
+                ...mappedData
             };
         });
         
         this.data.detalle = (this.data.detalle || []).concat(newRows);
         
-        this.data.files = this.data.files || {};
-        this.data.files.bac_detalle = this.data.files.bac_detalle || [];
-        this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         if(filename && !this.data.files.bac_detalle.includes(filename)) {
             this.data.files.bac_detalle.push(filename);
         }
 
         this.recalculateDetalle();
-        
-        // 2. Actualizar Lista Visual usando el Helper Centralizado
         this.updateFileList('bac_detalle');
 
         const dropzone = document.getElementById('drop-bac-detalle');
@@ -111,16 +127,15 @@ window.BACLogic = {
         }
     },
 
-    // Procesa el Excel de Pagado (BAC)
-    processExcel: function(buf, filename) {
-        // 0. VALIDACIÓN DE DUPLICADOS (Seguridad)
+    // Procesa el Excel de Pagado (BAC) con Soporte Multi-Archivo Seguro
+    processExcel: async function(buf, filename) {
+        // 0. VALIDACIÓN DE DUPLICADOS
         this.data.files = this.data.files || {};
         this.data.files.bac_detalle = this.data.files.bac_detalle || [];
         this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         
         if (filename && this.data.files.bac_pagado.includes(filename)) {
-            alert(`⚠️ El archivo "${filename}" ya fue cargado previamente.\n\nSe omitirá para evitar duplicar datos.`);
-            
+            await SysUI.alert(`⚠️ El archivo "${filename}" ya fue cargado previamente.\n\nSe omitirá para evitar duplicar datos.`, "Archivo Duplicado", "warning");
             const status = document.getElementById('status-bac-pagado');
             if(status) {
                 const prev = status.innerHTML;
@@ -129,10 +144,12 @@ window.BACLogic = {
             }
             return;
         }
+
         const wb = XLSX.read(new Uint8Array(buf), {type:'array'});
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json(ws, {header: 1});
 
+        // Buscar inicio de datos
         let startRowIdx = -1;
         for(let i = 0; i < Math.min(rawRows.length, 30); i++) {
             const rowStr = JSON.stringify(rawRows[i] || []).toLowerCase();
@@ -143,30 +160,52 @@ window.BACLogic = {
         }
 
         if(startRowIdx === -1) {
-            alert("⛔ Error de Formato:\n\nEl archivo Excel no tiene la estructura de 'Pagos Diarios' de BAC.\n\nSe buscaban las columnas:\n- Código\n- Descripción\n- Créditos");
+            await SysUI.alert("⛔ Error de Formato:\n\nEl archivo Excel no tiene la estructura de 'Pagos Diarios' de BAC.\n\nSe buscaban las columnas:\n- Código\n- Descripción\n- Créditos", "Error de Lectura", "error");
             return; 
         }
 
-        const headers = rawRows[startRowIdx];
-        const iCodigo = headers.findIndex(h => h && String(h).toLowerCase().includes('código'));
-        const iDesc = headers.findIndex(h => h && String(h).toLowerCase().includes('descripci'));
-        const iCredito = headers.findIndex(h => h && String(h).toLowerCase().includes('crédito'));
-        const iFecha = headers.findIndex(h => h && String(h).toLowerCase().includes('fecha'));
+        // 1. IDENTIFICAR ENCABEZADOS DEL ARCHIVO ACTUAL
+        const currentHeaders = rawRows[startRowIdx].map(h => h ? String(h).trim() : `Col_${Math.random()}`);
+        
+        // 2. LÓGICA "MASTER HEADER"
+        this.data.headers = this.data.headers || {};
+        if (!this.data.headers.pagado || this.data.headers.pagado.length === 0) {
+            this.data.headers.pagado = [...currentHeaders];
+        }
+        const masterHeaders = this.data.headers.pagado;
 
-        // Validación Estricta
+        // Mapeo
+        const indexMap = {};
+        currentHeaders.forEach((currH, currIdx) => {
+            // Se agregó "mh && currH &&" para evitar errores si la celda es null o undefined
+            const masterIdx = masterHeaders.findIndex(mh => mh && currH && String(mh).toLowerCase() === String(currH).toLowerCase());
+            if (masterIdx !== -1) {
+                indexMap[currIdx] = masterIdx;
+            } else {
+                const newMasterIdx = masterHeaders.length;
+                masterHeaders.push(currH);
+                indexMap[currIdx] = newMasterIdx;
+            }
+        });
+
+        // 3. ÍNDICES ACTUALES
+        const iCodigo = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('código'));
+        const iDesc = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('descripci'));
+        const iCredito = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('crédito'));
+        const iFecha = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('fecha'));
+
         const missing = [];
         if(iCodigo === -1) missing.push("Código");
         if(iDesc === -1) missing.push("Descripción");
         if(iCredito === -1) missing.push("Crédito");
 
         if(missing.length > 0) {
-            alert(`⛔ Archivo Inválido:\n\nFaltan las siguientes columnas obligatorias:\n- ${missing.join('\n- ')}`);
-            
-            // RESTAURAR ESTADO VISUAL
+            await SysUI.alert(`⛔ Archivo Inválido:\n\nFaltan las siguientes columnas obligatorias:\n- ${missing.join('\n- ')}`, "Columnas Faltantes", "error");
             this.updateFileList('bac_pagado');
             return;
         }
 
+        // 4. MAPEO DE DATOS
         const cleanData = [];
         
         for(let i = startRowIdx + 1; i < rawRows.length; i++) {
@@ -181,17 +220,20 @@ window.BACLogic = {
             if(typeof montoRaw === 'number') m = montoRaw;
             else if(typeof montoRaw === 'string') m = parseFloat(montoRaw.replace(/\s/g,'').replace(',','.')) || 0;
 
-            const desc = String(row[iDesc] || '').trim(); // Aseguramos trim aquí
+            const desc = String(row[iDesc] || '').trim(); 
             
-            // 1. Extraer ID del Afiliado (Primera palabra de la descripción)
             const parts = desc.split(' ');
             const extractedID = parts.length > 0 ? parts[0] : "SIN_ID";
-
-            // 2. Extraer Referencia LIQ
             const liqMatch = desc.match(/LIQ\s*(\d+)/i);
             const liqRef = liqMatch ? liqMatch[1] : "";
-            
             const isAFI = desc.toUpperCase().startsWith('AFI');
+
+            // Mapear al Master Header
+            const mappedData = {};
+            currentHeaders.forEach((h, currIdx) => {
+                const mIdx = indexMap[currIdx];
+                mappedData[String(mIdx)] = row[currIdx];
+            });
 
             const rowObj = {
                 _uid: 'pag_' + Math.random().toString(36).substr(2, 9),
@@ -199,29 +241,20 @@ window.BACLogic = {
                 _extractedId: extractedID, 
                 _liqRef: liqRef, 
                 _monto: m,
-                _fecha: iFecha !== -1 ? row[iFecha] : "", // NUEVO
+                _fecha: iFecha !== -1 ? row[iFecha] : "", 
                 _enabled: isAFI, 
                 _sourceFile: filename,
-                ...headers.reduce((acc, h, idx) => {
-                    acc[String(idx)] = row[idx];
-                    return acc;
-                }, {})
+                ...mappedData
             };
             cleanData.push(rowObj);
         }
 
-        this.data.headers = this.data.headers || {};
-        this.data.headers.pagado = headers;
-        
         this.data.pagado = (this.data.pagado || []).concat(cleanData);
 
         const totalGlobalPagado = this.data.pagado.reduce((acc, r) => {
             return acc + (r._enabled ? r._monto : 0);
         }, 0);
 
-        this.data.files = this.data.files || {};
-        this.data.files.bac_detalle = this.data.files.bac_detalle || [];
-        this.data.files.bac_pagado = this.data.files.bac_pagado || [];
         if(filename && !this.data.files.bac_pagado.includes(filename)) {
             this.data.files.bac_pagado.push(filename);
         }
@@ -229,10 +262,7 @@ window.BACLogic = {
         const elTotal = document.getElementById('sum-depositos');
         if(elTotal) elTotal.innerText = this.formatMoney(totalGlobalPagado);
         
-        // CORRECCIÓN: Mostrar tarjeta
         document.getElementById('card-bac-pagado').classList.remove('hidden');
-
-        // 2. Actualizar Lista Visual usando el Helper Centralizado
         this.updateFileList('bac_pagado');
 
         const dropzone = document.getElementById('drop-bac-pagado');

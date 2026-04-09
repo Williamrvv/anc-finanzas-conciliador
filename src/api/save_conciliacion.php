@@ -39,13 +39,13 @@ try {
     // 2. PREPARAR SENTENCIAS
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
     
-    // Si ya existe, solo actualizamos Estado y Match
-    $stmtUpdate = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatch = ?, IdCierre = ISNULL(IdCierre, ?) WHERE IdTransaccion = ?");
+    // Si ya existe, actualizamos Estado, Match, Cierre y también inyectamos la Tarjeta si estaba en NULL
+    $stmtUpdate = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatch = ?, IdCierre = ISNULL(IdCierre, ?), Tarjeta = ISNULL(Tarjeta, ?) WHERE IdTransaccion = ?");
     
-    // Si no existe, lo creamos
+    // Si no existe, lo creamos (Agregado campo Tarjeta)
     $stmtInsert = $pdo->prepare("INSERT INTO Tbl_Transacciones_Maestra 
-        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, Liquidacion, Comision, RetencionVentas, RetencionRenta, AjusteACI) VALUES (?, ?, ?, ?, ?, ?)");
     $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, Lote, Comision, RetencionIVA, RetencionISR) VALUES (?, ?, ?, ?, ?)");
@@ -70,13 +70,13 @@ try {
         $idExistente = $stmtCheck->fetchColumn();
 
         if ($idExistente) {
-            // SÍ EXISTE: (Ej: El usuario arrastró un Excel viejo). Solo actualizamos su cruce.
-            $stmtUpdate->execute([$t['Estado'], $t['IdMatch'], $idCierre, $idExistente]);
+            // SÍ EXISTE: Solo actualizamos su cruce y llenamos la tarjeta si faltaba.
+            $stmtUpdate->execute([$t['Estado'], $t['IdMatch'], $idCierre, $t['Tarjeta'], $idExistente]);
         } else {
-            // NO EXISTE: Es un dato completamente nuevo. Se inserta en la Maestra.
+            // NO EXISTE: Es un dato nuevo.
             $stmtInsert->execute([
                 $idTrans, $idCierre, $t['Banco'], $t['Origen'], $t['Estado'], $t['IdMatch'], 
-                $fecha, $t['Afiliado_MerID'], $t['Autorizacion'], $bruto, $neto, $t['ArchivoOrigen'], $hashUnico
+                $fecha, $t['Afiliado_MerID'], $t['Autorizacion'], $t['Tarjeta'], $bruto, $neto, $t['ArchivoOrigen'], $hashUnico
             ]);
 
             // Se insertan sus detalles hijos

@@ -82,6 +82,8 @@ window.loadView = function(viewName, pushHistory = true) {
             // Inicialización de módulos
             if (viewName === 'conciliacion' && window.ConciliacionLogic) {
                 requestAnimationFrame(() => window.ConciliacionLogic.init());
+            } else if (viewName === 'tsd' && window.TSDLogic) {
+                requestAnimationFrame(() => window.TSDLogic.init());
             } else if (viewName === 'usuarios' && window.UsuariosLogic) {
                 requestAnimationFrame(() => window.UsuariosLogic.init());
             } else if (viewName === 'cierre_cajas' && window.CierreCajasLogic) {

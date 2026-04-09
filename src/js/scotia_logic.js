@@ -1,6 +1,7 @@
 window.ScotiaLogic = {
     // Procesa el Excel de Detalle (Scotiabank)
     // Procesa el Excel de Detalle (Scotiabank) - Multibloque LOTE/AJUSTE
+    // Procesa el Excel de Detalle (Scotiabank) - Multibloque LOTE/AJUSTE y Multi-Archivo Seguro
     processScotiabankDetalle: function(buf, filename) {
         // 0. VALIDACIÓN DE DUPLICADOS
         this.data.files = this.data.files || {};
@@ -16,43 +17,64 @@ window.ScotiaLogic = {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json(ws, {header: 1});
 
-        // 1. Detectar la Fila de Encabezados Principal
+        // 1. Detectar la Fila de Encabezados de este archivo específico
         let mainHeaderIdx = -1;
         for(let i=0; i<Math.min(rawRows.length, 30); i++) {
-            const rowStr = JSON.stringify(rawRows[i]).toLowerCase();
+            const rowStr = JSON.stringify(rawRows[i] || []).toLowerCase();
             if(rowStr.includes('monto neto') && rowStr.includes('merid')) {
                 mainHeaderIdx = i; break;
             }
         }
 
         if(mainHeaderIdx === -1) {
-            alert("⛔ Error de Formato Scotiabank:\n\nNo se encontraron los encabezados clave:\n- Monto Neto\n- MerID");
-            this.updateScotiaFileList('scotia_detalle'); // Restaurar UI
+            alert(`⛔ Error de Formato en ${filename}:\n\nNo se encontraron los encabezados clave (Monto Neto, MerID).`);
+            this.updateScotiaFileList('scotia_detalle'); 
             return;
         }
 
-        // Guardar encabezados
-        const headers = rawRows[mainHeaderIdx].map(h => h ? String(h).trim() : `Col_${Math.random()}`);
-        this.data.headers = this.data.headers || {};
-        this.data.headers.scotia_detalle = headers;
-
-        // Mapeo de columnas
-        const getIdx = (name) => headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
-        const cols = {
-            merId: getIdx('merid'),
-            bruto: getIdx('monto bruto'),
-            neto: getIdx('monto neto'),
-            com: getIdx('monto comisión'),
-            iva: getIdx('retención iva'),
-            isr: getIdx('retención isr'),
-            fecha: getIdx('fecha') 
-        };
+        // 2. NORMALIZACIÓN "MASTER HEADER" (Evita desalineación al subir múltiples archivos)
+        const currentHeaders = rawRows[mainHeaderIdx].map(h => h ? String(h).trim() : `Col_${Math.random()}`);
         
-        // Fallbacks
-        if(cols.bruto === -1) cols.bruto = getIdx('monto orig');
-        if(cols.isr === -1) cols.isr = getIdx('retención is');
+        this.data.headers = this.data.headers || {};
+        // Si no hay master, el primer archivo dicta la estructura
+        if (!this.data.headers.scotia_detalle || this.data.headers.scotia_detalle.length === 0) {
+            this.data.headers.scotia_detalle = [...currentHeaders]; 
+        }
+        const masterHeaders = this.data.headers.scotia_detalle;
 
-        // 2. Procesar Filas (Temp Array)
+        // Crear mapa de traducción: índiceDelArchivoActual -> índiceMaestro
+        const indexMap = {};
+        currentHeaders.forEach((currH, currIdx) => {
+            const masterIdx = masterHeaders.findIndex(mh => mh.toLowerCase() === currH.toLowerCase());
+            if (masterIdx !== -1) {
+                indexMap[currIdx] = masterIdx;
+            } else {
+                // Si el archivo trae una columna nueva, la añadimos al final del Master
+                const newMasterIdx = masterHeaders.length;
+                masterHeaders.push(currH);
+                indexMap[currIdx] = newMasterIdx;
+            }
+        });
+
+        // 3. Índices de lectura para ESTE archivo
+        const getCurrIdx = (name) => currentHeaders.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
+        const currCols = {
+            merId: getCurrIdx('merid'),
+            bruto: getCurrIdx('monto bruto'),
+            neto: getCurrIdx('monto neto'),
+            com: getCurrIdx('monto comisión'),
+            iva: getCurrIdx('retención iva'),
+            isr: getCurrIdx('retención isr'),
+            fecha: getCurrIdx('fecha'),
+            moneda: getCurrIdx('moneda') 
+        };
+        if(currCols.bruto === -1) currCols.bruto = getCurrIdx('monto orig');
+        if(currCols.isr === -1) currCols.isr = getCurrIdx('retención is');
+
+        // Índice para variable global interna
+        const masterFechaIdx = masterHeaders.findIndex(h => h && h.toLowerCase().includes('fecha'));
+
+        // 4. Procesar Filas
         const newRows = [];
         let currentMode = 'LOTE'; 
         let multiplicador = 1;
@@ -63,7 +85,8 @@ window.ScotiaLogic = {
             return 0;
         };
 
-        for(let i = 0; i < rawRows.length; i++) {
+        // Comenzamos a leer JUSTO DESPUÉS del encabezado
+        for(let i = mainHeaderIdx + 1; i < rawRows.length; i++) {
             const row = rawRows[i];
             if(!row || row.length === 0) continue;
 
@@ -73,74 +96,94 @@ window.ScotiaLogic = {
             if(rowStr.includes('agrupado por') && rowStr.includes('transacción')) {
                 if(rowStr.includes('ajuste')) {
                     currentMode = 'AJUSTE';
-                    multiplicador = -1; // <--- INVERTIR SIGNO (Negativo)
+                    multiplicador = -1; // INVERTIR SIGNO
                 } else {
                     currentMode = 'LOTE';
                     multiplicador = 1;  // Positivo
                 }
-                continue; // Saltamos la fila de título
+                continue; 
             }
 
-            // B. Ignorar filas de encabezados repetidos o subtotales
+            // B. Ignorar filas de subtotales
             if(rowStr.includes('monto neto') || rowStr.includes('subtotales')) continue;
 
-            // C. VALIDACIÓN CRÍTICA: Debe tener MerID
-            // Si la celda de MerID está vacía o es nula, ignoramos la fila por completo.
-            const rawMerId = row[cols.merId];
-            if(!rawMerId || String(rawMerId).trim() === '') continue;
-
-            // D. Extracción de Datos
-            const vBruto = Math.abs(parseNum(row[cols.bruto]));
-            const vNeto = Math.abs(parseNum(row[cols.neto]));
-            
-            // Si es ajuste, aplicamos el negativo
-            const finalNeto = vNeto * multiplicador;
-            const finalBruto = vBruto * multiplicador; 
-
-            // E. Construir Objeto
-            const rowObj = {
-                _uid: 'scodet_' + Math.random().toString(36).substr(2, 9), // Clave para interactividad
-                _enabled: true,
-                _neto: finalNeto,
-                _bruto: finalBruto, 
-                _fecha: cols.fecha !== -1 ? row[cols.fecha] : "",
-                _mode: currentMode,
-                _sourceFile: filename,
-                ...headers.reduce((acc, h, idx) => {
-                    let cellVal = row[idx];
-                    if (typeof cellVal === 'string' && cellVal.startsWith("'")) cellVal = cellVal.substring(1);
-                    acc[String(idx)] = cellVal;
-                    return acc;
-                }, {})
-            };
-            
-            // Forzar visualización negativa en columnas clave para el PopUp
-            // Sobreescribimos el valor original en las columnas de Monto Neto y Bruto
-            // para que VanillaGrid lo muestre rojo si es negativo.
-            if (multiplicador === -1) {
-                rowObj[String(cols.neto)] = finalNeto;
-                rowObj[String(cols.bruto)] = finalBruto;
+            // --- CORRECCIÓN BUG EXCEL SCOTIABANK (COLUMNA FANTASMA) ---
+            let workingRow = [...row];
+            if (currCols.moneda !== -1) {
+                const valMoneda = String(workingRow[currCols.moneda] || '').toUpperCase();
+                const valNext = String(workingRow[currCols.moneda + 1] || '').toUpperCase();
+                const isCurrency = (v) => v.includes('COLON') || v.includes('DOLAR') || v.includes('USD') || v.includes('CRC');
+                
+                if (!isCurrency(valMoneda) && isCurrency(valNext)) {
+                    workingRow.splice(1, 1); // Borramos celda fantasma y realineamos
+                }
             }
 
+            // C. VALIDACIÓN CRÍTICA: Debe tener MerID
+            const rawMerId = workingRow[currCols.merId];
+            if(!rawMerId || String(rawMerId).trim() === '') continue;
+
+            // D. Extracción de Datos usando los índices de ESTE archivo
+            const vBruto = Math.abs(parseNum(workingRow[currCols.bruto]));
+            const vNeto = Math.abs(parseNum(workingRow[currCols.neto]));
+            
+            const finalNeto = vNeto * multiplicador;
+            const finalBruto = vBruto * multiplicador;
+            const vCom = Math.abs(parseNum(workingRow[currCols.com])) * multiplicador;
+            const vIva = Math.abs(parseNum(workingRow[currCols.iva])) * multiplicador;
+            const vIsr = Math.abs(parseNum(workingRow[currCols.isr])) * multiplicador; 
+
+            // E. Mapeo al Master Header
+            const mappedData = {};
+            currentHeaders.forEach((h, currIdx) => {
+                const mIdx = indexMap[currIdx];
+                let cellVal = workingRow[currIdx];
+                // Limpiar la odiosa comilla simple de Excel
+                if (typeof cellVal === 'string' && cellVal.startsWith("'")) cellVal = cellVal.substring(1);
+                mappedData[String(mIdx)] = cellVal;
+            });
+
+            // Forzar montos negativos en el objeto para la tabla
+            if (multiplicador === -1) {
+                const mNetoIdx = indexMap[currCols.neto];
+                const mBrutoIdx = indexMap[currCols.bruto];
+                mappedData[String(mNetoIdx)] = finalNeto;
+                mappedData[String(mBrutoIdx)] = finalBruto;
+            }
+
+            // F. Construir Objeto Final
+            const rowObj = {
+                _uid: 'scodet_' + Math.random().toString(36).substr(2, 9), 
+                _enabled: true,
+                _neto: finalNeto,
+                _bruto: finalBruto,
+                _comision: vCom,
+                _iva: vIva,
+                _isr: vIsr,
+                _fecha: masterFechaIdx !== -1 ? mappedData[String(masterFechaIdx)] : "",
+                _mode: currentMode,
+                _sourceFile: filename,
+                ...mappedData
+            };
+            
             newRows.push(rowObj);
         }
 
-        // 3. ACUMULAR DATOS
+        // 5. ACUMULAR DATOS
         this.data.scotia_detalle = (this.data.scotia_detalle || []).concat(newRows);
         
-        // 4. REGISTRAR ARCHIVO
+        // 6. REGISTRAR ARCHIVO
         if(filename && !this.data.files.scotia_detalle.includes(filename)) {
             this.data.files.scotia_detalle.push(filename);
         }
         
-        // 5. ACTUALIZAR UI
+        // 7. ACTUALIZAR UI
         this.updateScotiaCard();
-        this.updateScotiaFileList('scotia_detalle'); // <--- Llamada a la nueva UI
+        this.updateScotiaFileList('scotia_detalle'); 
         
         if(this.switchTab) this.switchTab('scotia');
         this.runMatchScotiabank();
 
-        // Feedback Dropzone (Estado OK)
         const dropzone = document.getElementById('drop-scotia-detalle');
         if(dropzone) {
             dropzone.classList.remove('border-slate-300', 'hover:border-red-500');
@@ -306,8 +349,12 @@ window.ScotiaLogic = {
             }
             
             if (m !== 0) {
-                const desc = String(row[iDesc] || '');
-                const parts = desc.trim().replace(/\s+/g, ' ').split(' ');
+                const desc = String(row[iDesc] || '').trim();
+                
+                // REGLA FINANCIERA: Solo procesar transacciones que inicien con PCA
+                if (!desc.toUpperCase().startsWith('PCA')) continue;
+
+                const parts = desc.replace(/\s+/g, ' ').split(' ');
                 const extractedID = parts.length >= 4 ? parts[3] : "SIN_ID";
 
                 const rowObj = {
@@ -437,7 +484,8 @@ window.ScotiaLogic = {
             
             const diff = det.neto - pag.sum;
             
-            const isMatch = Math.abs(diff) < 1 && det.neto > 0 && pag.sum > 0;
+            // Comparación financiera estricta (Tolerancia de 1 colón para ajustes de redondeo bancario)
+            const isMatch = Math.abs(diff) <= 1.00 && Math.abs(det.neto) > 0;
 
             const rowData = {
                 uuid: `${timeKey}-${id}`,
