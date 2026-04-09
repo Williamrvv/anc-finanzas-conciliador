@@ -765,33 +765,25 @@ window.ScotiaLogic = {
 
     // --- FASE 2: POPUP INTERACTIVO SCOTIABANK ---
 
-    removeFileScotiaDetalle: function(filename) {
-        if(!confirm(`¿Eliminar los datos de "${filename}"?`)) return;
-
+    removeFileScotiaDetalle: async function(filename) {
         this.data.scotia_detalle = this.data.scotia_detalle.filter(row => row._sourceFile !== filename);
-        
-        // CORRECCIÓN CRÍTICA
         this.data.files.scotia_detalle = this.data.files.scotia_detalle.filter(f => f !== filename);
 
         this.updateScotiaCard();
-        this.updateScotiaFileList('scotia_detalle'); // Asegúrate que esta función use la lista actualizada
+        this.updateScotiaFileList('scotia_detalle'); 
         this.runMatchScotiabank();
         
         if(this.data.files.scotia_detalle.length === 0) {
             const drop = document.getElementById('drop-scotia-detalle');
-            drop.classList.remove('border-green-500', 'bg-green-50');
-            drop.classList.add('border-slate-300', 'bg-white');
+            drop.classList.remove('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+            drop.classList.add('border-slate-300', 'bg-white', 'dark:bg-slate-800');
             document.getElementById('status-scotia-detalle').innerHTML = '';
             document.getElementById('status-scotia-detalle').classList.add('hidden');
         }
     },
 
-    removeFileScotiaPagado: function(filename) {
-        if(!confirm(`¿Eliminar los datos de "${filename}"?`)) return;
-
+    removeFileScotiaPagado: async function(filename) {
         this.data.scotia_pagado = this.data.scotia_pagado.filter(row => row._sourceFile !== filename);
-        
-        // CORRECCIÓN CRÍTICA
         this.data.files.scotia_pagado = this.data.files.scotia_pagado.filter(f => f !== filename);
 
         const total = this.data.scotia_pagado.reduce((acc, r) => acc + (r._enabled ? r._monto : 0), 0);
@@ -802,8 +794,8 @@ window.ScotiaLogic = {
 
         if(this.data.files.scotia_pagado.length === 0) {
             const drop = document.getElementById('drop-scotia-pagado');
-            drop.classList.remove('border-green-500', 'bg-green-50');
-            drop.classList.add('border-slate-300', 'bg-white');
+            drop.classList.remove('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+            drop.classList.add('border-slate-300', 'bg-white', 'dark:bg-slate-800');
             document.getElementById('card-scotia-pagado').classList.add('hidden');
             document.getElementById('status-scotia-pagado').innerHTML = '';
             document.getElementById('status-scotia-pagado').classList.add('hidden');
@@ -817,49 +809,24 @@ window.ScotiaLogic = {
         
         if(!status) return;
 
-        if(files.length === 0) {
+        if(!files || files.length === 0) {
             status.innerHTML = '';
             status.classList.add('hidden');
             return;
         }
 
         const count = files.length;
-        const colorText = isDet ? 'text-green-600' : 'text-green-700'; // Detalle rojo (scotia) vs Pagado verde? Scotia suele ser Rojo en UI, pero mantenemos verde para éxito de carga.
-
-        const listItems = files.map(f => `
-            <div class="flex justify-between items-center bg-slate-700 p-1 rounded hover:bg-slate-600 transition-colors group/item">
-                <span class="truncate text-[9px] text-slate-300 w-32" title="${f}">• ${f}</span>
-                <button onclick="window.ConciliacionLogic.${isDet ? 'removeFileScotiaDetalle' : 'removeFileScotiaPagado'}('${f}')" 
-                        class="text-red-400 hover:text-red-200 p-0.5 rounded ml-2 opacity-0 group-hover/item:opacity-100 transition-opacity" title="Eliminar archivo">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-        `).join('');
 
         status.innerHTML = `
-            <div class="font-bold text-[10px] ${colorText} cursor-help flex items-center gap-1 relative z-20">
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                ${count} Archivo${count !== 1 ? 's' : ''}
-            </div>
-            
-            <div class="hidden group-hover:block absolute left-0 top-full pt-2 z-[100] min-w-[200px]">
-                <div class="absolute top-1 left-4 w-2 h-2 bg-slate-800 rotate-45"></div>
-                <div class="bg-slate-800 text-white rounded shadow-xl border border-slate-600 p-1">
-                    <div class="text-[9px] font-bold text-slate-400 border-b border-slate-600 pb-1 mb-1 px-1 flex justify-between items-center">
-                        <span>Archivos Scotia:</span>
-                        <span class="text-[8px] bg-slate-700 px-1 rounded">${count}</span>
-                    </div>
-                    <div class="flex flex-col gap-1 max-h-40 overflow-y-auto custom-scrollbar">
-                        ${listItems}
-                    </div>
-                </div>
+            <div onclick="event.preventDefault(); event.stopPropagation(); window.ConciliacionLogic.manageFiles('${type}')" 
+                 class="font-bold text-[10px] text-slate-700 dark:text-slate-200 cursor-pointer flex items-center justify-center gap-1.5 w-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors py-1 pointer-events-auto">
+                <svg class="w-3 h-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <span>${count} Archivo${count !== 1 ? 's' : ''}</span>
+                <span class="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-wider ml-1">Ver</span>
             </div>
         `;
-        status.parentElement.classList.add('group', 'relative');
-        status.classList.remove('hidden');
+        status.className = "w-full absolute bottom-0 left-0 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 z-50 transition-all";
     },
-
-    // --- FASE 2: POPUP INTERACTIVO SCOTIABANK ---
 
     // 1. Prepara y limpia los datos antes de enviarlos a la nueva ventana
     getScotiaPopupData: function(type) {

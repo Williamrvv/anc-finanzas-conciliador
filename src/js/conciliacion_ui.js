@@ -181,19 +181,20 @@ window.ConciliacionLogic = {
             this._uploadsConfigured = true;
         }
         
-        // --- MOTOR DE RECUPERACIÓN LOCAL (DRAFT) ---
-        const draftStr = localStorage.getItem('conciliacion_draft');
-        if (draftStr) {
+        // --- MOTOR DE RECUPERACIÓN MASIVA (INDEXED-DB DRAFT) ---
+        const draftObj = await window.LocalDB.get('conciliacion_draft');
+        
+        if (draftObj) {
             const choice = await window.SysUI.confirm(
                 "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
                 "Borrador Encontrado", 
                 "info"
             );
             if (choice) {
-                this.restoreDraftFromLocal(draftStr);
+                this.restoreDraftFromLocal(draftObj); // Ahora pasamos el objeto parseado directamente
             } else {
-                localStorage.removeItem('conciliacion_draft');
-                this.loadPendientes(); // Si rechaza el borrador, cargar los pendientes frescos de la BD
+                await window.LocalDB.delete('conciliacion_draft');
+                this.loadPendientes(); 
             }
         } else {
             // Flujo Normal: Traer saldos arrastrados de la BD
@@ -237,7 +238,8 @@ window.ConciliacionLogic = {
                checkFiles(this.data.files.scotia_pagado);
     },
 
-    saveDraftToLocal: function(isAutoSave = false) {
+    // AHORA ES ASÍNCRONA PARA NO CONGELAR LA PANTALLA MIENTRAS GUARDA MEGABYTES
+    saveDraftToLocal: async function(isAutoSave = false) {
         try {
             const draft = {
                 data: this.data,
@@ -245,21 +247,20 @@ window.ConciliacionLogic = {
                 manualScotia: this.manualMatchesScotia || [],
                 deferred: this.deferredRows || { det: [], pag: [] }
             };
-            localStorage.setItem('conciliacion_draft', JSON.stringify(draft));
+            
+            // Usamos el motor IndexedDB en lugar de LocalStorage
+            await window.LocalDB.save('conciliacion_draft', draft);
             
             if (!isAutoSave) {
-                // Guardado por salida (Router): Purgamos la pantalla
                 this.resetState(); 
-                console.log("💾 Borrador guardado por navegación en LocalStorage.");
+                console.log("💾 Borrador guardado por navegación en IndexedDB.");
             } else {
-                // Auto-Guardado en segundo plano: Dejamos la pantalla intacta y mostramos Toast
-                console.log(`⏱️ [Auto-Save] Progreso respaldado automáticamente a las ${new Date().toLocaleTimeString()}`);
+                console.log(`⏱️ [Auto-Save] Progreso respaldado en IndexedDB a las ${new Date().toLocaleTimeString()}`);
                 this.showAutoSaveToast();
             }
         } catch (e) {
-            console.error("Fallo al guardar en LocalStorage:", e);
-            // Solo molestamos al usuario con el alert si fue manual, si es auto-save fallamos silenciosamente
-            if (!isAutoSave) alert("El volumen de datos es demasiado grande para el almacenamiento local del navegador.");
+            console.error("Fallo al guardar en IndexedDB:", e);
+            if (!isAutoSave) alert("Error crítico al intentar guardar el progreso en el navegador.");
         }
     },
 
@@ -296,41 +297,84 @@ window.ConciliacionLogic = {
         }, 3000);
     },
 
-    restoreDraftFromLocal: function(draftStr) {
-        console.log("📦 Restaurando borrador local...");
-        const draft = JSON.parse(draftStr);
+    restoreDraftFromLocal: function(draftObj) {
+        console.log("📦 Restaurando borrador masivo (IndexedDB)...");
         
-        this.data = draft.data;
-        this.manualMatches = draft.manualBAC || [];
-        this.manualMatchesScotia = draft.manualScotia || [];
-        this.deferredRows = draft.deferred || { det: [], pag: [] };
+        // 1. Restaurar Estado en RAM
+        this.data = draftObj.data;
+        this.manualMatches = draftObj.manualBAC || [];
+        this.manualMatchesScotia = draftObj.manualScotia || [];
+        this.deferredRows = draftObj.deferred || { det: [], pag: [] };
 
-        // Disparar las funciones de renderizado para re-dibujar las pantallas
-        setTimeout(() => {
-            this.updateFileList('bac_detalle');
-            this.updateFileList('bac_pagado');
-            this.updateScotiaFileList('scotia_detalle');
-            this.updateScotiaFileList('scotia_pagado');
+        // 2. Destruir instancias previas (Zombis) de las tablas para forzar que nazcan de nuevo
+        this.grids = { bac: null, scotia: null, bac_audit: null, scotia_audit: null, bac_manual: null, bac_deferred: null };
 
-            if (this.data.files.bac_detalle.length || this.data.files.bac_pagado.length) {
-                // Forzar visualización de tarjetas BAC
-                if(this.data.files.bac_detalle.length) document.getElementById('card-bac-detalle')?.classList.remove('hidden');
-                if(this.data.files.bac_pagado.length) document.getElementById('card-bac-pagado')?.classList.remove('hidden');
+        // 3. Darle al navegador 2 ciclos de renderizado (requestAnimationFrame) 
+        // para asegurarse de que el HTML de las pestañas ya está inyectado y calculable.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
                 
-                if(this.recalculateDetalle) this.recalculateDetalle();
-                if(this.recalculateBACPagado) this.recalculateBACPagado();
-                if(this.renderManualMatchesTable) this.renderManualMatchesTable();
-                if(this.renderDeferredTable) this.renderDeferredTable();
-            }
-            if (this.data.files.scotia_detalle.length || this.data.files.scotia_pagado.length) {
-                // Forzar visualización de tarjetas Scotia
-                if(this.data.files.scotia_detalle.length) document.getElementById('card-scotia-detalle')?.classList.remove('hidden');
-                if(this.data.files.scotia_pagado.length) document.getElementById('card-scotia-pagado')?.classList.remove('hidden');
+                // A. Restaurar Listas de Archivos Visuales
+                this.updateFileList('bac_detalle');
+                this.updateFileList('bac_pagado');
+                this.updateScotiaFileList('scotia_detalle');
+                this.updateScotiaFileList('scotia_pagado');
 
-                if(this.updateScotiaCard) this.updateScotiaCard();
-                if(this.recalculateScotiaPagado) this.recalculateScotiaPagado();
-            }
-        }, 100);
+                // B. Restaurar BAC si tiene datos
+                if (this.data.files.bac_detalle.length || this.data.files.bac_pagado.length) {
+                    
+                    // Asegurar que las tarjetas estén visibles antes de calcular
+                    const cardDet = document.getElementById('card-bac-detalle');
+                    const cardPag = document.getElementById('card-bac-pagado');
+                    const dropDet = document.getElementById('drop-bac-detalle');
+                    const dropPag = document.getElementById('drop-bac-pagado');
+
+                    if(this.data.files.bac_detalle.length && cardDet) {
+                        cardDet.classList.remove('hidden');
+                        dropDet.classList.remove('border-slate-300');
+                        dropDet.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                    }
+                    if(this.data.files.bac_pagado.length && cardPag) {
+                        cardPag.classList.remove('hidden');
+                        dropPag.classList.remove('border-slate-300');
+                        dropPag.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                    }
+                    
+                    // Disparar cadena de cálculo (esto instanciará VanillaGrid internamente)
+                    if(this.recalculateDetalle) this.recalculateDetalle();
+                    if(this.recalculateBACPagado) this.recalculateBACPagado();
+                    if(this.renderManualMatchesTable) this.renderManualMatchesTable();
+                    if(this.renderDeferredTable) this.renderDeferredTable();
+                }
+
+                // C. Restaurar Scotia si tiene datos
+                if (this.data.files.scotia_detalle.length || this.data.files.scotia_pagado.length) {
+                    
+                    const cardScDet = document.getElementById('card-scotia-detalle');
+                    const cardScPag = document.getElementById('card-scotia-pagado');
+                    const dropScDet = document.getElementById('drop-scotia-detalle');
+                    const dropScPag = document.getElementById('drop-scotia-pagado');
+
+                    if(this.data.files.scotia_detalle.length && cardScDet) {
+                        cardScDet.classList.remove('hidden');
+                        dropScDet.classList.remove('border-slate-300');
+                        dropScDet.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                    }
+                    if(this.data.files.scotia_pagado.length && cardScPag) {
+                        cardScPag.classList.remove('hidden');
+                        dropScPag.classList.remove('border-slate-300');
+                        dropScPag.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                    }
+
+                    // Disparar cadena de cálculo
+                    if(this.updateScotiaCard) this.updateScotiaCard();
+                    if(this.recalculateScotiaPagado) this.recalculateScotiaPagado();
+                    if(this.runMatchScotiabank) this.runMatchScotiabank();
+                }
+
+                console.log("✅ Restauración visual completada.");
+            });
+        });
     },
 
     // ==========================================================
@@ -1300,8 +1344,8 @@ window.ConciliacionLogic = {
             const data = await res.json();
 
             if (data.success) {
-                // Éxito: Limpiamos borrador, mostramos mensaje y reiniciamos la vista limpiamente
-                localStorage.removeItem('conciliacion_draft');
+                // Éxito: Destruimos la base de datos local para que arranque en limpio mañana
+                await window.LocalDB.delete('conciliacion_draft');
                 await SysUI.alert(`Transacciones guardadas en Base de Datos: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre de ${nombreBanco} Exitoso`, "success");
                 
                 window.ConciliacionLogic.resetState();
@@ -1318,7 +1362,55 @@ window.ConciliacionLogic = {
         }
     },
 
-    
+    // ==========================================================
+    // GESTOR DE ARCHIVOS Y ELIMINACIÓN SEGURA
+    // ==========================================================
+    manageFiles: function(type) {
+        const files = this.data.files[type];
+        if(!files || files.length === 0) return;
+        
+        let title = type.includes('bac') ? 'BAC Credomatic' : 'Davibank';
+        let sub = type.includes('detalle') ? 'Detallado (Ventas)' : 'Pagado (Banco)';
+
+        let html = '<div class="space-y-2 max-h-[350px] overflow-y-auto custom-scrollbar pr-2 mt-2">';
+        files.forEach(f => {
+            html += `
+            <div class="flex justify-between items-center bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 p-2.5 rounded-lg shadow-sm hover:border-red-300 dark:hover:border-red-800 transition-colors">
+                <span class="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-3/4" title="${f}">${f}</span>
+                <button onclick="window.ConciliacionLogic.removeFileGlobal('${type}', '${f}')" class="text-red-500 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 px-2 py-1 rounded transition-colors text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Excluir
+                </button>
+            </div>`;
+        });
+        html += '</div>';
+
+        window.SysUI._createModal(`Gestor de Archivos: ${title} - ${sub}`, html, [{text: 'Cerrar Gestor', value: true, class: 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white px-5 py-2 rounded-lg font-bold shadow-sm transition-colors'}], "info");
+    },
+
+    removeFileGlobal: async function(type, filename) {
+        // 1. Cerrar el gestor de archivos abierto (haciendo clic dinámicamente en su botón de cerrar)
+        const closeBtn = document.getElementById('sysui-btn-0');
+        if (closeBtn) closeBtn.click();
+
+        // 2. Confirmación Crítica
+        if(!(await window.SysUI.confirm(`Se eliminarán permanentemente todas las transacciones pertenecientes a:\n\n📄 "${filename}"\n\n¿Desea continuar y recalcular los saldos?`, "Confirmar Exclusión", "warning"))) {
+            // Si cancela, reabrir el gestor
+            setTimeout(() => this.manageFiles(type), 350);
+            return;
+        }
+
+        // 3. Ejecutar eliminación según el módulo (Las funciones internas ya no tendrán alerts)
+        if(type === 'bac_detalle') await this.removeFileDetalle(filename);
+        else if(type === 'bac_pagado') await this.removeFilePagado(filename);
+        else if(type === 'scotia_detalle') await this.removeFileScotiaDetalle(filename);
+        else if(type === 'scotia_pagado') await this.removeFileScotiaPagado(filename);
+
+        // 4. Guardar inmediatamente el borrador en la DB del navegador para sincronizar memoria caché
+        this.saveDraftToLocal(true);
+        
+        await window.SysUI.alert(`El archivo ha sido excluido y los totales han sido recalculados exitosamente.`, "Archivo Eliminado", "success");
+    },
 };
 
 // // --- SHIM LEGACY (Para botón "X" de estadísticas) ---
@@ -1368,3 +1460,54 @@ window.ConciliacionFunctions = {
     }
 };
 
+// ==========================================================
+// MOTOR DE ALMACENAMIENTO LOCAL MASIVO (INDEXED-DB)
+// Soporta hasta 1GB de datos (Soluciona el QuotaExceededError de LocalStorage)
+// ==========================================================
+window.LocalDB = {
+    dbName: "ANC_Finanzas_DB",
+    storeName: "drafts",
+    init: function() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, 1);
+            request.onerror = event => reject("Error en IndexedDB");
+            request.onupgradeneeded = event => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            request.onsuccess = event => resolve(event.target.result);
+        });
+    },
+    save: async function(key, data) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, "readwrite");
+            const store = tx.objectStore(this.storeName);
+            // El motor comprime y guarda el JSON de forma asíncrona sin congelar la pantalla
+            store.put(JSON.stringify(data), key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject("Error al guardar en DB Local");
+        });
+    },
+    get: async function(key) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, "readonly");
+            const store = tx.objectStore(this.storeName);
+            const req = store.get(key);
+            req.onsuccess = () => resolve(req.result ? JSON.parse(req.result) : null);
+            req.onerror = () => reject("Error al leer DB Local");
+        });
+    },
+    delete: async function(key) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, "readwrite");
+            const store = tx.objectStore(this.storeName);
+            store.delete(key);
+            tx.oncomplete = () => resolve(true);
+        });
+    }
+};
