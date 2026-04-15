@@ -1,4 +1,8 @@
 <?php
+// 1. BLINDAJE CONTRA HTML SUCIO (Evita el error de Syntax JSON)
+ini_set('display_errors', 0);
+error_reporting(E_ALL);
+
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
@@ -15,7 +19,8 @@ $data = json_decode($inputJSON, true);
 
 if (!$data || empty($data['transacciones'])) {
     http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Payload vacío.']);
+    // Si PHP se quedó sin memoria o el POST superó el límite, json_last_error_msg nos lo dirá
+    echo json_encode(['success' => false, 'error' => 'Payload vacío o JSON inválido: ' . json_last_error_msg()]);
     exit;
 }
 
@@ -31,87 +36,93 @@ try {
     $pdo = Database::connect();
     $pdo->beginTransaction();
 
-    // 1. CREAR EL CIERRE (CABECERA CON TOTAL)
     $stmtCierre = $pdo->prepare("INSERT INTO Tbl_Conciliacion_Cierres (FechaCierre, Usuario, Banco, TotalConciliado) VALUES (?, ?, ?, ?)");
     $stmtCierre->execute([$fechaCierre, $usuario, $stringBancos, $totalConciliado]);
     $idCierre = $pdo->lastInsertId();
 
-    // 2. PREPARAR SENTENCIAS
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
-    
-    // Si ya existe, actualizamos Estado, Match, Cierre y también inyectamos la Tarjeta si estaba en NULL
     $stmtUpdate = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatch = ?, IdCierre = ISNULL(IdCierre, ?), Tarjeta = ISNULL(Tarjeta, ?) WHERE IdTransaccion = ?");
     
-    // Si no existe, lo creamos (Agregado campo Tarjeta)
     $stmtInsert = $pdo->prepare("INSERT INTO Tbl_Transacciones_Maestra 
         (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-    $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, Liquidacion, Comision, RetencionVentas, RetencionRenta, AjusteACI) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, Lote, Comision, RetencionIVA, RetencionISR) VALUES (?, ?, ?, ?, ?)");
+    $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, NUMERO_AFILIADO, NOMBRECOMERCIO, FECHA_TRANSACCION, FECHA_CIERRE_DATAFONO, FECHA_PAGO, NUMERO_DE_TARJETA, AUTORIZACION, TERMINAL, MONTO_VENTA, COMISION, RETENCION_VENTAS, RETENCION_RENTA, MONTONETO, NUMERO_LIQUIDACION, NUMERO_CUENTA, TIPO_CAMBIO, AJUSTE_COMISION_INTERNACIONAL, TIPO_TARJETA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, Fuente, Fecha_Pago, Moneda, Transaccion, Cedula, Razon_Social, MerID, Nombre, Fecha_Lote_Ajuste, Numero_Lote_Ajuste, Terminal, Numero_Pago, Numero_Autorizacion, Numero_Tarjeta, Monto_Orig, Monto_Bruto, Monto_Comision_Total, Porc_Comision_Total, Monto_Comision_Int, Porc_Comision_Int, Monto_Retencion_IVA, Porc_Retencion_IVA, Monto_Retencion_ISR, Monto_Neto, Estatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    
+    $stmtPagadoBAC = $pdo->prepare("INSERT INTO Tbl_Pagado_BAC (IdTransaccion, Fecha, Referencia, Codigo, Descripcion, Debitos, Creditos, Balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmtPagadoScotia = $pdo->prepare("INSERT INTO Tbl_Pagado_Scotia (IdTransaccion, Numero_Referencia, Fecha_Movimiento, Descripcion, Monto, Saldo, Credito_Debito) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmtAjuste = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion, EvidenciaB64) VALUES (?, ?, ?, ?)");
 
     $filasAfectadas = 0;
 
-    // 3. RECORRER Y APLICAR LÓGICA
     foreach ($transacciones as $t) {
-        $idTrans = $t['IdTransaccion'];
+        $idTrans = $t['IdTransaccion'] ?? 'SIN_ID';
         $fecha = (!empty($t['FechaTransaccion']) && $t['FechaTransaccion'] !== 'N/A') ? $t['FechaTransaccion'] : null;
         $bruto = floatval($t['MontoBruto'] ?? 0);
         $neto  = floatval($t['MontoNeto'] ?? 0);
 
-        // CREAR HUELLA DIGITAL (Hash) PARA EVITAR DUPLICADOS
-        // Combinamos datos únicos de la fila. Si es un ajuste ficticio, su Hash es su UID.
-        $hashStr = "{$t['Banco']}|{$t['Origen']}|{$fecha}|{$neto}|{$t['Autorizacion']}|{$t['Afiliado_MerID']}";
-        $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
+        if (!empty($t['SourceHash'])) {
+            $hashUnico = $t['SourceHash']; 
+        } else {
+            $hashStr = "{$t['Banco']}|{$t['Origen']}|{$fecha}|{$neto}|" . ($t['Autorizacion'] ?? '') . "|" . ($t['Afiliado_MerID'] ?? '');
+            $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
+        }
 
-        // ¿Existe esta transacción en la Base de Datos?
         $stmtCheck->execute([$hashUnico]);
         $idExistente = $stmtCheck->fetchColumn();
 
         if ($idExistente) {
-            // SÍ EXISTE: Solo actualizamos su cruce y llenamos la tarjeta si faltaba.
-            $stmtUpdate->execute([$t['Estado'], $t['IdMatch'], $idCierre, $t['Tarjeta'], $idExistente]);
+            $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
         } else {
-            // NO EXISTE: Es un dato nuevo.
             $stmtInsert->execute([
-                $idTrans, $idCierre, $t['Banco'], $t['Origen'], $t['Estado'], $t['IdMatch'], 
-                $fecha, $t['Afiliado_MerID'], $t['Autorizacion'], $t['Tarjeta'], $bruto, $neto, $t['ArchivoOrigen'], $hashUnico
+                $idTrans, $idCierre, $t['Banco'] ?? 'DESC', $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, 
+                $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico
             ]);
 
-            // Se insertan sus detalles hijos
-            if ($t['Banco'] === 'BAC' && $t['Origen'] !== 'PAGADO') {
-                $stmtBAC->execute([$idTrans, $t['Liquidacion'], floatval($t['Comision'] ?? 0), floatval($t['RetencionVentas'] ?? 0), floatval($t['RetencionRenta'] ?? 0), floatval($t['AjusteACI'] ?? 0)]);
+            if (($t['Banco'] ?? '') === 'BAC' && ($t['Origen'] ?? '') !== 'PAGADO') {
+                $b = $t['RawBAC'] ?? [];
+                $stmtBAC->execute([
+                    $idTrans, $b['NUMERO_AFILIADO'] ?? null, $b['NOMBRECOMERCIO'] ?? null, $b['FECHA_TRANSACCION'] ?? null,
+                    $b['FECHA_CIERRE_DATAFONO'] ?? null, $b['FECHA_PAGO'] ?? null, $b['NUMERO_DE_TARJETA'] ?? null, $b['AUTORIZACION'] ?? null,
+                    $b['TERMINAL'] ?? null, $b['MONTO_VENTA'] ?? 0, $b['COMISION'] ?? 0, $b['RETENCION_VENTAS'] ?? 0,
+                    $b['RETENCION_RENTA'] ?? 0, $b['MONTONETO'] ?? 0, $b['NUMERO_LIQUIDACION'] ?? null, $b['NUMERO_CUENTA'] ?? null,
+                    $b['TIPO_CAMBIO'] ?? 0, $b['AJUSTE_COMISION_INTERNACIONAL'] ?? 0, $b['TIPO_TARJETA'] ?? null
+                ]);
             } 
-            else if ($t['Banco'] === 'SCOTIA' && $t['Origen'] !== 'PAGADO') {
-                $stmtScotia->execute([$idTrans, $t['Lote'], floatval($t['Comision'] ?? 0), floatval($t['RetencionIVA'] ?? 0), floatval($t['RetencionISR'] ?? 0)]);
+            else if (($t['Banco'] ?? '') === 'SCOTIA' && ($t['Origen'] ?? '') !== 'PAGADO') {
+                $s = $t['RawScotia'] ?? [];
+                $stmtScotia->execute([
+                    $idTrans, $s['Fuente'] ?? null, $s['Fecha_Pago'] ?? null, $s['Moneda'] ?? null, $s['Transaccion'] ?? null,
+                    $s['Cedula'] ?? null, $s['Razon_Social'] ?? null, $s['MerID'] ?? null, $s['Nombre'] ?? null,
+                    $s['Fecha_Lote_Ajuste'] ?? null, $s['Numero_Lote_Ajuste'] ?? null, $s['Terminal'] ?? null, $s['Numero_Pago'] ?? null,
+                    $s['Numero_Autorizacion'] ?? null, $s['Numero_Tarjeta'] ?? null, $s['Monto_Orig'] ?? 0, $s['Monto_Bruto'] ?? 0,
+                    $s['Monto_Comision_Total'] ?? 0, $s['Porc_Comision_Total'] ?? 0, $s['Monto_Comision_Int'] ?? 0, $s['Porc_Comision_Int'] ?? 0,
+                    $s['Monto_Retencion_IVA'] ?? 0, $s['Porc_Retencion_IVA'] ?? 0, $s['Monto_Retencion_ISR'] ?? 0, $s['Monto_Neto'] ?? 0, $s['Estatus'] ?? null
+                ]);
+            }
+            else if (($t['Banco'] ?? '') === 'BAC' && ($t['Origen'] ?? '') === 'PAGADO') {
+                $p = $t['RawPagadoBAC'] ?? [];
+                $stmtPagadoBAC->execute([$idTrans, $p['Fecha'] ?? null, $p['Referencia'] ?? null, $p['Codigo'] ?? null, $p['Descripcion'] ?? null, $p['Debitos'] ?? 0, $p['Creditos'] ?? 0, $p['Balance'] ?? 0]);
+            }
+            else if (($t['Banco'] ?? '') === 'SCOTIA' && ($t['Origen'] ?? '') === 'PAGADO') {
+                $p = $t['RawPagadoScotia'] ?? [];
+                $stmtPagadoScotia->execute([$idTrans, $p['Numero_Referencia'] ?? null, $p['Fecha_Movimiento'] ?? null, $p['Descripcion'] ?? null, $p['Monto'] ?? 0, $p['Saldo'] ?? 0, $p['Credito_Debito'] ?? null]);
             }
 
-            if ($t['Origen'] === 'AJUSTE') {
-                $stmtAjuste->execute([$idTrans, $t['TipoAjuste'], $t['Justificacion'], $t['EvidenciaB64']]);
+            if (($t['Origen'] ?? '') === 'AJUSTE') {
+                $stmtAjuste->execute([$idTrans, $t['TipoAjuste'] ?? '', $t['Justificacion'] ?? '', $t['EvidenciaB64'] ?? '']);
             }
         }
         $filasAfectadas++;
     }
 
     $pdo->commit();
+    echo json_encode(['success' => true, 'filas_insertadas' => $filasAfectadas, 'id_cierre' => $idCierre]);
 
-    echo json_encode([
-        'success' => true, 
-        'filas_insertadas' => $filasAfectadas,
-        'id_cierre' => $idCierre
-    ]);
-
-} catch (Exception $e) {
-    if (isset($pdo) && $pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-    
+} catch (\Throwable $e) { // ATRAPA ABSOLUTAMENTE TODO, INCLUSO ERRORES FATALES PHP
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     http_response_code(500);
-    // Mandamos el error real al front para diagnosticar si algo falla
-    echo json_encode([
-        'success' => false, 
-        'error' => 'Error de BD: ' . $e->getMessage()
-    ]);
+    echo json_encode(['success' => false, 'error' => 'Error Crítico del Servidor: ' . $e->getMessage()]);
 }
 ?>

@@ -203,6 +203,15 @@ window.ConciliacionLogic = {
 
         // INICIAR RELOJ DE AUTO-GUARDADO
         this.startAutoSave();
+
+        // BLOQUEO ANTI-DESASTRES (F5 o Cerrar Pestaña)
+        window.onbeforeunload = (e) => {
+            if (this.hasUnsavedData()) {
+                const msg = "Tienes archivos cargados que no se han guardado en la Base de Datos. ¿Seguro que deseas salir?";
+                e.returnValue = msg;
+                return msg;
+            }
+        };
     },
 
     // --- GESTIÓN DE ESTADO LOCAL ---
@@ -384,13 +393,36 @@ window.ConciliacionLogic = {
         try {
             const res = await fetch('api/get_pendientes.php');
             const json = await res.json();
-            
             if (!json.success || !json.data || json.data.length === 0) return;
+
+            // NOMBRES EXACTOS DE LOS EXCELS/CSV PARA QUE EL MATCH NO DUPLIQUE COLUMNAS
+            const defH = {
+                bacDet: ["NUMERO_AFILIADO", "NOMBRECOMERCIO", "FECHA_TRANSACCION", "FECHA_CIERRE_DATAFONO", "FECHA_PAGO", "NUMERO_DE_TARJETA", "AUTORIZACION", "TERMINAL", "MONTO_VENTA", "COMISION", "RETENCION_VENTAS", "RETENCION_RENTA", "MONTONETO", "NUMERO_LIQUIDACION", "NUMERO_CUENTA", "TIPO_CAMBIO", "AJUSTE_COMISION_INTERNACIONAL", "TIPO_TARJETA"],
+                bacPag: ["Fecha", "Referencia", "Código", "Descripción", "Débitos", "Créditos", "Balance"],
+                scoDet: ["Fuente", "Fecha Pago", "Moneda", "Transacción", "Cédula", "Razón Social", "MerID", "Nombre", "Fecha Lote/Ajuste", "Número Lote/Ajuste", "Terminal", "Número Pago", "Número Autorización", "Número Tarjeta", "Monto Orig", "Monto Bruto", "Monto Comisión Total", "% Comisión Total", "Comisión Int", "% Comisión Int", "Retención IVA", "% Retención IVA", "Retención IS", "Monto Neto", "Estatus"],
+                scoPag: ["Número Referencia", "Fecha Movimiento", "Descripción", "Monto", "Saldo", "Crédito/Débito"]
+            };
+            this.data.headers = this.data.headers || {};
+            if(!this.data.headers.detalle) this.data.headers.detalle = defH.bacDet;
+            if(!this.data.headers.pagado) this.data.headers.pagado = defH.bacPag;
+            if(!this.data.headers.scotia_detalle) this.data.headers.scotia_detalle = defH.scoDet;
+            if(!this.data.headers.scotia_pagado) this.data.headers.scotia_pagado = defH.scoPag;
+
+            // Mapeadores DB -> Array Numérico Visual
+            const mapBacDet = ["NUMERO_AFILIADO", "NOMBRECOMERCIO", "BAC_FTRANS", "FECHA_CIERRE_DATAFONO", "BAC_FPAGO", "NUMERO_DE_TARJETA", "BAC_AUTH", "BAC_TERM", "MONTO_VENTA", "BacComision", "RetencionVentas", "RetencionRenta", "BAC_NETO", "Liquidacion", "NUMERO_CUENTA", "TIPO_CAMBIO", "AjusteACI", "TIPO_TARJETA"];
+            const mapBacPag = ["PBacF", "PBacRef", "PBacCod", "PBacDesc", "PBacDeb", "PBacCred", "PBacBal"];
+            const mapScoDet = ["Fuente", "ScoFPago", "Moneda", "Transaccion", "Cedula", "Razon_Social", "MerID", "Nombre", "Fecha_Lote_Ajuste", "Lote", "ScoTerm", "Numero_Pago", "ScoAuth", "ScoTarj", "Monto_Orig", "ScoBruto", "ScoCom", "Porc_Comision_Total", "Monto_Comision_Int", "Porc_Comision_Int", "RetencionIVA", "Porc_Retencion_IVA", "RetencionISR", "ScoNeto", "Estatus"];
+            const mapScoPag = ["PScoRef", "PScoF", "PScoDesc", "PScoM", "PScoSal", "PScoCD"];
+
+            const buildRow = (dbRow, mapDict) => {
+                let obj = {};
+                mapDict.forEach((dbKey, idx) => { obj[String(idx)] = dbRow[dbKey] || ''; });
+                return obj;
+            };
 
             let counts = { bac: 0, scotia: 0 };
             
             json.data.forEach(r => {
-                // Color Ámbar para diferenciar lo histórico
                 const historyClass = "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium";
                 let fechaCr = r.FechaTransaccion ? r.FechaTransaccion.split('-').reverse().join('/') : '';
                 
@@ -398,40 +430,30 @@ window.ConciliacionLogic = {
                     _uid: r.IdTransaccion,
                     _fecha: fechaCr,
                     _enabled: true,
-                    _isHistorical: true,
+                    _isHistorical: true, // Banderilla Clave
+                    _sourceHash: r._sourceHash,
                     _rowClass: historyClass,
-                    _sourceFile: "Arrastre " + (r.DiasAntiguedad ? `(${r.DiasAntiguedad} días)` : '(Pendiente)')
+                    _sourceFile: "Arrastre BD " + (r.DiasAntiguedad ? `(${r.DiasAntiguedad} días)` : '(Pendiente)')
                 };
 
                 if (r.Origen === 'AJUSTE') {
-                    baseObj._isAdjustment = true;
-                    baseObj._adjType = r.TipoAjuste;
-                    baseObj._adjReason = r.Justificacion;
-                    baseObj._adjEvidence = r.EvidenciaB64;
+                    baseObj._isAdjustment = true; baseObj._adjType = r.TipoAjuste;
+                    baseObj._adjReason = r.Justificacion; baseObj._adjEvidence = r.EvidenciaB64;
                 }
 
                 if (r.Banco === 'BAC') {
                     counts.bac++;
                     if (r.Origen === 'DETALLADO' || r.Origen === 'AJUSTE') {
-                        this.data.detalle.push({
-                            ...baseObj,
-                            _id: r.Afiliado_MerID,
-                            _liq: r.Liquidacion || r.Autorizacion,
-                            _venta: parseFloat(r.MontoBruto || 0),
-                            _netoACI: parseFloat(r.MontoNeto || 0),
-                            _comision: parseFloat(r.BacComision || 0),
-                            _retV: parseFloat(r.RetencionVentas || 0),
-                            _retR: parseFloat(r.RetencionRenta || 0),
-                            _aciOrig: parseFloat(r.AjusteACI || 0),
-                            "3": "Saldo Histórico", // Comercio fallback
-                            "11": r.Autorizacion // Auth fallback
+                        this.data.detalle.push({ ...baseObj, ...buildRow(r, mapBacDet),
+                            _id: r.Afiliado_MerID, _liq: r.Liquidacion || r.Autorizacion,
+                            _venta: parseFloat(r.MontoBruto || 0), _netoACI: parseFloat(r.MontoNeto || 0),
+                            _comision: parseFloat(r.BacComision || 0), _retV: parseFloat(r.RetencionVentas || 0),
+                            _retR: parseFloat(r.RetencionRenta || 0), _aciOrig: parseFloat(r.AjusteACI || 0),
+                            "3": "Saldo Histórico", "11": r.Autorizacion
                         });
                     } else if (r.Origen === 'PAGADO') {
-                        this.data.pagado.push({
-                            ...baseObj,
-                            _extractedId: r.Afiliado_MerID,
-                            _liqRef: r.Autorizacion,
-                            _monto: parseFloat(r.MontoNeto || 0),
+                        this.data.pagado.push({ ...baseObj, ...buildRow(r, mapBacPag),
+                            _extractedId: r.Afiliado_MerID, _liqRef: r.Autorizacion, _monto: parseFloat(r.MontoNeto || 0),
                             _desc: `Arrastre: ${r.Afiliado_MerID} LIQ ${r.Autorizacion}`
                         });
                     }
@@ -439,132 +461,31 @@ window.ConciliacionLogic = {
                 else if (r.Banco === 'SCOTIA') {
                     counts.scotia++;
                     if (r.Origen === 'DETALLADO' || r.Origen === 'AJUSTE') {
-                        this.data.scotia_detalle.push({
-                            ...baseObj,
-                            _bruto: parseFloat(r.MontoBruto || 0),
-                            _neto: parseFloat(r.MontoNeto || 0),
+                        this.data.scotia_detalle.push({ ...baseObj, ...buildRow(r, mapScoDet),
+                            _bruto: parseFloat(r.MontoBruto || 0), _neto: parseFloat(r.MontoNeto || 0),
                             _mode: (r.Lote === 'AJUSTE' || r.Origen === 'AJUSTE') ? 'AJUSTE' : 'LOTE',
-                            "MerID": r.Afiliado_MerID, // Usamos la llave visual para el PopUp
-                            "Autorizacion": r.Autorizacion,
-                            "Monto Comisión": parseFloat(r.ScotiaComision || 0),
-                            "Retención IVA": parseFloat(r.RetencionIVA || 0),
-                            "Retención ISR": parseFloat(r.RetencionISR || 0)
+                            "MerID": r.Afiliado_MerID, "Autorizacion": r.Autorizacion
                         });
                     } else if (r.Origen === 'PAGADO') {
-                        this.data.scotia_pagado.push({
-                            ...baseObj,
-                            _extractedId: r.Afiliado_MerID,
-                            _monto: parseFloat(r.MontoNeto || 0),
+                        this.data.scotia_pagado.push({ ...baseObj, ...buildRow(r, mapScoPag),
+                            _extractedId: r.Afiliado_MerID, _monto: parseFloat(r.MontoNeto || 0),
                             _desc: `Arrastre Scotia: ${r.Afiliado_MerID}`
                         });
                     }
                 }
             });
 
-            // Actualizar visualmente si se encontraron datos
             if (counts.bac > 0) {
-                this.data.files.bac_detalle = ["Saldos Históricos"];
-                this.updateFileList('bac_detalle');
+                this.data.files.bac_detalle = ["Saldos Históricos"]; this.updateFileList('bac_detalle');
                 if(this.recalculateDetalle) this.recalculateDetalle();
-                console.log(`📥 Rescatados ${counts.bac} saldos históricos de BAC`);
             }
             if (counts.scotia > 0) {
-                this.data.files.scotia_detalle = ["Saldos Históricos"];
-                this.updateFileList('scotia_detalle');
+                this.data.files.scotia_detalle = ["Saldos Históricos"]; this.updateFileList('scotia_detalle');
                 if(this.updateScotiaCard) this.updateScotiaCard();
                 if(this.runMatchScotiabank) this.runMatchScotiabank();
-                console.log(`📥 Rescatados ${counts.scotia} saldos históricos de Scotia`);
             }
-
-        } catch (err) {
-            console.error("Error cargando históricos:", err);
-        }
+        } catch (err) { console.error("Error cargando históricos:", err); }
     },
-
-    
-
-    // // --- 1. CONFIGURACIÓN TABULATOR ---
-    // getTableConfig: function(data, columns) {
-    //     return {
-    //         data: data,
-    //         columns: columns,
-            
-    //         // Layout
-    //         layout: "fitColumns",
-    //         height: "550px", // Altura fija para forzar scroll y footer sticky
-            
-    //         // Comportamiento Excel
-    //         keybindings: true,
-    //         selectableRange: 1,
-    //         selectableRangeColumns: true,
-    //         selectableRangeRows: true,
-    //         clipboard: "copy",
-    //         clipboardCopyRowRange: "range",
-    //         clipboardCopyConfig: { columnHeaders: false },
-    //         movableColumns: true,
-
-    //         // EVENTO CLAVE: Conectar selección con TU barra de HTML
-    //         rangeSelectionChanged: function(range) {
-    //             window.ConciliacionLogic.calculateStats(range);
-    //         },
-            
-    //         // Limpieza al perder foco (opcional)
-    //         dataLoaded: function() {
-    //             document.getElementById('global-table-stats')?.classList.add('hidden');
-    //         }
-    //     };
-    // },
-
-    // // --- 2. LÓGICA DE AUTOSUMA (Conectada a index.php) ---
-    // calculateStats: function(range) {
-    //     // Usamos TUS IDs del index.php
-    //     const bar = document.getElementById('global-table-stats');
-    //     if(!bar) return; 
-
-    //     const cells = range.getCells();
-        
-    //     // Ocultar si hay menos de 2 celdas
-    //     if(cells.length < 2) {
-    //         bar.classList.add('hidden');
-    //         return;
-    //     }
-
-    //     let sum = 0;
-    //     let countNums = 0;
-
-    //     cells.forEach(cell => {
-    //         const val = cell.getValue();
-    //         let num = 0;
-            
-    //         // Limpieza financiera
-    //         if(typeof val === 'number') num = val;
-    //         else if(typeof val === 'string') {
-    //             // Quitar simbolos, letras y normalizar (1.000,00 -> 1000.00)
-    //             let clean = val.replace(/[₡\sA-Za-z]/g, '');
-    //             if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
-    //             else if (clean.includes(',')) clean = clean.replace(',', '.');
-    //             num = parseFloat(clean);
-    //         }
-
-    //         if(!isNaN(num)) {
-    //             sum += num;
-    //             if(num !== 0) countNums++;
-    //         }
-    //     });
-
-    //     // Formateador
-    //     const fmt = new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'});
-
-    //     // Inyectar en TUS IDs: gst-count, gst-sum, gst-avg
-    //     document.getElementById('gst-count').innerText = cells.length;
-    //     document.getElementById('gst-sum').innerText = fmt.format(sum);
-        
-    //     // Promedio (Opcional, si el elemento existe en el HTML lo llenamos)
-    //     const avgEl = document.getElementById('gst-avg');
-    //     if(avgEl) avgEl.innerText = countNums > 0 ? fmt.format(sum/countNums) : '-';
-        
-    //     bar.classList.remove('hidden');
-    // },
 
     // --- 3. PROCESAMIENTO DE ARCHIVOS ---
     setupUploads: function() {
@@ -721,44 +642,48 @@ window.ConciliacionLogic = {
 
     // --- POPUP CON MOTOR VANILLA GRID ---
     getPopupData: function(type) {
-        console.log("--> SOLICITANDO POPUP:", type);
-        if (type === 'scotia_pagado') {
-            console.log("--> RETORNANDO DATA:", this.data.scotia_pagado);
-            return this.data.scotia_pagado;
-        }
-        // Ya vienen con formato de Grid (llaves "0", "1"...) y no necesitan conversión.
-        if (type === 'scotia_detalle') return this.data.scotia_detalle;
-
-        const isDet = type === 'detalle';
-        const rawData = isDet ? this.data.detalle : this.data.pagado;
+        let rawData = [];
+        let headers = [];
         
-        if(isDet && Array.isArray(rawData[0])) {
-            return rawData.map(row => {
-                const obj = {};
-                row.forEach((val, idx) => {
-                    let finalVal = val;
+        if (type === 'detalle') { rawData = this.data.detalle; headers = this.data.headers.detalle; }
+        else if (type === 'pagado') { rawData = this.data.pagado; headers = this.data.headers.pagado; }
+        else if (type === 'scotia_detalle') { rawData = this.data.scotia_detalle; headers = this.data.headers.scotia_detalle; }
+        else if (type === 'scotia_pagado') { rawData = this.data.scotia_pagado; headers = this.data.headers.scotia_pagado; }
 
-                    // A. CORRECCIÓN DE FECHAS (Columna 0)
-                     if(idx === 0 && val) {
-                        finalVal = window.ConciliacionLogic.formatDateCR(val);
+        if (!rawData || rawData.length === 0) return [];
+
+        return rawData.map(row => {
+            const obj = { ...row };
+            
+            Object.keys(obj).forEach(key => {
+                // Ignorar llaves internas del sistema (_uid, _enabled, etc.)
+                if (key.startsWith('_')) return;
+                
+                let val = obj[key];
+                if (val === null || val === undefined || val === '') return;
+                
+                const headerName = headers[key] ? String(headers[key]).toUpperCase() : '';
+
+                // 1. Limpieza de Fechas (Para mostrar formato CR: DD/MM/YYYY)
+                if (headerName.includes('FECHA')) {
+                    obj[key] = window.ConciliacionLogic.formatDateCR(val);
+                }
+                
+                // 2. Limpieza Financiera Extrema (Para que el Grid pueda sumar sin fallar por comas)
+                if (/MONTO|VENTA|COMISION|RETENCION|NETO|BRUTO|DEBITO|CREDITO|BALANCE|SALDO|AJUSTE/i.test(headerName)) {
+                    if (typeof val === 'string') {
+                        let clean = val.replace(/["'\s₡$]/g, '');
+                        // Manejo avanzado de comas de miles y decimales
+                        if (clean.includes(',') && clean.includes('.')) clean = clean.replace(/,/g, '');
+                        else if (clean.includes(',')) clean = clean.replace(',', '.');
+                        
+                        const num = parseFloat(clean);
+                        obj[key] = isNaN(num) ? val : num;
                     }
-
-                    // B. CORRECCIÓN DE NÚMEROS (Columnas 8 a 12)
-                    // Convertir "1000.50" (string) a 1000.50 (number) para que el formatter funcione
-                    if([8, 9, 10, 11, 12].includes(idx)) {
-                        // Limpiar comillas, espacios y convertir a Float
-                        let clean = String(val).replace(/["'\s]/g, '');
-                        let num = parseFloat(clean);
-                        // Si es número válido, lo asignamos. Si no, dejamos 0.
-                        finalVal = isNaN(num) ? 0 : num;
-                    }
-
-                    obj[idx] = finalVal;
-                });
-                return obj;
+                }
             });
-        }
-        return rawData;
+            return obj;
+        });
     },
 
     openPopup: function(type) {
@@ -776,11 +701,18 @@ window.ConciliacionLogic = {
 
         // 2. DECLARACIÓN (Aquí debe nacer la variable)
         let columns = []; 
+        // BANDERILLA VISUAL REUTILIZABLE
+        const colEstado = { 
+            title: "TIPO DATO", field: "_isHistorical", width: 100, hozAlign: "center", headerFilter: false, 
+            formatter: (cell) => cell.getValue() ? '<span class="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[9px] font-bold shadow-sm" title="Recuperado de la Base de Datos">⏳ HISTÓRICO</span>' : '<span class="bg-green-100 text-green-800 border border-green-300 px-2 py-0.5 rounded text-[9px] font-bold shadow-sm" title="Recién subido">🆕 NUEVO</span>' 
+        };
+
         if (isDet) {
             const realHeaders = this.data.headers && this.data.headers.detalle ? this.data.headers.detalle : [];
             
             columns = [
-                { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false }
+                { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
+                colEstado
             ];
 
             let aciAdded = false; // Bandera de control
@@ -839,7 +771,7 @@ window.ConciliacionLogic = {
              const realHeaders = this.data.headers.scotia_detalle || [];
              columns = [
                  { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
-                 
+                 colEstado, // <-- Banderilla inyectada
                  // CORRECCIÓN CRÍTICA: Usamos 'idx' como field
                  ...realHeaders.map((h, idx) => ({
                      title: h, 
@@ -854,6 +786,7 @@ window.ConciliacionLogic = {
              const realHeaders = this.data.headers.scotia_pagado || []; 
              columns = [
                  { title: "USAR", field: "_enabled", formatter: "checkbox", hozAlign: "center", width: 60, headerFilter: false },
+                 colEstado, // <-- Banderilla inyectada
                  { title: "ID Extraído", field: "_extractedId", headerFilter: true, width: 120, cssClass:"bg-blue-50 font-bold text-xs" },
                  
                  // CORRECCIÓN VISUAL: Usamos String(idx) para encontrar los datos
@@ -1148,7 +1081,7 @@ window.ConciliacionLogic = {
     // ==========================================================
     // MÓDULO DE PERSISTENCIA (GUARDADO INDEPENDIENTE)
     // ==========================================================
-    preparePayload: function(bancoObjetivo) {
+    preparePayload: function() {
         const payload = {
             fecha_cierre: document.getElementById('process-date').value,
             transacciones: []
@@ -1174,8 +1107,8 @@ window.ConciliacionLogic = {
             });
         };
 
-        // ESCANEAR SOLO EL BANCO SELECCIONADO
-        if (bancoObjetivo === 'bac' && this.data.processed && this.data.processed.bac_matches) {
+        // ESCANEAR BAC
+        if (this.data.processed && this.data.processed.bac_matches) {
             Object.values(this.data.processed.bac_matches).forEach(g => processGroup(g, 'BAC'));
             
             if (this.deferredRows) {
@@ -1194,7 +1127,8 @@ window.ConciliacionLogic = {
             }
         }
 
-        if (bancoObjetivo === 'scotia' && this.data.processed && this.data.processed.scotia_matches) {
+        // ESCANEAR SCOTIABANK (DAVIBANK)
+        if (this.data.processed && this.data.processed.scotia_matches) {
             Object.values(this.data.processed.scotia_matches).forEach(g => processGroup(g, 'SCOTIA'));
         }
 
@@ -1205,7 +1139,6 @@ window.ConciliacionLogic = {
         const isAjuste = r._isAdjustment === true;
         const origen = isAjuste ? 'AJUSTE' : defaultOrigen;
 
-        // Rescate de Referencia para los Pagados (Como no van a la tabla detalle, lo guardamos en Autorizacion)
         let authVal = r._auth;
         if (defaultOrigen === 'PAGADO') authVal = r._liqRef || r.Lote || r._auth || null;
 
@@ -1216,123 +1149,242 @@ window.ConciliacionLogic = {
             MontoNeto: r._netoACI !== undefined ? r._netoACI : (r._neto !== undefined ? r._neto : (r._monto || 0)),
             ArchivoOrigen: r._sourceFile || 'Sistema Local',
             TipoAjuste: r._adjType || null, Justificacion: r._adjReason || r._manualReason || null, EvidenciaB64: r._adjEvidence || null,
-            Liquidacion: r._liq || r._liqRef || null, Comision: r._comision || r['Monto Comisión'] || 0,
-            RetencionVentas: r._retV || 0, RetencionRenta: r._retR || 0, AjusteACI: (r._neto && r._netoACI) ? (r._neto - r._netoACI) : (r._aciOrig || 0),
-            Lote: r._mode === 'AJUSTE' ? 'AJUSTE' : null, RetencionIVA: r['Retención IVA'] || 0, RetencionISR: r['Retención IS'] || r['Retención ISR'] || 0
+            Tarjeta: r._tarjeta || null,
+            SourceHash: r._sourceHash || null // PARCHE: Mantenemos el Hash original si viene de la BD
         };
 
-        if (banco === 'SCOTIA' && origen !== 'PAGADO') {
-            const headSc = this.data.headers.scotia_detalle || [];
-            const idxLote = headSc.findIndex(h => h && h.toLowerCase().includes('lote'));
-            const idxAuth = headSc.findIndex(h => h && h.toLowerCase().includes('autori'));
-            if (idxLote !== -1 && r[idxLote]) record.Lote = String(r[idxLote]).trim();
-            if (idxAuth !== -1 && r[idxAuth]) record.Autorizacion = String(r[idxAuth]).trim();
-        }
-        if (banco === 'BAC' && origen !== 'PAGADO' && !record.Autorizacion) {
-             const headBac = this.data.headers.detalle || [];
-             const idxAuth = headBac.findIndex(h => h && h.toLowerCase().includes('autori'));
-             if (idxAuth !== -1 && r[idxAuth]) record.Autorizacion = String(r[idxAuth]).trim();
-        }
-
-        // --- NUEVO: CAPTURA INTELIGENTE DE TARJETA PARA EL MÓDULO TSD ---
-        let tarjetaVal = r._tarjeta || null; // Prioridad 1: Ajustes manuales del popup
-        if (!isAjuste && origen !== 'PAGADO') {
-            const headArr = banco === 'BAC' ? (this.data.headers.detalle || []) : (this.data.headers.scotia_detalle || []);
-            const idxTar = headArr.findIndex(h => h && h.toLowerCase().includes('tarjeta'));
-            if (idxTar !== -1 && r[idxTar]) {
-                // Limpiamos la tarjeta (quitamos espacios, guiones o asteriscos si quieres)
-                tarjetaVal = String(r[idxTar]).replace(/[\s-]/g, '').trim();
-            }
-        }
-        record.Tarjeta = tarjetaVal;
-        // ----------------------------------------------------------------
-
-        // BLINDAJE ABSOLUTO DE FECHAS PARA SQL SERVER (Debe ser YYYY-MM-DD)
+        // BLINDAJE DE FECHAS MAESTRAS
         if (r._fecha) {
-            let d = String(r._fecha).trim().split(' ')[0]; // Cortar la hora si viene pegada
-            
-            // Si trae formato Excel numérico por error (ej. 45310), usar nuestra función de rescate global
-            if (!isNaN(d) && Number(d) > 10000) {
-                d = this.formatDateCR(d); // Lo convierte a DD/MM/YYYY localmente
-            }
-
+            let d = String(r._fecha).trim().split(' ')[0]; 
+            if (!isNaN(d) && Number(d) > 10000) d = this.formatDateCR(d);
             if (d.includes('/') || d.includes('-')) {
                 let parts = d.split(/[\/-]/);
                 if (parts.length === 3) {
-                    // Determinar qué parte es el año
-                    if (parts[0].length === 4) {
-                        // Formato YYYY-MM-DD (Ya está perfecto, solo nos aseguramos del relleno)
-                        record.FechaTransaccion = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
-                    } else if (parts[2].length === 4) {
-                        // Viene como DD/MM/YYYY o MM/DD/YYYY
-                        let day = parseInt(parts[0]);
-                        let month = parseInt(parts[1]);
-                        
-                        // Heurística de Scotiabank: Si el "mes" es mayor a 12, es porque está al revés (Formato Gringo: M/D/Y)
-                        if (month > 12) { 
-                            let temp = day; 
-                            day = month; 
-                            month = temp; 
-                        }
-                        
+                    if (parts[0].length === 4) record.FechaTransaccion = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`;
+                    else {
+                        let day = parseInt(parts[0]), month = parseInt(parts[1]);
+                        if (month > 12) { let temp = day; day = month; month = temp; }
                         record.FechaTransaccion = `${parts[2]}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                    } else {
-                        record.FechaTransaccion = null; // Formato incomprensible, mandar nulo para no crashear
                     }
-                } else {
-                    record.FechaTransaccion = null;
-                }
-            } else {
-                record.FechaTransaccion = null; // Cadena sucia, mandar nulo
-            }
-        } else { 
-            record.FechaTransaccion = null; 
+                } else record.FechaTransaccion = null;
+            } else record.FechaTransaccion = null;
+        } else record.FechaTransaccion = null;
+
+        // --- EXTRACCIÓN MASIVA 1 A 1 PARA LA BASE DE DATOS ---
+        const getV = (headerName, headersArr) => {
+            if (!headersArr) return null;
+            const idx = headersArr.findIndex(h => h && h.toLowerCase().includes(headerName.toLowerCase()));
+            return idx !== -1 ? r[String(idx)] : null;
+        };
+        const cleanN = (v) => {
+            if(!v) return 0;
+            if(typeof v === 'number') return v;
+            let str = String(v).replace(/['"\s₡$]/g, '');
+            if(str.includes(',') && str.includes('.')) str = str.replace(/,/g, '');
+            else if(str.includes(',')) str = str.replace(',', '.');
+            return parseFloat(str) || 0;
+        };
+
+        if (banco === 'BAC' && origen !== 'PAGADO') {
+            const h = this.data.headers.detalle || [];
+            const valTar = getV('TARJETA', h);
+            record.Tarjeta = record.Tarjeta || (valTar ? String(valTar).replace(/[\s-]/g, '').trim() : null);
+            record.RawBAC = {
+                NUMERO_AFILIADO: getV('AFILIADO', h) || r._id,
+                NOMBRECOMERCIO: getV('COMERCIO', h),
+                FECHA_TRANSACCION: getV('TRANSACCION', h),
+                FECHA_CIERRE_DATAFONO: getV('CIERRE', h),
+                FECHA_PAGO: getV('PAGO', h),
+                NUMERO_DE_TARJETA: getV('TARJETA', h) || r._tarjeta,
+                AUTORIZACION: getV('AUTORIZA', h) || r._auth,
+                TERMINAL: getV('TERMINAL', h),
+                MONTO_VENTA: cleanN(getV('VENTA', h) || r._venta),
+                COMISION: cleanN(getV('COMISION', h) || r._comision),
+                RETENCION_VENTAS: cleanN(getV('RETENCION', h) || r._retV),
+                RETENCION_RENTA: cleanN(getV('RENTA', h) || r._retR),
+                MONTONETO: cleanN(getV('NETO', h) || r._neto),
+                NUMERO_LIQUIDACION: getV('LIQUIDACION', h) || r._liq,
+                NUMERO_CUENTA: getV('CUENTA', h),
+                TIPO_CAMBIO: cleanN(getV('CAMBIO', h)),
+                AJUSTE_COMISION_INTERNACIONAL: cleanN(getV('AJUSTE', h) || r._aciOrig),
+                TIPO_TARJETA: getV('TIPO_TARJETA', h)
+            };
+        } 
+        else if (banco === 'SCOTIA' && origen !== 'PAGADO') {
+            const h = this.data.headers.scotia_detalle || [];
+            const valTarSc = getV('Tarjeta', h);
+            record.Tarjeta = record.Tarjeta || (valTarSc ? String(valTarSc).replace(/[\s-]/g, '').trim() : null);
+            record.RawScotia = {
+                Fuente: getV('Fuente', h),
+                Fecha_Pago: getV('Fecha Pago', h),
+                Moneda: getV('Moneda', h),
+                Transaccion: getV('Transacci', h),
+                Cedula: getV('Cédula', h) || getV('Cedula', h),
+                Razon_Social: getV('Razón', h) || getV('Razon', h),
+                MerID: getV('MerID', h) || r._extractedId || r._id,
+                Nombre: getV('Nombre', h),
+                Fecha_Lote_Ajuste: getV('Fecha Lote', h),
+                Numero_Lote_Ajuste: getV('Número Lote', h) || getV('Numero Lote', h) || r.Lote || r._liq,
+                Terminal: getV('Terminal', h),
+                Numero_Pago: getV('Número Pago', h) || getV('Numero Pago', h),
+                Numero_Autorizacion: getV('Autoriza', h) || r._auth,
+                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta,
+                Monto_Orig: cleanN(getV('Monto Orig', h)),
+                Monto_Bruto: cleanN(getV('Monto Bruto', h) || r._bruto),
+                Monto_Comision_Total: cleanN(getV('Monto Comisión Total', h) || getV('Monto Comision Total', h)),
+                Porc_Comision_Total: cleanN(getV('% Comisión Total', h) || getV('% Comision Total', h)),
+                Monto_Comision_Int: cleanN(getV('Comisión Int', h) || getV('Comision Int', h)),
+                Porc_Comision_Int: cleanN(getV('% Comisión Int', h) || getV('% Comision Int', h)),
+                Monto_Retencion_IVA: cleanN(getV('Retención IVA', h) || getV('Retencion IVA', h)),
+                Porc_Retencion_IVA: cleanN(getV('% Retención IVA', h) || getV('% Retencion IVA', h)),
+                Monto_Retencion_ISR: cleanN(getV('Retención IS', h) || getV('Retencion IS', h)),
+                Monto_Neto: cleanN(getV('Monto Neto', h) || r._neto),
+                Estatus: getV('Estatus', h)
+            };
+        }
+        else if (banco === 'BAC' && origen === 'PAGADO') {
+            const h = this.data.headers.pagado || [];
+            record.RawPagadoBAC = {
+                Fecha: getV('Fecha', h) || r._fecha,
+                Referencia: getV('Referencia', h),
+                Codigo: getV('Código', h) || getV('Codigo', h),
+                Descripcion: getV('Descripci', h) || r._desc,
+                Debitos: cleanN(getV('Débito', h) || getV('Debito', h)),
+                Creditos: cleanN(getV('Crédito', h) || getV('Credito', h) || r._monto),
+                Balance: cleanN(getV('Saldo', h) || getV('Balance', h))
+            };
+        }
+        else if (banco === 'SCOTIA' && origen === 'PAGADO') {
+            const h = this.data.headers.scotia_pagado || [];
+            record.RawPagadoScotia = {
+                Numero_Referencia: getV('Referencia', h),
+                Fecha_Movimiento: getV('Fecha', h) || r._fecha,
+                Descripcion: getV('Descripci', h) || r._desc,
+                Monto: cleanN(getV('Monto', h) || r._monto),
+                Saldo: cleanN(getV('Saldo', h)),
+                Credito_Debito: getV('Crédito', h) || getV('Credito', h)
+            };
         }
 
         return record;
     },
 
     saveSnapshot: async function() {
-        const bancoActual = this.activeTab; 
-
-        const nombreBanco = bancoActual === 'bac' ? 'BAC Credomatic' : 'Davibank';
-        const payload = this.preparePayload(bancoActual);
+        const payload = this.preparePayload(); // Ahora extrae de AMBOS bancos
         
         if (payload.transacciones.length === 0) {
-            return alert(`No hay transacciones procesadas de ${nombreBanco} para guardar.`);
+            return window.SysUI.alert("No hay transacciones procesadas en ningún banco para guardar.", "Sin datos", "warning");
         }
 
-        // Calcular Estadísticas y Total de Dinero Conciliado
-        const stats = { conciliados: 0, pendientes: 0 };
-        let totalDinero = 0;
+        // 1. Calcular Estadísticas Consolidadas
+        const stats = { 
+            bac: { conc: 0, pend: 0 }, 
+            scotia: { conc: 0, pend: 0 },
+            totalMoney: 0
+        };
 
         payload.transacciones.forEach(t => {
-            // Evaluamos ÚNICAMENTE el Detallado (Esperado) para no duplicar conteos con el Banco
             if (t.Origen === 'DETALLADO') {
+                const b = t.Banco === 'BAC' ? stats.bac : stats.scotia;
                 if (t.Estado === 'CONCILIADO') {
-                    stats.conciliados++;
-                    totalDinero += parseFloat(t.MontoNeto || 0);
+                    b.conc++;
+                    stats.totalMoney += parseFloat(t.MontoNeto || 0);
                 } else {
-                    stats.pendientes++;
+                    b.pend++;
                 }
             }
         });
 
-        // Adjuntar el total calculado al payload para enviarlo a PHP
-        payload.total_conciliado = totalDinero;
+        payload.total_conciliado = stats.totalMoney;
 
-        // Se eliminó el símbolo '₡' manual porque formatMoney ya lo incluye nativamente
-        const confMsg = `Se procederá a consolidar y aislar las excepciones en Base de Datos.\n\n` +
-                        `• Transacciones Conciliadas: <b class="text-green-600">${stats.conciliados}</b>\n` +
-                        `• Transacciones Pendientes: <b class="text-red-500">${stats.pendientes}</b>\n` +
-                        `• Total Procesado: <b class="text-blue-600">${this.formatMoney(totalDinero)}</b>`;
+        // 2. Construir Resumen Bimonetario
+        let msgHtml = `<div class="space-y-3 mb-2 text-sm text-slate-600 dark:text-slate-300">
+            <p>Se procederá a consolidar todas las operaciones de las pestañas activas en la Base de Datos.</p>`;
+        
+        if (stats.bac.conc > 0 || stats.bac.pend > 0) {
+            msgHtml += `<div class="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                <strong class="text-red-600 dark:text-red-400 flex items-center gap-2 mb-1"><span class="w-2 h-2 rounded-full bg-red-600"></span> BAC Credomatic</strong>
+                <div class="flex justify-between text-xs">
+                    <span>Conciliados: <b class="text-green-600">${stats.bac.conc}</b></span>
+                    <span>Pendientes: <b class="text-amber-600">${stats.bac.pend}</b></span>
+                </div>
+            </div>`;
+        }
+        if (stats.scotia.conc > 0 || stats.scotia.pend > 0) {
+            msgHtml += `<div class="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                <strong class="text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-1"><span class="w-2 h-2 rounded-full bg-blue-600"></span> Davibank (Scotiabank)</strong>
+                <div class="flex justify-between text-xs">
+                    <span>Conciliados: <b class="text-green-600">${stats.scotia.conc}</b></span>
+                    <span>Pendientes: <b class="text-amber-600">${stats.scotia.pend}</b></span>
+                </div>
+            </div>`;
+        }
+        
+        msgHtml += `<div class="text-right mt-4 text-base bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-100 dark:border-blue-800">
+            Total a Conciliar: <b class="text-blue-700 dark:text-blue-400 font-mono text-xl">${this.formatMoney(stats.totalMoney)}</b>
+        </div></div>`;
 
-        if (!(await SysUI.confirm(confMsg, `¿Registrar Cierre de ${nombreBanco}?`, "warning"))) return;
+        // MATA AUTO-SAVE PARA EVITAR BORRADORES DURANTE EL GUARDADO
+        if (this._autoSaveInterval) clearInterval(this._autoSaveInterval);
 
-        const btn = document.getElementById('btn-save-snapshot');
-        const originalHtml = btn.innerHTML;
-        btn.innerHTML = 'Guardando...';
-        btn.disabled = true;
+        // 3. PANTALLA DE CARGA CORPORATIVA (Bloqueo Total UI)
+        const loaderId = 'global-save-loader';
+        let loader = document.getElementById(loaderId);
+        if(!loader) {
+            loader = document.createElement('div');
+            loader.id = loaderId;
+            loader.className = 'fixed inset-0 z-[999999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white transition-opacity duration-300 opacity-0 select-none';
+            loader.innerHTML = `
+                <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 transform scale-95 transition-transform duration-300" id="loader-card">
+                    <div class="relative w-16 h-16 mb-6">
+                        <svg class="animate-spin text-blue-500 w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center text-xs font-bold font-mono" id="loader-pct">0%</div>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2 text-white">Guardando Transacciones...</h3>
+                    <p class="text-slate-400 text-xs text-center mb-6 h-8" id="loader-text">Preparando paquete de datos cifrados...</p>
+                    
+                    <div class="w-full bg-slate-900 rounded-full h-2 mb-1 overflow-hidden border border-slate-700 shadow-inner">
+                        <div class="bg-blue-500 h-full rounded-full transition-all duration-300 w-0 relative overflow-hidden" id="loader-bar">
+                            <div class="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_1s_infinite]"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loader);
+            
+            // CSS extra para el brillo de la barra
+            const style = document.createElement('style');
+            style.innerHTML = `@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`;
+            document.head.appendChild(style);
+        }
+        
+        // Mostrar Modal de Carga
+        requestAnimationFrame(() => {
+            loader.classList.remove('hidden', 'opacity-0');
+            document.getElementById('loader-card').classList.remove('scale-95');
+        });
+
+        // Simulación de Progreso UX
+        let pct = 0;
+        const elBar = document.getElementById('loader-bar');
+        const elPct = document.getElementById('loader-pct');
+        const elTxt = document.getElementById('loader-text');
+        
+        const progressInterval = setInterval(() => {
+            if(pct < 85) {
+                pct += Math.floor(Math.random() * 12) + 2;
+                if(pct > 85) pct = 85;
+                elBar.style.width = pct + '%';
+                elPct.innerText = pct + '%';
+                
+                if(pct > 20) elTxt.innerText = "Cifrando y transmitiendo al servidor...";
+                if(pct > 50) elTxt.innerText = "Aplicando restricciones de Idempotencia...";
+                if(pct > 70) elTxt.innerText = "Separando excepciones en Base de Datos...";
+            }
+        }, 300);
 
         try {
             const res = await fetch('api/save_conciliacion.php', {
@@ -1341,24 +1393,43 @@ window.ConciliacionLogic = {
                 body: JSON.stringify(payload)
             });
 
+            clearInterval(progressInterval);
+            
+            // FASE FINAL: Snap al 100% (Verde Éxito)
+            elBar.style.width = '100%';
+            elPct.innerText = '100%';
+            elBar.classList.replace('bg-blue-500', 'bg-green-500');
+            document.querySelector('#loader-card svg').classList.replace('text-blue-500', 'text-green-500');
+            document.querySelector('#loader-card svg').classList.remove('animate-spin');
+            elTxt.innerText = "¡Sincronización Completada!";
+            elTxt.classList.replace('text-slate-400', 'text-green-400');
+            
+            // Mantener el 100% por medio segundo para que el usuario sienta satisfacción visual
+            await new Promise(r => setTimeout(r, 600));
+
             const data = await res.json();
 
             if (data.success) {
-                // Éxito: Destruimos la base de datos local para que arranque en limpio mañana
                 await window.LocalDB.delete('conciliacion_draft');
-                await SysUI.alert(`Transacciones guardadas en Base de Datos: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre de ${nombreBanco} Exitoso`, "success");
+                
+                // Ocultar Loader Suavemente
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.classList.add('hidden'), 300);
+
+                await window.SysUI.alert(`Transacciones guardadas: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre Maestro Exitoso`, "success");
                 
                 window.ConciliacionLogic.resetState();
-                window.loadView('conciliacion', false); // Recargar pantalla automáticamente
+                window.loadView('conciliacion', false);
             } else {
-                throw new Error(data.error || "Error desconocido");
+                throw new Error(data.error || "Error desconocido devuelto por el servidor.");
             }
         } catch (error) {
+            clearInterval(progressInterval);
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.classList.add('hidden'), 300);
+            
             console.error(error);
-            alert("❌ Fallo al guardar: " + error.message);
-        } finally {
-            btn.innerHTML = originalHtml;
-            btn.disabled = false;
+            window.SysUI.alert("Fallo al guardar:\n\n" + error.message, "Error Crítico de Conexión", "error");
         }
     },
 
