@@ -2,7 +2,7 @@ window.ScotiaLogic = {
     // Procesa el Excel de Detalle (Scotiabank)
     // Procesa el Excel de Detalle (Scotiabank) - Multibloque LOTE/AJUSTE
     // Procesa el Excel de Detalle (Scotiabank) - Multibloque LOTE/AJUSTE y Multi-Archivo Seguro
-    processScotiabankDetalle: function(buf, filename) {
+    processScotiabankDetalle: async function(buf, filename) {
         // 0. VALIDACIÓN DE DUPLICADOS
         this.data.files = this.data.files || {};
         this.data.files.scotia_detalle = this.data.files.scotia_detalle || [];
@@ -79,10 +79,14 @@ window.ScotiaLogic = {
         let currentMode = 'LOTE'; 
         let multiplicador = 1;
 
+        // PARSEADOR NUMÉRICO BLINDADO (Estándar Financiero)
         const parseNum = (val) => {
+            if(!val) return 0;
             if (typeof val === 'number') return val;
-            if (typeof val === 'string') return parseFloat(val.replace(/\s/g, '').replace(',', '.')) || 0;
-            return 0;
+            let str = String(val).replace(/["'\s₡$]/g, '');
+            if(str.includes(',') && str.includes('.')) str = str.replace(/,/g, '');
+            else if(str.includes(',')) str = str.replace(',', '.');
+            return parseFloat(str) || 0;
         };
 
         // Comenzamos a leer JUSTO DESPUÉS del encabezado
@@ -104,24 +108,18 @@ window.ScotiaLogic = {
                 continue; 
             }
 
-            // B. Ignorar filas de subtotales
+            // B. Ignorar filas de subtotales y vacías
             if(rowStr.includes('monto neto') || rowStr.includes('subtotales')) continue;
 
-            // --- CORRECCIÓN BUG EXCEL SCOTIABANK (COLUMNA FANTASMA) ---
+            // Eliminamos el splice() de la Columna Fantasma porque rompía la alineación de los índices de cabecera
             let workingRow = [...row];
-            if (currCols.moneda !== -1) {
-                const valMoneda = String(workingRow[currCols.moneda] || '').toUpperCase();
-                const valNext = String(workingRow[currCols.moneda + 1] || '').toUpperCase();
-                const isCurrency = (v) => v.includes('COLON') || v.includes('DOLAR') || v.includes('USD') || v.includes('CRC');
-                
-                if (!isCurrency(valMoneda) && isCurrency(valNext)) {
-                    workingRow.splice(1, 1); // Borramos celda fantasma y realineamos
-                }
-            }
-
-            // C. VALIDACIÓN CRÍTICA: Debe tener MerID
-            const rawMerId = workingRow[currCols.merId];
-            if(!rawMerId || String(rawMerId).trim() === '') continue;
+    
+            // C. VALIDACIÓN CRÍTICA Y LIMPIEZA DE MerID
+            let rawMerId = String(workingRow[currCols.merId] || '').trim();
+            // ¡CRÍTICO! Destruir la comilla simple inicial de Excel (Ej: '61680503)
+            if (rawMerId.startsWith("'")) rawMerId = rawMerId.substring(1);
+            
+            if(rawMerId === '') continue;
 
             // D. Extracción de Datos usando los índices de ESTE archivo
             const vBruto = Math.abs(parseNum(workingRow[currCols.bruto]));
@@ -150,11 +148,12 @@ window.ScotiaLogic = {
                 mappedData[String(mNetoIdx)] = finalNeto;
                 mappedData[String(mBrutoIdx)] = finalBruto;
             }
-
+        
             // F. Construir Objeto Final
             const rowObj = {
                 _uid: 'scodet_' + Math.random().toString(36).substr(2, 9), 
                 _enabled: true,
+                _extractedId: rawMerId, // <--- ¡LA PIEZA FALTANTE! Esto conecta las ventas con el banco
                 _neto: finalNeto,
                 _bruto: finalBruto,
                 _comision: vCom,
@@ -168,9 +167,13 @@ window.ScotiaLogic = {
             
             newRows.push(rowObj);
         }
+    
+        // FILTRO ANTI-DUPLICADOS
+        const filteredRows = await window.ConciliacionLogic.filterDuplicates(newRows, 'SCOTIA', 'DETALLADO');
+        if(filteredRows.length === 0) return;
 
         // 5. ACUMULAR DATOS
-        this.data.scotia_detalle = (this.data.scotia_detalle || []).concat(newRows);
+        this.data.scotia_detalle = (this.data.scotia_detalle || []).concat(filteredRows);
         
         // 6. REGISTRAR ARCHIVO
         if(filename && !this.data.files.scotia_detalle.includes(filename)) {
@@ -288,7 +291,7 @@ window.ScotiaLogic = {
     },
 
     // Procesa el Excel de Pagado (Scotiabank)
-    processScotiabankPagado: function(buf, filename) {
+    processScotiabankPagado: async function(buf, filename) {
         // 0. VALIDACIÓN DE DUPLICADOS
         this.data.files = this.data.files || {};
         this.data.files.scotia_detalle = this.data.files.scotia_detalle || [];
@@ -351,12 +354,20 @@ window.ScotiaLogic = {
             if (m !== 0) {
                 const desc = String(row[iDesc] || '').trim();
                 
-                // REGLA FINANCIERA: Solo procesar transacciones que inicien con PCA
-                if (!desc.toUpperCase().startsWith('PCA')) continue;
+                // EXTRACCIÓN INTELIGENTE DE MerID (Soporta "PCA 3793754 COMERCIO 61680500")
+                let extractedID = "SIN_ID";
+                const comercioMatch = desc.match(/COMERCIO\s+(\d+)/i);
+                
+                if (comercioMatch) {
+                    extractedID = comercioMatch[1]; // Tomar el número exactamente después de "COMERCIO"
+                } else {
+                    // Fallback: Tomar la ÚLTIMA secuencia de números (evita atrapar el número de PCA)
+                    const nums = desc.match(/\b\d{7,15}\b/g);
+                    if (nums && nums.length > 0) extractedID = nums[nums.length - 1];
+                }
 
-                const parts = desc.replace(/\s+/g, ' ').split(' ');
-                const extractedID = parts.length >= 4 ? parts[3] : "SIN_ID";
-
+                // Si no tiene un MerID válido y no es un ajuste interno del banco, lo omitimos
+                if (extractedID === "SIN_ID" && !desc.toUpperCase().includes('AJUSTE')) continue;
                 const rowObj = {
                     _uid: 'scopag_' + Math.random().toString(36).substr(2, 9),
                     _enabled: true,
@@ -376,8 +387,12 @@ window.ScotiaLogic = {
             }
         }
 
+        // FILTRO ANTI-DUPLICADOS
+        const filteredRows = await window.ConciliacionLogic.filterDuplicates(newRows, 'SCOTIA', 'PAGADO');
+        if(filteredRows.length === 0) return;
+
         // 3. ACUMULAR DATOS
-        this.data.scotia_pagado = (this.data.scotia_pagado || []).concat(newRows);
+        this.data.scotia_pagado = (this.data.scotia_pagado || []).concat(filteredRows);
         
         // 4. REGISTRAR ARCHIVO
         if(filename && !this.data.files.scotia_pagado.includes(filename)) {
@@ -425,10 +440,11 @@ window.ScotiaLogic = {
         const iMerID = headersDet.findIndex(h => h && h.toLowerCase().includes('merid'));
         if (iMerID === -1 && hasDetalle) return alert("Error: No se encuentra la columna MerID.");
 
-        // 1. Agrupar Detalle
+        // 1. Agrupar Detalle (Homologado por ID Extraído)
         this.data.scotia_detalle.forEach(r => {
             if(!r._enabled) return;
-            const id = String(r[String(iMerID)] || 'DESCONOCIDO').trim();
+            // Usamos _extractedId o _id para garantizar que el MerID sea el mismo que el del banco
+            const id = String(r._extractedId || r._id || 'DESCONOCIDO').trim();
             if(!detGroup[id]) detGroup[id] = { count: 0, neto: 0, rows: [] };
             detGroup[id].count++;
             detGroup[id].neto += r._neto; 

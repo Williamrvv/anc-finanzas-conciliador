@@ -65,7 +65,8 @@ try {
         if (!empty($t['SourceHash'])) {
             $hashUnico = $t['SourceHash']; 
         } else {
-            $hashStr = "{$t['Banco']}|{$t['Origen']}|{$fecha}|{$neto}|" . ($t['Autorizacion'] ?? '') . "|" . ($t['Afiliado_MerID'] ?? '');
+            // Leer el Súper Hash construido en JS con sus 11 columnas
+            $hashStr = $t['HashString'] ?? "FALLBACK|" . uniqid();
             $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
         }
 
@@ -73,7 +74,15 @@ try {
         $idExistente = $stmtCheck->fetchColumn();
 
         if ($idExistente) {
-            $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
+            // LÓGICA DE SEGURIDAD: 
+            // Si el IdExistente (Ej: det_89ab) NO es igual al IdTransaccion que envía el Front (Ej: det_xyz1), 
+            // y no es un ajuste manual, significa que el usuario intentó subir una fila idéntica pero nueva.
+            if ($idExistente !== $idTrans && ($t['Origen'] ?? '') !== 'AJUSTE') {
+                throw new \Exception("Bloqueo de Seguridad: Se intentó procesar una transacción duplicada (Hash Criptográfico ya existe en BD). Revise los archivos cargados.");
+            } else {
+                // Es un Saldo Histórico arrastrado legalmente. Actualizamos su estado y cruce.
+                $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
+            }
         } else {
             $stmtInsert->execute([
                 $idTrans, $idCierre, $t['Banco'] ?? 'DESC', $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, 

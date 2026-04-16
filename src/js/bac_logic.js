@@ -109,9 +109,14 @@ window.BACLogic = {
                 _sourceFile: filename,
                 ...mappedData
             };
-        });
+        }).filter(r => (r._id && String(r._id).trim() !== '') || Math.abs(r._neto) > 0); 
+        // 👆 El filtro anterior destruye las filas fantasma/vacías que el Excel incluye al final
         
-        this.data.detalle = (this.data.detalle || []).concat(newRows);
+        // FILTRO ANTI-DUPLICADOS
+        const filteredRows = await window.ConciliacionLogic.filterDuplicates(newRows, 'BAC', 'DETALLADO');
+        if(filteredRows.length === 0) return;
+
+        this.data.detalle = (this.data.detalle || []).concat(filteredRows);
         
         if(filename && !this.data.files.bac_detalle.includes(filename)) {
             this.data.files.bac_detalle.push(filename);
@@ -220,10 +225,12 @@ window.BACLogic = {
             if(typeof montoRaw === 'number') m = montoRaw;
             else if(typeof montoRaw === 'string') m = parseFloat(montoRaw.replace(/\s/g,'').replace(',','.')) || 0;
 
-            const desc = String(row[iDesc] || '').trim(); 
+            const desc = String(row[iDesc] || '').trim();   
+              
+            // Homologación: Usar Regex para buscar el MerID (7 a 15 dígitos)
+            const merIdMatch = desc.match(/\b\d{7,15}\b/);
+            const extractedID = merIdMatch ? merIdMatch[0] : (desc.split(' ')[0] || "SIN_ID");
             
-            const parts = desc.split(' ');
-            const extractedID = parts.length > 0 ? parts[0] : "SIN_ID";
             const liqMatch = desc.match(/LIQ\s*(\d+)/i);
             const liqRef = liqMatch ? liqMatch[1] : "";
             const isAFI = desc.toUpperCase().startsWith('AFI');
@@ -249,7 +256,11 @@ window.BACLogic = {
             cleanData.push(rowObj);
         }
 
-        this.data.pagado = (this.data.pagado || []).concat(cleanData);
+        // FILTRO ANTI-DUPLICADOS
+        const filteredData = await window.ConciliacionLogic.filterDuplicates(cleanData, 'BAC', 'PAGADO');
+        if(filteredData.length === 0) return;
+
+        this.data.pagado = (this.data.pagado || []).concat(filteredData);
 
         const totalGlobalPagado = this.data.pagado.reduce((acc, r) => {
             return acc + (r._enabled ? r._monto : 0);
@@ -335,7 +346,7 @@ window.BACLogic = {
             if(container) container.innerHTML = '<div class="text-center text-slate-400 p-10 font-bold">Esperando archivos...</div>';
             return;
         }
-
+   
         // 1. Agrupar Detalle (Ventas)
         const det = {};
         this.data.detalle.forEach(r => {

@@ -185,19 +185,32 @@ window.ConciliacionLogic = {
         const draftObj = await window.LocalDB.get('conciliacion_draft');
         
         if (draftObj) {
-            const choice = await window.SysUI.confirm(
-                "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
-                "Borrador Encontrado", 
-                "info"
-            );
-            if (choice) {
-                this.restoreDraftFromLocal(draftObj); // Ahora pasamos el objeto parseado directamente
-            } else {
-                await window.LocalDB.delete('conciliacion_draft');
-                this.loadPendientes(); 
+            // VERIFICAR PASE VIP (Guardado Parcial Reciente)
+            const silentRestore = sessionStorage.getItem('iri_silent_restore');
+            
+            if (silentRestore === 'true') {
+                // Quemar el pase para que no aplique en futuras visitas
+                sessionStorage.removeItem('iri_silent_restore');
+                console.log("🤫 Pase VIP activado: Restaurando borrador silenciosamente.");
+                this.restoreDraftFromLocal(draftObj);
+            } 
+            else {
+                // Flujo Normal: Preguntar al usuario
+                const choice = await window.SysUI.confirm(
+                    "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
+                    "Borrador Encontrado", 
+                    "info"
+                );
+                
+                if (choice) {
+                    this.restoreDraftFromLocal(draftObj);
+                } else {
+                    await window.LocalDB.delete('conciliacion_draft');
+                    this.loadPendientes(); 
+                }
             }
         } else {
-            // Flujo Normal: Traer saldos arrastrados de la BD
+            // Flujo Normal de Primer Arranque del Día: Traer saldos arrastrados de la BD
             this.loadPendientes();
         }
 
@@ -449,32 +462,38 @@ window.ConciliacionLogic = {
                             _venta: parseFloat(r.MontoBruto || 0), _netoACI: parseFloat(r.MontoNeto || 0),
                             _comision: parseFloat(r.BacComision || 0), _retV: parseFloat(r.RetencionVentas || 0),
                             _retR: parseFloat(r.RetencionRenta || 0), _aciOrig: parseFloat(r.AjusteACI || 0),
-                            "3": "Saldo Histórico", "11": r.Autorizacion
+                            "3": r.NOMBRECOMERCIO, "11": r.Autorizacion
                         });
                     } else if (r.Origen === 'PAGADO') {
                         this.data.pagado.push({ ...baseObj, ...buildRow(r, mapBacPag),
                             _extractedId: r.Afiliado_MerID, _liqRef: r.Autorizacion, _monto: parseFloat(r.MontoNeto || 0),
-                            _desc: `Arrastre: ${r.Afiliado_MerID} LIQ ${r.Autorizacion}`
+                            _desc: r.PBacDesc
                         });
                     }
-                } 
+                }
                 else if (r.Banco === 'SCOTIA') {
                     counts.scotia++;
+                    // Normalización de Moneda
+                    const dbCurr = String(r.Moneda || 'COLON').toUpperCase().includes('DOLAR') ? 'USD' : 'CRC';
+                    
                     if (r.Origen === 'DETALLADO' || r.Origen === 'AJUSTE') {
                         this.data.scotia_detalle.push({ ...baseObj, ...buildRow(r, mapScoDet),
+                            _extractedId: r.Afiliado_MerID, // <--- CRÍTICO: Identidad para el cruce
+                            _currency: dbCurr,             // <--- CRÍTICO: Moneda para el cruce
                             _bruto: parseFloat(r.MontoBruto || 0), _neto: parseFloat(r.MontoNeto || 0),
-                            _mode: (r.Lote === 'AJUSTE' || r.Origen === 'AJUSTE') ? 'AJUSTE' : 'LOTE',
-                            "MerID": r.Afiliado_MerID, "Autorizacion": r.Autorizacion
+                            _mode: (r.Lote === 'AJUSTE' || r.Origen === 'AJUSTE') ? 'AJUSTE' : 'LOTE'
                         });
                     } else if (r.Origen === 'PAGADO') {
                         this.data.scotia_pagado.push({ ...baseObj, ...buildRow(r, mapScoPag),
-                            _extractedId: r.Afiliado_MerID, _monto: parseFloat(r.MontoNeto || 0),
-                            _desc: `Arrastre Scotia: ${r.Afiliado_MerID}`
+                            _extractedId: r.Afiliado_MerID, 
+                            _currency: dbCurr,
+                            _monto: parseFloat(r.MontoNeto || 0),
+                            _desc: r.PScoDesc
                         });
                     }
                 }
             });
-
+    
             if (counts.bac > 0) {
                 this.data.files.bac_detalle = ["Saldos Históricos"]; this.updateFileList('bac_detalle');
                 if(this.recalculateDetalle) this.recalculateDetalle();
@@ -576,30 +595,23 @@ window.ConciliacionLogic = {
         const reader = new FileReader();
         
         // CRÍTICO: Asegurarse de recibir (e) aquí
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
-                // DETECCIÓN DE FORMATO Y ENVÍO A LÓGICA ESPECÍFICA
-                // Se pasa e.target.result (contenido) y file.name (nombre)
-                
+                // DETECCIÓN DE FORMATO (Ahora con Await estricto)
                 if(type === 'csv') {
-                    // BAC Detalle
-                    this.processCSV(e.target.result, file.name);
+                    await this.processCSV(e.target.result, file.name);
                 } 
                 else if(type === 'scotia_detalle') {
-                    // Scotia Detalle (Aún no adaptado para multi-archivo, pasamos solo contenido por ahora)
-                    this.processScotiabankDetalle(e.target.result, file.name);
+                    await this.processScotiabankDetalle(e.target.result, file.name);
                 } 
                 else if(type === 'scotia_pagado') {
-                    // Scotia Pagado
-                    this.processScotiabankPagado(e.target.result, file.name);
+                    await this.processScotiabankPagado(e.target.result, file.name);
                 } 
                 else if(type === 'tsd') {
-                    // TSD (Reporte Maestro)
-                    this.processTSD(e.target.result);
+                    await this.processTSD(e.target.result);
                 } 
                 else {
-                    // Excel Genérico (BAC Pagado por defecto en la config actual)
-                    this.processExcel(e.target.result, file.name);
+                    await this.processExcel(e.target.result, file.name);
                 }
                 
                 // 2. Éxito: Quitar animación de carga del status
@@ -1081,12 +1093,65 @@ window.ConciliacionLogic = {
     // ==========================================================
     // MÓDULO DE PERSISTENCIA (GUARDADO INDEPENDIENTE)
     // ==========================================================
-    preparePayload: function() {
+    // ESCUDO ANTI-DUPLICADOS (CON INDEXACIÓN DE GEMELOS)
+    filterDuplicates: async function(rows, banco, origen) {
+        if(rows.length === 0) return rows;
+
+        const toast = document.createElement('div');
+        toast.id = 'dup-toast';
+        toast.className = 'fixed top-4 right-4 bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-lg shadow-xl z-[99999] text-xs font-bold flex items-center gap-3 animate-fade-in-up';
+        toast.innerHTML = '<svg class="animate-spin text-blue-500 w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Validando Base de Datos...';
+        document.body.appendChild(toast);
+
+        // Rastreador de gemelos
+        const hashCounts = {};
+
+        try {
+            const hashStrs = rows.map(r => {
+                const rec = this.formatTransactionRecord(r, banco, origen, 'PENDIENTE', null);
+                // Si la fila es idéntica a otra, le sumamos 1 al contador
+                hashCounts[rec.HashString] = (hashCounts[rec.HashString] || 0) + 1;
+                // Devolvemos el Hash con el índice (Ej: BAC|...|2500|-1)
+                return rec.HashString + "-" + hashCounts[rec.HashString];
+            });
+
+            const res = await fetch('api/check_duplicates.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hashes: hashStrs })
+            });
+
+            const data = await res.json();
+            
+            if (data.success && data.duplicados.length > 0) {
+                const dupSet = new Set(data.duplicados);
+                // Comparamos usando el hash indexado
+                const filteredRows = rows.filter((r, i) => !dupSet.has(hashStrs[i]));
+                const omitidos = rows.length - filteredRows.length; 
+
+                if (filteredRows.length === 0) {
+                    window.SysUI.alert(`El archivo completo ha sido rechazado.\n\nLas ${omitidos} transacciones ya fueron guardadas previamente en la Base de Datos.`, "Archivo Ya Procesado", "warning");
+                } else {
+                    window.SysUI.alert(`Se omitieron <b>${omitidos}</b> transacciones duplicadas (ya procesadas).\n\nSe cargarán <b>${filteredRows.length}</b> registros nuevos.`, "Limpieza de Duplicados", "info");
+                }
+
+                toast.remove();
+                return filteredRows;
+            }
+        } catch(e) { console.error("Error validando duplicados:", e); }
+
+        toast.remove();
+        return rows; // Retornamos TODOS los datos si están limpios
+    },
+
+    // PREPARAR EL PAQUETE DE DATOS
+    preparePayload: function(bancoObjetivo) {
         const payload = {
             fecha_cierre: document.getElementById('process-date').value,
             transacciones: []
         };
         const processedUids = new Set();
+        // Rastreador global de Hashes para el Guardado
+        const payloadHashCounts = {};
 
         const processGroup = (group, banco) => {
             const diff = group.diferencia_val !== undefined ? group.diferencia_val : group.diff;
@@ -1097,38 +1162,58 @@ window.ConciliacionLogic = {
             (group.rowsDet || []).forEach(r => {
                 if (processedUids.has(r._uid)) return;
                 processedUids.add(r._uid);
-                payload.transacciones.push(this.formatTransactionRecord(r, banco, 'DETALLADO', estado, idMatch));
+                const rec = this.formatTransactionRecord(r, banco, 'DETALLADO', estado, idMatch);
+                
+                // Si es un dato nuevo (no viene de BD), le aplicamos la indexación de gemelos
+                if (!rec.SourceHash) {
+                    payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
+                    rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
+                }
+                payload.transacciones.push(rec);
             });
 
             (group.rowsPag || []).forEach(r => {
                 if (processedUids.has(r._uid)) return;
                 processedUids.add(r._uid);
-                payload.transacciones.push(this.formatTransactionRecord(r, banco, 'PAGADO', estado, idMatch));
+                const rec = this.formatTransactionRecord(r, banco, 'PAGADO', estado, idMatch);
+                
+                if (!rec.SourceHash) {
+                    payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
+                    rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
+                }
+                payload.transacciones.push(rec);
             });
         };
 
-        // ESCANEAR BAC
-        if (this.data.processed && this.data.processed.bac_matches) {
+        if (bancoObjetivo === 'bac' && this.data.processed && this.data.processed.bac_matches) {
             Object.values(this.data.processed.bac_matches).forEach(g => processGroup(g, 'BAC'));
-            
             if (this.deferredRows) {
                 (this.deferredRows.det || []).forEach(r => {
-                    if(!processedUids.has(r._uid)) {
-                        processedUids.add(r._uid);
-                        payload.transacciones.push(this.formatTransactionRecord(r, 'BAC', 'DETALLADO', 'PENDIENTE', null));
+                    if(!processedUids.has(r._uid)) { 
+                        processedUids.add(r._uid); 
+                        const rec = this.formatTransactionRecord(r, 'BAC', 'DETALLADO', 'PENDIENTE', null);
+                        if (!rec.SourceHash) {
+                            payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
+                            rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
+                        }
+                        payload.transacciones.push(rec); 
                     }
                 });
                 (this.deferredRows.pag || []).forEach(r => {
-                    if(!processedUids.has(r._uid)) {
-                        processedUids.add(r._uid);
-                        payload.transacciones.push(this.formatTransactionRecord(r, 'BAC', 'PAGADO', 'PENDIENTE', null));
+                    if(!processedUids.has(r._uid)) { 
+                        processedUids.add(r._uid); 
+                        const rec = this.formatTransactionRecord(r, 'BAC', 'PAGADO', 'PENDIENTE', null);
+                        if (!rec.SourceHash) {
+                            payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
+                            rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
+                        }
+                        payload.transacciones.push(rec); 
                     }
                 });
             }
         }
 
-        // ESCANEAR SCOTIABANK (DAVIBANK)
-        if (this.data.processed && this.data.processed.scotia_matches) {
+        if (bancoObjetivo === 'scotia' && this.data.processed && this.data.processed.scotia_matches) {
             Object.values(this.data.processed.scotia_matches).forEach(g => processGroup(g, 'SCOTIA'));
         }
 
@@ -1144,7 +1229,9 @@ window.ConciliacionLogic = {
 
         let record = {
             IdTransaccion: r._uid, Banco: banco, Origen: origen, Estado: estado, IdMatch: idMatch,
-            Afiliado_MerID: r._id || r._extractedId || null, Autorizacion: authVal, 
+            // Prioridad al ID extraído por Regex para garantizar cruce
+            Afiliado_MerID: (r._extractedId || r._id || '').toString().trim() || null, 
+            Autorizacion: authVal,
             MontoBruto: r._venta || r._bruto || r._monto || 0,
             MontoNeto: r._netoACI !== undefined ? r._netoACI : (r._neto !== undefined ? r._neto : (r._monto || 0)),
             ArchivoOrigen: r._sourceFile || 'Sistema Local',
@@ -1185,10 +1272,15 @@ window.ConciliacionLogic = {
             return parseFloat(str) || 0;
         };
 
+        // 1. Inicializar contenedores para evitar errores de undefined
+        record.RawBAC = null;
+        record.RawScotia = null;
+        record.RawPagadoBAC = null;
+        record.RawPagadoScotia = null;
+
+        // 2. Mapeo de Datos Crudos según Banco y Origen
         if (banco === 'BAC' && origen !== 'PAGADO') {
             const h = this.data.headers.detalle || [];
-            const valTar = getV('TARJETA', h);
-            record.Tarjeta = record.Tarjeta || (valTar ? String(valTar).replace(/[\s-]/g, '').trim() : null);
             record.RawBAC = {
                 NUMERO_AFILIADO: getV('AFILIADO', h) || r._id,
                 NOMBRECOMERCIO: getV('COMERCIO', h),
@@ -1212,122 +1304,164 @@ window.ConciliacionLogic = {
         } 
         else if (banco === 'SCOTIA' && origen !== 'PAGADO') {
             const h = this.data.headers.scotia_detalle || [];
-            const valTarSc = getV('Tarjeta', h);
-            record.Tarjeta = record.Tarjeta || (valTarSc ? String(valTarSc).replace(/[\s-]/g, '').trim() : null);
             record.RawScotia = {
-                Fuente: getV('Fuente', h),
-                Fecha_Pago: getV('Fecha Pago', h),
-                Moneda: getV('Moneda', h),
-                Transaccion: getV('Transacci', h),
-                Cedula: getV('Cédula', h) || getV('Cedula', h),
-                Razon_Social: getV('Razón', h) || getV('Razon', h),
-                MerID: getV('MerID', h) || r._extractedId || r._id,
-                Nombre: getV('Nombre', h),
-                Fecha_Lote_Ajuste: getV('Fecha Lote', h),
-                Numero_Lote_Ajuste: getV('Número Lote', h) || getV('Numero Lote', h) || r.Lote || r._liq,
+                Nombre: getV('Nombre', h) || r._desc,
+                Razon_Social: getV('Razon', h),
                 Terminal: getV('Terminal', h),
-                Numero_Pago: getV('Número Pago', h) || getV('Numero Pago', h),
-                Numero_Autorizacion: getV('Autoriza', h) || r._auth,
-                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta,
-                Monto_Orig: cleanN(getV('Monto Orig', h)),
-                Monto_Bruto: cleanN(getV('Monto Bruto', h) || r._bruto),
-                Monto_Comision_Total: cleanN(getV('Monto Comisión Total', h) || getV('Monto Comision Total', h)),
-                Porc_Comision_Total: cleanN(getV('% Comisión Total', h) || getV('% Comision Total', h)),
-                Monto_Comision_Int: cleanN(getV('Comisión Int', h) || getV('Comision Int', h)),
-                Porc_Comision_Int: cleanN(getV('% Comisión Int', h) || getV('% Comision Int', h)),
-                Monto_Retencion_IVA: cleanN(getV('Retención IVA', h) || getV('Retencion IVA', h)),
-                Porc_Retencion_IVA: cleanN(getV('% Retención IVA', h) || getV('% Retencion IVA', h)),
-                Monto_Retencion_ISR: cleanN(getV('Retención IS', h) || getV('Retencion IS', h)),
-                Monto_Neto: cleanN(getV('Monto Neto', h) || r._neto),
-                Estatus: getV('Estatus', h)
+                Numero_Lote_Ajuste: getV('Lote', h) || r._liq,
+                Numero_Pago: getV('Pago', h)
             };
         }
         else if (banco === 'BAC' && origen === 'PAGADO') {
             const h = this.data.headers.pagado || [];
             record.RawPagadoBAC = {
-                Fecha: getV('Fecha', h) || r._fecha,
-                Referencia: getV('Referencia', h),
-                Codigo: getV('Código', h) || getV('Codigo', h),
                 Descripcion: getV('Descripci', h) || r._desc,
-                Debitos: cleanN(getV('Débito', h) || getV('Debito', h)),
-                Creditos: cleanN(getV('Crédito', h) || getV('Credito', h) || r._monto),
-                Balance: cleanN(getV('Saldo', h) || getV('Balance', h))
+                Referencia: getV('Referencia', h) || r._liqRef,
+                Codigo: getV('Codigo', h),
+                Balance: cleanN(getV('Balance', h) || r._monto)
             };
         }
         else if (banco === 'SCOTIA' && origen === 'PAGADO') {
             const h = this.data.headers.scotia_pagado || [];
             record.RawPagadoScotia = {
-                Numero_Referencia: getV('Referencia', h),
-                Fecha_Movimiento: getV('Fecha', h) || r._fecha,
                 Descripcion: getV('Descripci', h) || r._desc,
-                Monto: cleanN(getV('Monto', h) || r._monto),
-                Saldo: cleanN(getV('Saldo', h)),
-                Credito_Debito: getV('Crédito', h) || getV('Credito', h)
+                Numero_Referencia: getV('Referencia', h),
+                Saldo: cleanN(getV('Saldo', h))
             };
         }
 
+        // 3. Creación del Súper Hash (Lógica Segura)
+        let comercio = '', term = '', liq = '', saldo = '';
+        const rb = record.RawBAC || {};
+        const rs = record.RawScotia || {};
+        const pb = record.RawPagadoBAC || {};
+        const ps = record.RawPagadoScotia || {};
+
+        if (banco === 'BAC' && origen !== 'PAGADO') {
+            comercio = rb.NOMBRECOMERCIO || ''; term = rb.TERMINAL || ''; liq = rb.NUMERO_LIQUIDACION || '';
+        } else if (banco === 'SCOTIA' && origen !== 'PAGADO') {
+            comercio = rs.Nombre || rs.Razon_Social || ''; term = rs.Terminal || ''; liq = rs.Numero_Lote_Ajuste || rs.Numero_Pago || '';
+        } else if (banco === 'BAC' && origen === 'PAGADO') {
+            comercio = pb.Descripcion || ''; liq = pb.Referencia || pb.Codigo || ''; saldo = pb.Balance || '';
+        } else if (banco === 'SCOTIA' && origen === 'PAGADO') {
+            comercio = ps.Descripcion || ''; liq = ps.Numero_Referencia || ''; saldo = ps.Saldo || '';
+        }
+
+        const cStr = (str) => String(str || '').trim().toUpperCase();
+        record.HashString = `${record.Banco}|${record.Origen}|${record.FechaTransaccion || ''}|${cStr(comercio)}|${cStr(record.Afiliado_MerID)}|${cStr(term)}|${cStr(record.Autorizacion)}|${cStr(record.Tarjeta)}|${cStr(liq)}|${record.MontoBruto}|${record.MontoNeto}|${saldo}`;
+
         return record;
-    },
-
+    },  
+  
     saveSnapshot: async function() {
-        const payload = this.preparePayload(); // Ahora extrae de AMBOS bancos
-        
-        if (payload.transacciones.length === 0) {
-            return window.SysUI.alert("No hay transacciones procesadas en ningún banco para guardar.", "Sin datos", "warning");
-        }
-
-        // 1. Calcular Estadísticas Consolidadas
-        const stats = { 
-            bac: { conc: 0, pend: 0 }, 
-            scotia: { conc: 0, pend: 0 },
-            totalMoney: 0
-        };
-
-        payload.transacciones.forEach(t => {
-            if (t.Origen === 'DETALLADO') {
-                const b = t.Banco === 'BAC' ? stats.bac : stats.scotia;
-                if (t.Estado === 'CONCILIADO') {
-                    b.conc++;
-                    stats.totalMoney += parseFloat(t.MontoNeto || 0);
-                } else {
-                    b.pend++;
-                }
-            }
-        });
-
-        payload.total_conciliado = stats.totalMoney;
-
-        // 2. Construir Resumen Bimonetario
-        let msgHtml = `<div class="space-y-3 mb-2 text-sm text-slate-600 dark:text-slate-300">
-            <p>Se procederá a consolidar todas las operaciones de las pestañas activas en la Base de Datos.</p>`;
-        
-        if (stats.bac.conc > 0 || stats.bac.pend > 0) {
-            msgHtml += `<div class="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                <strong class="text-red-600 dark:text-red-400 flex items-center gap-2 mb-1"><span class="w-2 h-2 rounded-full bg-red-600"></span> BAC Credomatic</strong>
-                <div class="flex justify-between text-xs">
-                    <span>Conciliados: <b class="text-green-600">${stats.bac.conc}</b></span>
-                    <span>Pendientes: <b class="text-amber-600">${stats.bac.pend}</b></span>
-                </div>
-            </div>`;
-        }
-        if (stats.scotia.conc > 0 || stats.scotia.pend > 0) {
-            msgHtml += `<div class="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                <strong class="text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-1"><span class="w-2 h-2 rounded-full bg-blue-600"></span> Davibank (Scotiabank)</strong>
-                <div class="flex justify-between text-xs">
-                    <span>Conciliados: <b class="text-green-600">${stats.scotia.conc}</b></span>
-                    <span>Pendientes: <b class="text-amber-600">${stats.scotia.pend}</b></span>
-                </div>
-            </div>`;
-        }
-        
-        msgHtml += `<div class="text-right mt-4 text-base bg-blue-50 dark:bg-blue-900/20 p-2 rounded border border-blue-100 dark:border-blue-800">
-            Total a Conciliar: <b class="text-blue-700 dark:text-blue-400 font-mono text-xl">${this.formatMoney(stats.totalMoney)}</b>
-        </div></div>`;
-
-        // MATA AUTO-SAVE PARA EVITAR BORRADORES DURANTE EL GUARDADO
+        // 1. Apagar Auto-Save para evitar crear borradores zombis durante el proceso
         if (this._autoSaveInterval) clearInterval(this._autoSaveInterval);
 
-        // 3. PANTALLA DE CARGA CORPORATIVA (Bloqueo Total UI)
+        // 2. Extraer datos de ambos bancos de forma independiente
+        const payloadBAC = this.preparePayload('bac');
+        const payloadScotia = this.preparePayload('scotia');
+
+        const stats = {
+            bac: { conc: 0, pend: 0, money: 0, hasData: payloadBAC.transacciones.length > 0 },
+            sco: { conc: 0, pend: 0, money: 0, hasData: payloadScotia.transacciones.length > 0 }
+        };
+
+        const countStats = (payloadArr, targetStat) => {
+            payloadArr.forEach(t => {
+                if (t.Origen === 'DETALLADO') {
+                    if (t.Estado === 'CONCILIADO') {
+                        targetStat.conc++;
+                        targetStat.money += parseFloat(t.MontoNeto || 0);
+                    } else {
+                        targetStat.pend++;
+                    }
+                }
+            });
+        };
+
+        if (stats.bac.hasData) countStats(payloadBAC.transacciones, stats.bac);
+        if (stats.sco.hasData) countStats(payloadScotia.transacciones, stats.sco);
+
+        if (!stats.bac.hasData && !stats.sco.hasData) {
+            this.startAutoSave(); 
+            return window.SysUI.alert("No hay datos procesados en memoria para guardar.", "Sin datos", "warning");
+        }
+
+        // 3. CONSTRUIR MODAL INTERACTIVO DE RESUMEN
+        let html = `<div class="space-y-4 text-sm text-slate-700 dark:text-slate-300 select-none">
+            <p>Seleccione los bancos que desea consolidar. Lo que <b>no seleccione</b> se guardará automáticamente como borrador.</p>
+            <div class="space-y-3">`;
+
+        if (stats.bac.hasData) {
+            html += `
+            <label class="flex items-start gap-3 p-3 border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-slate-800 rounded-lg cursor-pointer hover:bg-red-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                <input type="checkbox" id="chk-save-bac" class="mt-1 w-4 h-4 accent-red-600" checked>
+                <div class="flex-grow">
+                    <strong class="text-red-600 dark:text-red-400 block mb-1">BAC Credomatic</strong>
+                    <div class="flex justify-between text-xs mb-1"><span>Conciliados: <b class="text-green-600">${stats.bac.conc}</b></span><span>Pendientes: <b class="text-amber-600">${stats.bac.pend}</b></span></div>
+                    <div class="text-xs border-t border-red-200 dark:border-red-900/30 mt-1 pt-1">Total a Conciliar: <b class="font-mono text-slate-800 dark:text-white">${this.formatMoney(stats.bac.money)}</b></div>
+                </div>
+            </label>`;
+        }
+
+        if (stats.sco.hasData) {
+            html += `
+            <label class="flex items-start gap-3 p-3 border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-slate-800 rounded-lg cursor-pointer hover:bg-blue-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
+                <input type="checkbox" id="chk-save-sco" class="mt-1 w-4 h-4 accent-blue-600" checked>
+                <div class="flex-grow">
+                    <strong class="text-blue-600 dark:text-blue-400 block mb-1">Davibank (Scotiabank)</strong>
+                    <div class="flex justify-between text-xs mb-1"><span>Conciliados: <b class="text-green-600">${stats.sco.conc}</b></span><span>Pendientes: <b class="text-amber-600">${stats.sco.pend}</b></span></div>
+                    <div class="text-xs border-t border-blue-200 dark:border-blue-900/30 mt-1 pt-1">Total a Conciliar: <b class="font-mono text-slate-800 dark:text-white">${this.formatMoney(stats.sco.money)}</b></div>
+                </div>
+            </label>`;
+        }
+        html += `</div></div>`;
+
+        // 4. LECTURA DE DECISIÓN DEL USUARIO (Pre-Cierre del Modal)
+        // Creamos variables para almacenar el estado EN TIEMPO REAL
+        let saveBac = stats.bac.hasData; 
+        let saveSco = stats.sco.hasData;
+
+        // Inyectamos un pequeño script para que el Modal actualice estas variables al hacer clic
+        setTimeout(() => {
+            const cBac = document.getElementById('chk-save-bac');
+            const cSco = document.getElementById('chk-save-sco');
+            if (cBac) cBac.addEventListener('change', (e) => { saveBac = e.target.checked; });
+            if (cSco) cSco.addEventListener('change', (e) => { saveSco = e.target.checked; });
+        }, 100);
+
+        const choice = await window.SysUI._createModal("Resumen de Cierre y Guardado", html, [
+            {text: 'Volver', value: 'cancel', class: 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg text-slate-700 dark:text-slate-300 font-bold transition-colors'},
+            {text: 'Confirmar y Guardar', value: 'save', class: 'bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
+        ], "info");
+
+        if (choice !== 'save') {
+            this.startAutoSave(); // Reactivar reloj
+            return;
+        }
+
+        if (!saveBac && !saveSco) {
+            this.startAutoSave();
+            return window.SysUI.alert("Debe seleccionar al menos un banco para guardar.", "Aviso", "warning");
+        }
+
+        // 5. ENSAMBLAR PAYLOAD FINAL
+        let finalPayload = {
+            fecha_cierre: document.getElementById('process-date').value,
+            transacciones: [],
+            total_conciliado: 0
+        };
+
+        if (saveBac) {
+            finalPayload.transacciones.push(...payloadBAC.transacciones);
+            finalPayload.total_conciliado += stats.bac.money;
+        }
+        if (saveSco) {
+            finalPayload.transacciones.push(...payloadScotia.transacciones);
+            finalPayload.total_conciliado += stats.sco.money;
+        }
+
+        // 6. MOSTRAR PANTALLA DE CARGA INBLOQUEABLE
         const loaderId = 'global-save-loader';
         let loader = document.getElementById(loaderId);
         if(!loader) {
@@ -1344,30 +1478,20 @@ window.ConciliacionLogic = {
                         <div class="absolute inset-0 flex items-center justify-center text-xs font-bold font-mono" id="loader-pct">0%</div>
                     </div>
                     <h3 class="text-lg font-bold mb-2 text-white">Guardando Transacciones...</h3>
-                    <p class="text-slate-400 text-xs text-center mb-6 h-8" id="loader-text">Preparando paquete de datos cifrados...</p>
-                    
+                    <p class="text-slate-400 text-xs text-center mb-6 h-8" id="loader-text">Preparando paquete de datos...</p>
                     <div class="w-full bg-slate-900 rounded-full h-2 mb-1 overflow-hidden border border-slate-700 shadow-inner">
-                        <div class="bg-blue-500 h-full rounded-full transition-all duration-300 w-0 relative overflow-hidden" id="loader-bar">
-                            <div class="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_1s_infinite]"></div>
-                        </div>
+                        <div class="bg-blue-500 h-full rounded-full transition-all w-0" id="loader-bar"></div>
                     </div>
                 </div>
             `;
             document.body.appendChild(loader);
-            
-            // CSS extra para el brillo de la barra
-            const style = document.createElement('style');
-            style.innerHTML = `@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`;
-            document.head.appendChild(style);
         }
         
-        // Mostrar Modal de Carga
         requestAnimationFrame(() => {
             loader.classList.remove('hidden', 'opacity-0');
             document.getElementById('loader-card').classList.remove('scale-95');
         });
 
-        // Simulación de Progreso UX
         let pct = 0;
         const elBar = document.getElementById('loader-bar');
         const elPct = document.getElementById('loader-pct');
@@ -1375,61 +1499,78 @@ window.ConciliacionLogic = {
         
         const progressInterval = setInterval(() => {
             if(pct < 85) {
-                pct += Math.floor(Math.random() * 12) + 2;
+                pct += Math.floor(Math.random() * 15) + 5;
                 if(pct > 85) pct = 85;
-                elBar.style.width = pct + '%';
-                elPct.innerText = pct + '%';
-                
-                if(pct > 20) elTxt.innerText = "Cifrando y transmitiendo al servidor...";
+                elBar.style.width = pct + '%'; elPct.innerText = pct + '%';
+                if(pct > 20) elTxt.innerText = "Sincronizando con Base de Datos...";
                 if(pct > 50) elTxt.innerText = "Aplicando restricciones de Idempotencia...";
-                if(pct > 70) elTxt.innerText = "Separando excepciones en Base de Datos...";
             }
         }, 300);
 
         try {
+            // 7. ENVÍO AL SERVIDOR
             const res = await fetch('api/save_conciliacion.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(finalPayload)
             });
 
             clearInterval(progressInterval);
-            
-            // FASE FINAL: Snap al 100% (Verde Éxito)
-            elBar.style.width = '100%';
-            elPct.innerText = '100%';
+            elBar.style.width = '100%'; elPct.innerText = '100%';
             elBar.classList.replace('bg-blue-500', 'bg-green-500');
             document.querySelector('#loader-card svg').classList.replace('text-blue-500', 'text-green-500');
             document.querySelector('#loader-card svg').classList.remove('animate-spin');
             elTxt.innerText = "¡Sincronización Completada!";
             elTxt.classList.replace('text-slate-400', 'text-green-400');
             
-            // Mantener el 100% por medio segundo para que el usuario sienta satisfacción visual
             await new Promise(r => setTimeout(r, 600));
 
             const data = await res.json();
+            if (!data.success) throw new Error(data.error || "Error desconocido");
 
-            if (data.success) {
+            // 8. PURGA ABSOLUTA Y CREACIÓN DE BORRADOR LIMPIO (SI APLICA)
+            // Si se guardó TODO, simplemente borramos el borrador y recargamos normal.
+            if (saveBac && saveSco) {
                 await window.LocalDB.delete('conciliacion_draft');
-                
-                // Ocultar Loader Suavemente
-                loader.classList.add('opacity-0');
-                setTimeout(() => loader.classList.add('hidden'), 300);
+            } 
+            else {
+                // GUARDADO PARCIAL: Limpiar en la RAM SÓLO el banco guardado
+                if (saveBac) {
+                    this.data.detalle = []; this.data.pagado = [];
+                    this.data.files.bac_detalle = []; this.data.files.bac_pagado = [];
+                    this.manualMatches = [];
+                    this.deferredRows = { det: [], pag: [] };
+                    delete this.data.processed.bac_matches;
+                }
+                if (saveSco) {
+                    this.data.scotia_detalle = []; this.data.scotia_pagado = [];
+                    this.data.files.scotia_detalle = []; this.data.files.scotia_pagado = [];
+                    this.manualMatchesScotia = [];
+                    delete this.data.processed.scotia_matches;
+                }
 
-                await window.SysUI.alert(`Transacciones guardadas: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre Maestro Exitoso`, "success");
+                // Guardar la RAM limpia como el nuevo borrador maestro
+                await this.saveDraftToLocal(false);
                 
-                window.ConciliacionLogic.resetState();
-                window.loadView('conciliacion', false);
-            } else {
-                throw new Error(data.error || "Error desconocido devuelto por el servidor.");
+                // INYECTAR PASE VIP: Dile a la próxima carga que NO pregunte
+                sessionStorage.setItem('iri_silent_restore', 'true');
             }
+
+            // 9. LIMPIAR PANTALLA Y RECARGAR
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.classList.add('hidden'), 300);
+
+            await window.SysUI.alert(`Transacciones guardadas: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre Exitoso`, "success");
+            
+            // Forzar una recarga total y limpia de la SPA
+            window.ConciliacionLogic.resetState();
+            window.loadView('conciliacion', false);
+
         } catch (error) {
             clearInterval(progressInterval);
             loader.classList.add('opacity-0');
             setTimeout(() => loader.classList.add('hidden'), 300);
-            
-            console.error(error);
-            window.SysUI.alert("Fallo al guardar:\n\n" + error.message, "Error Crítico de Conexión", "error");
+            window.SysUI.alert("Fallo al guardar:\n\n" + error.message, "Error Crítico", "error");
+            this.startAutoSave(); 
         }
     },
 
