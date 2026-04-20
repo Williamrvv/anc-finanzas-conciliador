@@ -1,5 +1,5 @@
 <?php
-// 1. BLINDAJE CONTRA HTML SUCIO (Evita el error de Syntax JSON)
+// BLINDAJE CONTRA HTML SUCIO
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
@@ -19,7 +19,6 @@ $data = json_decode($inputJSON, true);
 
 if (!$data || empty($data['transacciones'])) {
     http_response_code(400);
-    // Si PHP se quedó sin memoria o el POST superó el límite, json_last_error_msg nos lo dirá
     echo json_encode(['success' => false, 'error' => 'Payload vacío o JSON inválido: ' . json_last_error_msg()]);
     exit;
 }
@@ -48,7 +47,9 @@ try {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, NUMERO_AFILIADO, NOMBRECOMERCIO, FECHA_TRANSACCION, FECHA_CIERRE_DATAFONO, FECHA_PAGO, NUMERO_DE_TARJETA, AUTORIZACION, TERMINAL, MONTO_VENTA, COMISION, RETENCION_VENTAS, RETENCION_RENTA, MONTONETO, NUMERO_LIQUIDACION, NUMERO_CUENTA, TIPO_CAMBIO, AJUSTE_COMISION_INTERNACIONAL, TIPO_TARJETA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, Fuente, Fecha_Pago, Moneda, Transaccion, Cedula, Razon_Social, MerID, Nombre, Fecha_Lote_Ajuste, Numero_Lote_Ajuste, Terminal, Numero_Pago, Numero_Autorizacion, Numero_Tarjeta, Monto_Orig, Monto_Bruto, Monto_Comision_Total, Porc_Comision_Total, Monto_Comision_Int, Porc_Comision_Int, Monto_Retencion_IVA, Porc_Retencion_IVA, Monto_Retencion_ISR, Monto_Neto, Estatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    
+    // TABLA SCOTIA - EXACTAMENTE 25 COLUMNAS (Sin Cedula)
+    $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, Fuente, Fecha_Pago, Moneda, Transaccion, Razon_Social, MerID, Nombre, Fecha_Lote_Ajuste, Numero_Lote_Ajuste, Terminal, Numero_Pago, Numero_Autorizacion, Numero_Tarjeta, Monto_Orig, Monto_Bruto, Monto_Comision_Total, Porc_Comision_Total, Monto_Comision_Int, Porc_Comision_Int, Monto_Retencion_IVA, Porc_Retencion_IVA, Monto_Retencion_ISR, Monto_Neto, Estatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
     $stmtPagadoBAC = $pdo->prepare("INSERT INTO Tbl_Pagado_BAC (IdTransaccion, Fecha, Referencia, Codigo, Descripcion, Debitos, Creditos, Balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     $stmtPagadoScotia = $pdo->prepare("INSERT INTO Tbl_Pagado_Scotia (IdTransaccion, Numero_Referencia, Fecha_Movimiento, Descripcion, Monto, Saldo, Credito_Debito) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -62,25 +63,24 @@ try {
         $bruto = floatval($t['MontoBruto'] ?? 0);
         $neto  = floatval($t['MontoNeto'] ?? 0);
 
-        if (!empty($t['SourceHash'])) {
-            $hashUnico = $t['SourceHash']; 
-        } else {
-            // Leer el Súper Hash construido en JS con sus 11 columnas
-            $hashStr = $t['HashString'] ?? "FALLBACK|" . uniqid();
-            $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
+        $hashStr = $t['HashString'] ?? "FALLBACK|" . uniqid();
+        $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
+
+        // Si JS nos dice que esto es un saldo que ya sacó de la BD, lo forzamos a UPDATE directo
+        if (!empty($t['IsFromDB'])) {
+            $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idTrans]);
+            $filasAfectadas++;
+            continue; // Saltamos a la siguiente transacción
         }
 
         $stmtCheck->execute([$hashUnico]);
         $idExistente = $stmtCheck->fetchColumn();
 
         if ($idExistente) {
-            // LÓGICA DE SEGURIDAD: 
-            // Si el IdExistente (Ej: det_89ab) NO es igual al IdTransaccion que envía el Front (Ej: det_xyz1), 
-            // y no es un ajuste manual, significa que el usuario intentó subir una fila idéntica pero nueva.
+            // LÓGICA DE SEGURIDAD (ANTI-DUPLICADOS COLADOS DESDE EXCEL)
             if ($idExistente !== $idTrans && ($t['Origen'] ?? '') !== 'AJUSTE') {
-                throw new \Exception("Bloqueo de Seguridad: Se intentó procesar una transacción duplicada (Hash Criptográfico ya existe en BD). Revise los archivos cargados.");
+                throw new \Exception("Bloqueo de Seguridad: Se intentó procesar un archivo con transacciones duplicadas (El Hash Criptográfico ya existe en BD).");
             } else {
-                // Es un Saldo Histórico arrastrado legalmente. Actualizamos su estado y cruce.
                 $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
             }
         } else {
@@ -101,9 +101,10 @@ try {
             } 
             else if (($t['Banco'] ?? '') === 'SCOTIA' && ($t['Origen'] ?? '') !== 'PAGADO') {
                 $s = $t['RawScotia'] ?? [];
+                // EXACTAMENTE 25 PARÁMETROS EN EL EXECUTE
                 $stmtScotia->execute([
                     $idTrans, $s['Fuente'] ?? null, $s['Fecha_Pago'] ?? null, $s['Moneda'] ?? null, $s['Transaccion'] ?? null,
-                    $s['Cedula'] ?? null, $s['Razon_Social'] ?? null, $s['MerID'] ?? null, $s['Nombre'] ?? null,
+                    $s['Razon_Social'] ?? null, $s['MerID'] ?? null, $s['Nombre'] ?? null,
                     $s['Fecha_Lote_Ajuste'] ?? null, $s['Numero_Lote_Ajuste'] ?? null, $s['Terminal'] ?? null, $s['Numero_Pago'] ?? null,
                     $s['Numero_Autorizacion'] ?? null, $s['Numero_Tarjeta'] ?? null, $s['Monto_Orig'] ?? 0, $s['Monto_Bruto'] ?? 0,
                     $s['Monto_Comision_Total'] ?? 0, $s['Porc_Comision_Total'] ?? 0, $s['Monto_Comision_Int'] ?? 0, $s['Porc_Comision_Int'] ?? 0,
@@ -129,7 +130,7 @@ try {
     $pdo->commit();
     echo json_encode(['success' => true, 'filas_insertadas' => $filasAfectadas, 'id_cierre' => $idCierre]);
 
-} catch (\Throwable $e) { // ATRAPA ABSOLUTAMENTE TODO, INCLUSO ERRORES FATALES PHP
+} catch (\Throwable $e) { 
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Error Crítico del Servidor: ' . $e->getMessage()]);

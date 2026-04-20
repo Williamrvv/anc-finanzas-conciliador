@@ -194,9 +194,10 @@ window.BACLogic = {
         });
 
         // 3. ÍNDICES ACTUALES
-        const iCodigo = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('código'));
+        const iCodigo = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('código') || String(h).toLowerCase().includes('codigo'));
         const iDesc = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('descripci'));
-        const iCredito = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('crédito'));
+        const iCredito = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('crédito') || String(h).toLowerCase().includes('credito'));
+        const iDebito = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('débito') || String(h).toLowerCase().includes('debito'));
         const iFecha = currentHeaders.findIndex(h => h && String(h).toLowerCase().includes('fecha'));
 
         const missing = [];
@@ -220,10 +221,15 @@ window.BACLogic = {
             const firstCell = String(row[0] || '').toLowerCase();
             if(firstCell.includes('total') || firstCell.includes('saldo final') || firstCell.includes('resumen')) break;
 
-            const montoRaw = row[iCredito];
-            let m = 0;
-            if(typeof montoRaw === 'number') m = montoRaw;
-            else if(typeof montoRaw === 'string') m = parseFloat(montoRaw.replace(/\s/g,'').replace(',','.')) || 0;
+            const parseMoney = (raw) => {
+                if (typeof raw === 'number') return raw;
+                if (typeof raw === 'string') return parseFloat(raw.replace(/\s/g,'').replace(',','.')) || 0;
+                return 0;
+            };
+
+            const m = parseMoney(row[iCredito]);
+            const mDebito = iDebito !== -1 ? parseMoney(row[iDebito]) : 0;
+            const codValue = iCodigo !== -1 ? String(row[iCodigo] || '').trim() : '';
 
             const desc = String(row[iDesc] || '').trim();   
               
@@ -247,7 +253,9 @@ window.BACLogic = {
                 _desc: desc,
                 _extractedId: extractedID, 
                 _liqRef: liqRef, 
-                _monto: m,
+                _monto: m,               // Créditos (Se suma)
+                _debito: mDebito,        // Débitos
+                _codigo: codValue,       // Código
                 _fecha: iFecha !== -1 ? row[iFecha] : "", 
                 _enabled: isAFI, 
                 _sourceFile: filename,

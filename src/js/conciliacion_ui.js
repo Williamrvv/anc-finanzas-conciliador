@@ -185,34 +185,23 @@ window.ConciliacionLogic = {
         const draftObj = await window.LocalDB.get('conciliacion_draft');
         
         if (draftObj) {
-            // VERIFICAR PASE VIP (Guardado Parcial Reciente)
-            const silentRestore = sessionStorage.getItem('iri_silent_restore');
+            // Flujo Normal: Preguntar al usuario si desea continuar el borrador
+            const choice = await window.SysUI.confirm(
+                "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
+                "Borrador Encontrado", 
+                "info"
+            );
             
-            if (silentRestore === 'true') {
-                // Quemar el pase para que no aplique en futuras visitas
-                sessionStorage.removeItem('iri_silent_restore');
-                console.log("🤫 Pase VIP activado: Restaurando borrador silenciosamente.");
+            if (choice) {
                 this.restoreDraftFromLocal(draftObj);
-            } 
-            else {
-                // Flujo Normal: Preguntar al usuario
-                const choice = await window.SysUI.confirm(
-                    "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
-                    "Borrador Encontrado", 
-                    "info"
-                );
-                
-                if (choice) {
-                    this.restoreDraftFromLocal(draftObj);
-                } else {
-                    await window.LocalDB.delete('conciliacion_draft');
-                    this.loadPendientes(); 
-                }
+            } else {
+                await window.LocalDB.delete('conciliacion_draft');
             }
-        } else {
-            // Flujo Normal de Primer Arranque del Día: Traer saldos arrastrados de la BD
-            this.loadPendientes();
-        }
+        } 
+        
+        // ¡CRÍTICO!: Siempre ejecutamos esto al iniciar. Así traemos las excepciones de la BD
+        // independientemente de si restauramos un borrador o no.
+        this.loadPendientes();
 
         // INICIAR RELOJ DE AUTO-GUARDADO
         this.startAutoSave();
@@ -237,18 +226,56 @@ window.ConciliacionLogic = {
             this._autoSaveInterval = null;
         }
 
+        // 1. LIMPIEZA DE RAM (Variables)
         this.data = {
             detalle: [], pagado: [], scotia_detalle: [], scotia_pagado: [],
             files: { bac_detalle: [], bac_pagado: [], scotia_detalle: [], scotia_pagado: [] },
             headers: {}, processed: {}
         };
-        // Destruir las instancias de los grids para forzar su re-creación
         this.grids = { bac: null, scotia: null, bac_audit: null, scotia_audit: null, bac_manual: null, bac_deferred: null };
         
-        // Reset Variables Locales de Módulos
         if (this.manualMatches) this.manualMatches = [];
         if (this.manualMatchesScotia) this.manualMatchesScotia = [];
         if (this.deferredRows) this.deferredRows = { det: [], pag: [] };
+
+        // 2. LIMPIEZA DE DOM (Destrucción visual de las tablas e inputs)
+        const domGrids = [
+            'table-result-bac', 'table-exceptions-bac', 'table-deferred-bac', 'table-manual-bac',
+            'table-result-scotia', 'table-exceptions-scotia',
+            'bac-summary-container', 'scotia-summary-container'
+        ];
+        domGrids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '';
+        });
+
+        // 3. LIMPIEZA DE TARJETAS Y DROPZONES
+        const drops = ['drop-bac-detalle', 'drop-bac-pagado', 'drop-scotia-detalle', 'drop-scotia-pagado'];
+        drops.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.remove('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                el.classList.add('border-slate-300', 'bg-white', 'dark:bg-slate-800');
+            }
+        });
+
+        const cards = ['card-bac-detalle', 'card-bac-pagado', 'card-scotia-detalle', 'card-scotia-pagado', 'audit-bac', 'audit-scotia', 'audit-manual-bac', 'audit-deferred-bac'];
+        cards.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.classList.add('hidden');
+        });
+        
+        const statusIds = ['status-bac-detalle', 'status-bac-pagado', 'status-scotia-detalle', 'status-scotia-pagado'];
+        statusIds.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) { el.innerHTML = ''; el.classList.add('hidden'); }
+        });
+
+        const totals = ['sum-depositos', 'sc-total-pagado'];
+        totals.forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.innerText = '0';
+        });
     },
 
     hasUnsavedData: function() {
@@ -412,7 +439,7 @@ window.ConciliacionLogic = {
             const defH = {
                 bacDet: ["NUMERO_AFILIADO", "NOMBRECOMERCIO", "FECHA_TRANSACCION", "FECHA_CIERRE_DATAFONO", "FECHA_PAGO", "NUMERO_DE_TARJETA", "AUTORIZACION", "TERMINAL", "MONTO_VENTA", "COMISION", "RETENCION_VENTAS", "RETENCION_RENTA", "MONTONETO", "NUMERO_LIQUIDACION", "NUMERO_CUENTA", "TIPO_CAMBIO", "AJUSTE_COMISION_INTERNACIONAL", "TIPO_TARJETA"],
                 bacPag: ["Fecha", "Referencia", "Código", "Descripción", "Débitos", "Créditos", "Balance"],
-                scoDet: ["Fuente", "Fecha Pago", "Moneda", "Transacción", "Cédula", "Razón Social", "MerID", "Nombre", "Fecha Lote/Ajuste", "Número Lote/Ajuste", "Terminal", "Número Pago", "Número Autorización", "Número Tarjeta", "Monto Orig", "Monto Bruto", "Monto Comisión Total", "% Comisión Total", "Comisión Int", "% Comisión Int", "Retención IVA", "% Retención IVA", "Retención IS", "Monto Neto", "Estatus"],
+                scoDet: ["Fuente", "Fecha Pago", "Moneda", "Transacción", "Razón Social", "MerID", "Nombre", "Fecha Lote/Ajuste", "Número Lote/Ajuste", "Terminal", "Número Pago", "Número Autorización", "Número Tarjeta", "Monto Orig", "Monto Bruto", "Monto Comisión Total", "% Comisión Total", "Comisión Int", "% Comisión Int", "Retención IVA", "% Retención IVA", "Retención IS", "Monto Neto", "Estatus"],
                 scoPag: ["Número Referencia", "Fecha Movimiento", "Descripción", "Monto", "Saldo", "Crédito/Débito"]
             };
             this.data.headers = this.data.headers || {};
@@ -424,7 +451,7 @@ window.ConciliacionLogic = {
             // Mapeadores DB -> Array Numérico Visual
             const mapBacDet = ["NUMERO_AFILIADO", "NOMBRECOMERCIO", "BAC_FTRANS", "FECHA_CIERRE_DATAFONO", "BAC_FPAGO", "NUMERO_DE_TARJETA", "BAC_AUTH", "BAC_TERM", "MONTO_VENTA", "BacComision", "RetencionVentas", "RetencionRenta", "BAC_NETO", "Liquidacion", "NUMERO_CUENTA", "TIPO_CAMBIO", "AjusteACI", "TIPO_TARJETA"];
             const mapBacPag = ["PBacF", "PBacRef", "PBacCod", "PBacDesc", "PBacDeb", "PBacCred", "PBacBal"];
-            const mapScoDet = ["Fuente", "ScoFPago", "Moneda", "Transaccion", "Cedula", "Razon_Social", "MerID", "Nombre", "Fecha_Lote_Ajuste", "Lote", "ScoTerm", "Numero_Pago", "ScoAuth", "ScoTarj", "Monto_Orig", "ScoBruto", "ScoCom", "Porc_Comision_Total", "Monto_Comision_Int", "Porc_Comision_Int", "RetencionIVA", "Porc_Retencion_IVA", "RetencionISR", "ScoNeto", "Estatus"];
+            const mapScoDet = ["Fuente", "ScoFPago", "Moneda", "Transaccion", "Razon_Social", "MerID", "Nombre", "Fecha_Lote_Ajuste", "Lote", "ScoTerm", "Numero_Pago", "ScoAuth", "ScoTarj", "Monto_Orig", "ScoBruto", "ScoCom", "Porc_Comision_Total", "Monto_Comision_Int", "Porc_Comision_Int", "RetencionIVA", "Porc_Retencion_IVA", "RetencionISR", "ScoNeto", "Estatus"];
             const mapScoPag = ["PScoRef", "PScoF", "PScoDesc", "PScoM", "PScoSal", "PScoCD"];
 
             const buildRow = (dbRow, mapDict) => {
@@ -443,8 +470,8 @@ window.ConciliacionLogic = {
                     _uid: r.IdTransaccion,
                     _fecha: fechaCr,
                     _enabled: true,
-                    _isHistorical: true, // Banderilla Clave
-                    _sourceHash: r._sourceHash,
+                    _isHistorical: true, 
+                    _isFromDB: true, // <--- Nueva Bandera de Protección
                     _rowClass: historyClass,
                     _sourceFile: "Arrastre BD " + (r.DiasAntiguedad ? `(${r.DiasAntiguedad} días)` : '(Pendiente)')
                 };
@@ -475,7 +502,7 @@ window.ConciliacionLogic = {
                     counts.scotia++;
                     // Normalización de Moneda
                     const dbCurr = String(r.Moneda || 'COLON').toUpperCase().includes('DOLAR') ? 'USD' : 'CRC';
-                    
+                        
                     if (r.Origen === 'DETALLADO' || r.Origen === 'AJUSTE') {
                         this.data.scotia_detalle.push({ ...baseObj, ...buildRow(r, mapScoDet),
                             _extractedId: r.Afiliado_MerID, // <--- CRÍTICO: Identidad para el cruce
@@ -1165,10 +1192,8 @@ window.ConciliacionLogic = {
                 const rec = this.formatTransactionRecord(r, banco, 'DETALLADO', estado, idMatch);
                 
                 // Si es un dato nuevo (no viene de BD), le aplicamos la indexación de gemelos
-                if (!rec.SourceHash) {
-                    payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
-                    rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
-                }
+                payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
+                rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
                 payload.transacciones.push(rec);
             });
 
@@ -1177,10 +1202,8 @@ window.ConciliacionLogic = {
                 processedUids.add(r._uid);
                 const rec = this.formatTransactionRecord(r, banco, 'PAGADO', estado, idMatch);
                 
-                if (!rec.SourceHash) {
-                    payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
-                    rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
-                }
+                payloadHashCounts[rec.HashString] = (payloadHashCounts[rec.HashString] || 0) + 1;
+                rec.HashString = rec.HashString + "-" + payloadHashCounts[rec.HashString];
                 payload.transacciones.push(rec);
             });
         };
@@ -1224,20 +1247,14 @@ window.ConciliacionLogic = {
         const isAjuste = r._isAdjustment === true;
         const origen = isAjuste ? 'AJUSTE' : defaultOrigen;
 
-        let authVal = r._auth;
-        if (defaultOrigen === 'PAGADO') authVal = r._liqRef || r.Lote || r._auth || null;
-
         let record = {
             IdTransaccion: r._uid, Banco: banco, Origen: origen, Estado: estado, IdMatch: idMatch,
-            // Prioridad al ID extraído por Regex para garantizar cruce
             Afiliado_MerID: (r._extractedId || r._id || '').toString().trim() || null, 
-            Autorizacion: authVal,
             MontoBruto: r._venta || r._bruto || r._monto || 0,
             MontoNeto: r._netoACI !== undefined ? r._netoACI : (r._neto !== undefined ? r._neto : (r._monto || 0)),
             ArchivoOrigen: r._sourceFile || 'Sistema Local',
             TipoAjuste: r._adjType || null, Justificacion: r._adjReason || r._manualReason || null, EvidenciaB64: r._adjEvidence || null,
-            Tarjeta: r._tarjeta || null,
-            SourceHash: r._sourceHash || null // PARCHE: Mantenemos el Hash original si viene de la BD
+            IsFromDB: r._isFromDB || false // <--- Lo empaquetamos
         };
 
         // BLINDAJE DE FECHAS MAESTRAS
@@ -1257,7 +1274,7 @@ window.ConciliacionLogic = {
             } else record.FechaTransaccion = null;
         } else record.FechaTransaccion = null;
 
-        // --- EXTRACCIÓN MASIVA 1 A 1 PARA LA BASE DE DATOS ---
+        // EXTRACCIÓN MASIVA 1 A 1
         const getV = (headerName, headersArr) => {
             if (!headersArr) return null;
             const idx = headersArr.findIndex(h => h && h.toLowerCase().includes(headerName.toLowerCase()));
@@ -1272,13 +1289,8 @@ window.ConciliacionLogic = {
             return parseFloat(str) || 0;
         };
 
-        // 1. Inicializar contenedores para evitar errores de undefined
-        record.RawBAC = null;
-        record.RawScotia = null;
-        record.RawPagadoBAC = null;
-        record.RawPagadoScotia = null;
+        record.RawBAC = null; record.RawScotia = null; record.RawPagadoBAC = null; record.RawPagadoScotia = null;
 
-        // 2. Mapeo de Datos Crudos según Banco y Origen
         if (banco === 'BAC' && origen !== 'PAGADO') {
             const h = this.data.headers.detalle || [];
             record.RawBAC = {
@@ -1305,53 +1317,94 @@ window.ConciliacionLogic = {
         else if (banco === 'SCOTIA' && origen !== 'PAGADO') {
             const h = this.data.headers.scotia_detalle || [];
             record.RawScotia = {
+                Fuente: getV('Fuente', h),
+                Fecha_Pago: getV('Fecha Pago', h) || r._fecha,
+                Moneda: getV('Moneda', h),
+                Transaccion: getV('Transacci', h),
+                Razon_Social: getV('Razón', h) || getV('Razon', h),
+                MerID: getV('MerID', h) || r._extractedId || r._id,
                 Nombre: getV('Nombre', h) || r._desc,
-                Razon_Social: getV('Razon', h),
+                Fecha_Lote_Ajuste: getV('Fecha Lote', h),
+                Numero_Lote_Ajuste: getV('Número Lote', h) || getV('Numero Lote', h) || r._liq,
                 Terminal: getV('Terminal', h),
-                Numero_Lote_Ajuste: getV('Lote', h) || r._liq,
-                Numero_Pago: getV('Pago', h)
+                Numero_Pago: getV('Número Pago', h) || getV('Numero Pago', h) || getV('Pago', h),
+                Numero_Autorizacion: getV('Autoriza', h) || r._auth,
+                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta,
+                Monto_Orig: cleanN(getV('Monto Orig', h)),
+                Monto_Bruto: cleanN(getV('Monto Bruto', h) || r._bruto),
+                Monto_Comision_Total: cleanN(getV('Monto Comisión Total', h) || getV('Monto Comision Total', h) || r._comision),
+                Porc_Comision_Total: cleanN(getV('% Comisión Total', h) || getV('% Comision Total', h)),
+                Monto_Comision_Int: cleanN(getV('Comisión Int', h) || getV('Comision Int', h)),
+                Porc_Comision_Int: cleanN(getV('% Comisión Int', h) || getV('% Comision Int', h)),
+                Monto_Retencion_IVA: cleanN(getV('Retención IVA', h) || getV('Retencion IVA', h) || r._iva),
+                Porc_Retencion_IVA: cleanN(getV('% Retención IVA', h) || getV('% Retencion IVA', h)),
+                Monto_Retencion_ISR: cleanN(getV('Retención IS', h) || getV('Retencion IS', h) || r._isr),
+                Monto_Neto: cleanN(getV('Monto Neto', h) || r._neto),
+                Estatus: getV('Estatus', h)
             };
         }
         else if (banco === 'BAC' && origen === 'PAGADO') {
             const h = this.data.headers.pagado || [];
             record.RawPagadoBAC = {
+                Fecha: getV('Fecha', h) || r._fecha,
                 Descripcion: getV('Descripci', h) || r._desc,
                 Referencia: getV('Referencia', h) || r._liqRef,
-                Codigo: getV('Codigo', h),
-                Balance: cleanN(getV('Balance', h) || r._monto)
+                Codigo: getV('Código', h) || getV('Codigo', h) || r._codigo, 
+                Debitos: cleanN(getV('Débito', h) || getV('Debito', h)) || cleanN(r._debito), 
+                Creditos: cleanN(r._monto), 
+                Balance: cleanN(getV('Saldo', h) || getV('Balance', h))
             };
         }
         else if (banco === 'SCOTIA' && origen === 'PAGADO') {
             const h = this.data.headers.scotia_pagado || [];
             record.RawPagadoScotia = {
-                Descripcion: getV('Descripci', h) || r._desc,
                 Numero_Referencia: getV('Referencia', h),
-                Saldo: cleanN(getV('Saldo', h))
+                Fecha_Movimiento: getV('Fecha', h) || r._fecha,
+                Descripcion: getV('Descripci', h) || r._desc,
+                Monto: cleanN(getV('Monto', h)) || cleanN(r._monto),
+                Saldo: cleanN(getV('Saldo', h)),
+                Credito_Debito: getV('Crédito', h) || getV('Credito', h) || getV('Débito', h) || getV('Debito', h) || getV('Tipo', h)
             };
         }
 
-        // 3. Creación del Súper Hash (Lógica Segura)
-        let comercio = '', term = '', liq = '', saldo = '';
-        const rb = record.RawBAC || {};
-        const rs = record.RawScotia || {};
-        const pb = record.RawPagadoBAC || {};
-        const ps = record.RawPagadoScotia || {};
+        // --- ASIGNACIÓN FUERTE DE AUTORIZACIÓN Y TARJETA ---
+        let auth = r._auth || null;
+        let tarj = r._tarjeta || null;
 
-        if (banco === 'BAC' && origen !== 'PAGADO') {
-            comercio = rb.NOMBRECOMERCIO || ''; term = rb.TERMINAL || ''; liq = rb.NUMERO_LIQUIDACION || '';
-        } else if (banco === 'SCOTIA' && origen !== 'PAGADO') {
-            comercio = rs.Nombre || rs.Razon_Social || ''; term = rs.Terminal || ''; liq = rs.Numero_Lote_Ajuste || rs.Numero_Pago || '';
-        } else if (banco === 'BAC' && origen === 'PAGADO') {
-            comercio = pb.Descripcion || ''; liq = pb.Referencia || pb.Codigo || ''; saldo = pb.Balance || '';
-        } else if (banco === 'SCOTIA' && origen === 'PAGADO') {
-            comercio = ps.Descripcion || ''; liq = ps.Numero_Referencia || ''; saldo = ps.Saldo || '';
+        if (record.RawBAC) {
+            auth = record.RawBAC.AUTORIZACION || auth;
+            tarj = record.RawBAC.NUMERO_DE_TARJETA || tarj;
+        } else if (record.RawScotia) {
+            auth = record.RawScotia.Numero_Autorizacion || auth;
+            tarj = record.RawScotia.Numero_Tarjeta || tarj;
+        } else if (record.RawPagadoBAC) {
+            auth = record.RawPagadoBAC.Referencia || r._liqRef || auth;
+        } else if (record.RawPagadoScotia) {
+            auth = record.RawPagadoScotia.Numero_Referencia || auth;
         }
 
-        const cStr = (str) => String(str || '').trim().toUpperCase();
-        record.HashString = `${record.Banco}|${record.Origen}|${record.FechaTransaccion || ''}|${cStr(comercio)}|${cStr(record.Afiliado_MerID)}|${cStr(term)}|${cStr(record.Autorizacion)}|${cStr(record.Tarjeta)}|${cStr(liq)}|${record.MontoBruto}|${record.MontoNeto}|${saldo}`;
+        // Limpiar guiones o espacios de la tarjeta (Ej: 4532********1234)
+        record.Autorizacion = auth ? String(auth).trim() : null;
+        record.Tarjeta = tarj ? String(tarj).replace(/[\s-]/g, '').trim() : null;
+
+        // CREACIÓN DEL SÚPER HASH BASADO EN DATOS ESTRICTOS
+        let comercio = '', term = '', liq = '', saldo = '';
+        
+        if (record.RawBAC) {
+            comercio = record.RawBAC.NOMBRECOMERCIO || ''; term = record.RawBAC.TERMINAL || ''; liq = record.RawBAC.NUMERO_LIQUIDACION || '';
+        } else if (record.RawScotia) {
+            comercio = record.RawScotia.Nombre || record.RawScotia.Razon_Social || ''; term = record.RawScotia.Terminal || ''; liq = record.RawScotia.Numero_Lote_Ajuste || record.RawScotia.Numero_Pago || '';
+        } else if (record.RawPagadoBAC) {
+            comercio = record.RawPagadoBAC.Descripcion || ''; liq = record.RawPagadoBAC.Referencia || record.RawPagadoBAC.Codigo || ''; saldo = record.RawPagadoBAC.Balance || '';
+        } else if (record.RawPagadoScotia) {
+            comercio = record.RawPagadoScotia.Descripcion || ''; liq = record.RawPagadoScotia.Numero_Referencia || ''; saldo = record.RawPagadoScotia.Saldo || '';
+        }
+
+        const cStr = (str) => String(str).trim().toUpperCase();
+        record.HashString = `${record.Banco}|${record.Origen}|${record.FechaTransaccion || ''}|${cStr(comercio)}|${cStr(record.Afiliado_MerID || '')}|${cStr(term)}|${cStr(record.Autorizacion || '')}|${cStr(record.Tarjeta || '')}|${cStr(liq)}|${record.MontoBruto || 0}|${record.MontoNeto || 0}|${saldo}`;
 
         return record;
-    },  
+    },
   
     saveSnapshot: async function() {
         // 1. Apagar Auto-Save para evitar crear borradores zombis durante el proceso
@@ -1528,7 +1581,6 @@ window.ConciliacionLogic = {
             if (!data.success) throw new Error(data.error || "Error desconocido");
 
             // 8. PURGA ABSOLUTA Y CREACIÓN DE BORRADOR LIMPIO (SI APLICA)
-            // Si se guardó TODO, simplemente borramos el borrador y recargamos normal.
             if (saveBac && saveSco) {
                 await window.LocalDB.delete('conciliacion_draft');
             } 
@@ -1547,24 +1599,28 @@ window.ConciliacionLogic = {
                     this.manualMatchesScotia = [];
                     delete this.data.processed.scotia_matches;
                 }
-
-                // Guardar la RAM limpia como el nuevo borrador maestro
                 await this.saveDraftToLocal(false);
-                
-                // INYECTAR PASE VIP: Dile a la próxima carga que NO pregunte
-                sessionStorage.setItem('iri_silent_restore', 'true');
             }
-
-            // 9. LIMPIAR PANTALLA Y RECARGAR
+    
+            // 9. LIMPIAR PANTALLA
             loader.classList.add('opacity-0');
             setTimeout(() => loader.classList.add('hidden'), 300);
 
             await window.SysUI.alert(`Transacciones guardadas: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre Exitoso`, "success");
             
-            // Forzar una recarga total y limpia de la SPA
-            window.ConciliacionLogic.resetState();
-            window.loadView('conciliacion', false);
-
+            // 10. RECARGA SPA (SOFT RESET INTELIGENTE SIN F5)
+            this.resetState();
+            
+            // Si fue guardado parcial, extraemos silenciosamente lo que sobró (Sin preguntar)
+            if (!saveBac || !saveSco) {
+                const draftObj = await window.LocalDB.get('conciliacion_draft');
+                if (draftObj) this.restoreDraftFromLocal(draftObj);
+            }
+            
+            // Inyectar inmediatamente los pendientes recién guardados desde la BD
+            this.loadPendientes();
+            this.startAutoSave();
+    
         } catch (error) {
             clearInterval(progressInterval);
             loader.classList.add('opacity-0');
