@@ -167,9 +167,25 @@ try {
 
     // --- 4. ENVIAR CORREO PARALELO A SERVICIO AL CLIENTE (CS) ---
     if (!empty($todosLosCasosParaCS) && class_exists('Mailer')) {
-        $csEmail = 'william.valverde+SC@grupoanc.com';
         $dominioLocal = $_SERVER['HTTP_HOST'] ?? 'localhost';
         $csHtmlBody = "";
+        
+        // Extraer TODOS los correos de los usuarios activos con rol Servicio al Cliente
+        $stmtCS = $pdo->prepare("
+            SELECT U.Email 
+            FROM Tbl_Usuarios U
+            INNER JOIN Tbl_Roles R ON U.Id_Rol = R.Id_Rol
+            WHERE R.Nombre_Rol = 'servicio_cliente' AND U.Activo = 1
+        ");
+        $stmtCS->execute();
+        $listaCorreosCS = $stmtCS->fetchAll(PDO::FETCH_COLUMN);
+
+        // Si hay usuarios, los unimos por coma. Si no, usamos un Fallback.
+        if (count($listaCorreosCS) > 0) {
+            $csEmail = implode(',', $listaCorreosCS); // Genera: "correo1@grupoanc.com,correo2@grupoanc.com"
+        } else {
+            $csEmail = 'soporte.tsdiri@rentascorporativascr.com';
+        }
 
         foreach ($todosLosCasosParaCS as $c) {
             $r = $c['datos'];

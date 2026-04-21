@@ -1,5 +1,5 @@
 window.CierreCajasLogic = {
-    currentICD: null,
+    currentFacturacion: false, // Flag para saber si hay un lote de facturas abierto
     headerData: null,
     transacciones: [],
     pendientesData: [],
@@ -37,6 +37,21 @@ window.CierreCajasLogic = {
             
             if (json.success) {
                 this.pendientesData = json.data;
+                
+                // Pintar mis sucursales en el Home (Panel Central) si venimos de la carga inicial
+                if (!sucursalCode && json.mis_sucursales) {
+                    const contSucs = document.getElementById('home-sucursales-list');
+                    if (contSucs) {
+                        if (json.mis_sucursales.length > 0) {
+                            contSucs.innerHTML = json.mis_sucursales.map(s => 
+                                `<span class="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[10px] font-bold text-slate-600 dark:text-slate-300 shadow-sm whitespace-nowrap">🏢 ${s.CodigoSucursal} - ${s.NombreSucursal}</span>`
+                            ).join('');
+                        } else {
+                            contSucs.innerHTML = `<span class="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-1.5 rounded-full border border-red-200 dark:border-red-800">⚠️ No tiene sucursales asignadas en su perfil de usuario.</span>`;
+                        }
+                    }
+                }
+
                 if (sucursalCode) {
                     this.renderSucursalBandeja(json.data);
                 } else {
@@ -250,49 +265,73 @@ window.CierreCajasLogic = {
     // =====================================================================
     // LÓGICA DEL ESCÁNER Y CIERRE TSD
     // =====================================================================
-    searchICD: async function() {
-        const input = document.getElementById('cc-icd-input');
-        const icdValue = input.value.trim().toUpperCase();
-        if(!icdValue) return SysUI.alert("Por favor digite un número de ICD.", "Campo Vacío", "warning");
+    loadFacturacion: async function() {
+        this.resetView();
 
-        this.resetView(); // Limpiamos primero TODO
+        // UI Loading
+        document.getElementById('cc-search-section').classList.add('hidden');
         document.getElementById('cc-home-view').classList.add('hidden');
         document.getElementById('cc-loading').classList.remove('hidden');
+        document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            const res = await fetch(`api/get_icd_info.php?icd=${encodeURIComponent(icdValue)}`);
-            const json = await res.json();
-            document.getElementById('cc-loading').classList.add('hidden');
+            const res = await fetch(`api/get_facturacion_cc.php`);
+            const data = await res.json();
 
-            if (json.success) {
-                this.currentICD = icdValue;
-                this.headerData = json.header;
-                this.transacciones = json.details.map(t => ({ ...t, _selected: false, _matchTime: 0 }));
-                if(json.current_user) this.currentUser = json.current_user; 
-                
-                this.fillMetadata();
-                this.renderTransacciones();
-                
-                // Cargar la bandeja colaborativa enviando la sucursal del ICD
-                this.loadBandejaPendientes(this.headerData.LOC_CODE);
-                
-                document.getElementById('cc-workspace').classList.remove('hidden');
-                
-                setTimeout(() => {
-                    const inputAuth = document.getElementById('cc-scan-auth');
-                    if (inputAuth) inputAuth.focus({ preventScroll: true });
-                }, 100);
-            } else {
-                SysUI.alert(json.error, "No encontrado", "error");
-                document.getElementById('cc-home-view').classList.remove('hidden');
-                this.loadBandejaPendientes(); // Restaurar mi bandeja
-            }
-        } catch (e) {
-            console.error(e);
-            SysUI.alert("Error de red al consultar el ICD.", "Error", "error");
             document.getElementById('cc-loading').classList.add('hidden');
+            document.getElementById('cc-loading').classList.remove('flex');
+
+            if (!data.success) {
+                document.getElementById('cc-search-section').classList.remove('hidden');
+                document.getElementById('cc-home-view').classList.remove('hidden');
+                return SysUI.alert(data.error, "Atención", "warning");
+            }
+
+            if (data.transacciones.length === 0) {
+                document.getElementById('cc-search-section').classList.remove('hidden');
+                document.getElementById('cc-home-view').classList.remove('hidden');
+                return SysUI.alert("No hay nuevas facturas generadas en TSD desde su último corte de caja para las sucursales asignadas.", "Todo al día 🎉", "success");
+            }
+
+            this.currentFacturacion = true;
+            
+            // Mantenemos compatibilidad con el código viejo inyectando datos compuestos
+            const sucursalesConcat = data.metadatos.map(m => m.sucursal).join(', ');
+            
+            this.headerData = {
+                sucursalesRaw: sucursalesConcat,
+                icdsRaw: data.icds_info,
+                LOC_CODE: sucursalesConcat, // Alias para no romper tu executeSaveAndSend
+                Nombre_Sucursal: 'Múltiples',
+                Nombre_Usuario: 'Auto/Múltiples',
+                CreateDate: new Date().toISOString()
+            };
+            
+            // Pintar Metadatos
+            const listHtml = data.metadatos.map(m => `<div>🏢 ${m.sucursal} - ${m.nombre} <span class="text-slate-400 font-normal ml-2">Desde: ${m.desde}</span></div>`).join('');
+            document.getElementById('meta-sucursales-list').innerHTML = listHtml;
+            document.getElementById('meta-icd-list').innerText = data.icds_info || "Ninguno";
+
+            // Warning si hay ICDs abiertos
+            if (data.icds_abiertos && data.icds_abiertos.length > 0) {
+                const msg = `⚠️ Hay ICDs sin cerrar en TSD:\n\n${data.icds_abiertos.join(', ')}\n\nPuede continuar conciliando el dinero, pero el sistema NO LE PERMITIRÁ GUARDAR EL CIERRE hasta que vaya a TSD y cierre estos ICDs oficialmente.`;
+                await SysUI.alert(msg, "Alerta de Cierre TSD", "warning");
+            }
+
+            // Adaptamos _selected o matched dependiendo de cómo lo use tu renderTransacciones
+            this.transacciones = data.transacciones.map(t => ({...t, matched: false, _selected: false}));
+            this.renderTransacciones();
+            
+            document.getElementById('cc-workspace').classList.remove('hidden');
+            setTimeout(() => document.getElementById('cc-scan-auth').focus(), 100);
+
+        } catch (err) {
+            console.error("Fallo interno en JS:", err); // <--- ESTO NOS DIRÁ LA LÍNEA EXACTA SI FALLA
+            document.getElementById('cc-loading').classList.add('hidden');
+            document.getElementById('cc-loading').classList.remove('flex');
+            document.getElementById('cc-search-section').classList.remove('hidden');
             document.getElementById('cc-home-view').classList.remove('hidden');
-            this.loadBandejaPendientes();
+            SysUI.alert("Error interno al procesar los datos de facturación.", "Error de UI", "error");
         }
     },
 
@@ -387,15 +426,39 @@ window.CierreCajasLogic = {
         list.innerHTML = '';
         if (this.transacciones.length === 0) return;
 
+        // 1. Agrupar la data por Sucursal primero, pero empujar los _selected al inicio global
         const sorted = [...this.transacciones].map((t, i) => ({...t, originalIndex: i}))
             .sort((a, b) => {
+                // Prioridad 1: Los seleccionados van arriba de todo
                 if (a._selected && !b._selected) return -1;
                 if (!a._selected && b._selected) return 1;
                 if (a._selected && b._selected) return b._matchTime - a._matchTime;
-                return 0;
+                
+                // Prioridad 2: Si no están seleccionados, agrupar por Sucursal alfabéticamente
+                if (a.Sucursal < b.Sucursal) return -1;
+                if (a.Sucursal > b.Sucursal) return 1;
+                
+                // Prioridad 3: Ordenar por hora (más recientes abajo)
+                return new Date(a.Pay_Date) - new Date(b.Pay_Date);
             });
 
+        let currentSucursal = "";
+
         sorted.forEach((t, renderIndex) => {
+            // Inyectar Separador de Grupo (Solo si no está seleccionado, porque los seleccionados van en una pila global)
+            if (!t._selected && currentSucursal !== t.Sucursal) {
+                currentSucursal = t.Sucursal;
+                const headerDiv = document.createElement('div');
+                headerDiv.className = "col-span-full mt-6 mb-2 flex items-center";
+                headerDiv.innerHTML = `
+                    <div class="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 font-black text-[10px] uppercase tracking-widest px-3 py-1 rounded-r-lg border-l-4 border-indigo-500 shadow-sm">
+                        🏢 Bloque Sucursal: ${currentSucursal}
+                    </div>
+                    <div class="h-px bg-slate-200 dark:bg-slate-700 flex-grow ml-4"></div>
+                `;
+                list.appendChild(headerDiv);
+            }
+
             const div = document.createElement('div');
             const isSel = t._selected;
             const animClass = (isSel && renderIndex === 0) ? 'animate-fade-in-up' : '';
@@ -403,10 +466,19 @@ window.CierreCajasLogic = {
             div.className = `p-3 sm:p-4 rounded-xl border-2 transition-all shadow-sm flex flex-col sm:flex-row items-center gap-2 sm:gap-4 select-none ${animClass} 
                 ${isSel ? 'border-green-500 bg-green-50 dark:bg-green-900/20 opacity-100' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`;
             
+            // Lógica de Doble Ciego Híbrido: Si el monto es negativo, se muestra la verdad.
+            const montoCRC = parseFloat(t.Conversion || 0);
+            const montoUSD = parseFloat(t.Monto_Pago || 0);
+            const esNegativo = montoCRC < 0;
+            const esVisible = isSel || esNegativo; // Si es negativo O está seleccionado, lo mostramos
+
             const displayAuth = isSel ? (t.Numero_Autorizacion || 'SIN_AUT') : '••••••';
-            const displayMontoUSD = isSel ? `$${parseFloat(t.Monto_Pago || 0).toFixed(2)}` : '$••.•';
-            const displayMontoCRC = isSel ? `₡${parseFloat(t.Conversion || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits:2})}` : '₡••••.•';
+            const displayMontoUSD = esVisible ? `$${montoUSD.toFixed(2)}` : '$••.•';
+            const displayMontoCRC = esVisible ? `₡${montoCRC.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits:2})}` : '₡••••.•';
             
+            // Extraer la Hora del string "YYYY-MM-DD HH:MM:SS.MMM"
+            const horaPago = t.Pay_Date ? t.Pay_Date.split(' ')[1].substring(0, 5) : '--:--';
+
             div.innerHTML = `
                 <div class="shrink-0 self-start sm:self-center">
                     <div class="w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors ${isSel ? 'bg-green-500 border-green-500' : 'border-slate-300 dark:border-slate-600'}">
@@ -415,15 +487,19 @@ window.CierreCajasLogic = {
                 </div>
                 <div class="flex-grow flex flex-col sm:flex-row justify-between w-full gap-2">
                     <div>
-                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Contrato: ${t.Numero_Contrato}</div>
+                        <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">CTO: ${t.Numero_Contrato}</span>
+                            <span class="text-[9px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">🏢 ${t.Sucursal}</span>
+                            <span class="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">🕒 ${horaPago}</span>
+                        </div>
                         <div class="text-sm font-black ${isSel ? 'text-green-800 dark:text-green-300' : 'text-slate-800 dark:text-white'} leading-tight uppercase">${t.Nombre} ${t.Apellido}</div>
                         <div class="text-[11px] font-bold ${isSel ? 'text-green-600' : 'text-indigo-600 dark:text-indigo-400'} mt-1 font-mono">
                             AUT: <span class="${isSel ? '' : 'tracking-widest opacity-60'}">${displayAuth}</span> <span class="text-slate-400 font-sans font-normal mx-1">•</span> ${t.Tipo_Tarjeta}
                         </div>
                     </div>
-                    <div class="text-left sm:text-right">
-                        <div class="text-lg font-black font-mono ${isSel ? 'text-green-700 dark:text-green-400' : 'text-slate-700 dark:text-slate-300'}">${displayMontoUSD}</div>
-                        <div class="text-[10px] text-slate-500 font-bold ${isSel ? '' : 'tracking-widest opacity-60'}">${displayMontoCRC}</div>
+                    <div class="text-left sm:text-right mt-2 sm:mt-0">
+                        <div class="text-lg font-black font-mono ${isSel ? 'text-green-700 dark:text-green-400' : (esNegativo ? 'text-red-500' : 'text-slate-700 dark:text-slate-300')}">${displayMontoUSD}</div>
+                        <div class="text-[10px] font-bold ${isSel ? 'text-slate-500' : (esNegativo ? 'text-red-400' : 'text-slate-500 tracking-widest opacity-60')}">${displayMontoCRC}</div>
                     </div>
                 </div>`;
             list.appendChild(div);
@@ -450,7 +526,7 @@ window.CierreCajasLogic = {
     },
 
     resetView: function() {
-        this.currentICD = null;
+        this.currentFacturacion = false; // Apaga la bandera de cierre activo
         this.headerData = null;
         this.transacciones = [];
         
@@ -467,9 +543,6 @@ window.CierreCajasLogic = {
         const scannerMonto = document.getElementById('cc-scan-monto');
         if(scannerAuth) scannerAuth.value = '';
         if(scannerMonto) scannerMonto.value = '';
-        
-        const icdInput = document.getElementById('cc-icd-input');
-        if(icdInput) icdInput.value = '';
         
         document.getElementById('cc-total-count').innerText = '0';
         document.getElementById('cc-sel-count').innerText = '0';
@@ -490,10 +563,11 @@ window.CierreCajasLogic = {
     saveCierre: async function() {
         const selectedCount = this.transacciones.filter(t => t._selected).length;
         const unselected = this.transacciones.filter(t => !t._selected);
+        const nombresSucs = this.headerData.sucursalesRaw;
         
         let confirmMsg = "";
         if (unselected.length > 0) {
-            confirmMsg = `Resumen del Cierre (ICD ${this.currentICD}):\n\n` +
+            confirmMsg = `Resumen del Cierre [${nombresSucs}]:\n\n` +
                          `✅ Conciliados: ${selectedCount}\n` +
                          `⚠️ Pendientes (Sin Match): ${unselected.length}\n\n` +
                          `Los casos pendientes quedarán guardados en su "Bandeja de Pendientes" para que pueda justificarlos y enviarlos a la jefatura posteriormente.\n\n¿Desea registrar el cierre?`;
@@ -502,7 +576,7 @@ window.CierreCajasLogic = {
             if (!confirm) return;
             this.executeSaveAndSend(true); // true = crea casos borrador
         } else {
-            confirmMsg = `Resumen del Cierre (ICD ${this.currentICD}):\n\n` +
+            confirmMsg = `Resumen del Cierre [${nombresSucs}]:\n\n` +
                          `✅ Conciliados y Listos: ${selectedCount}\n\n` +
                          `Todas las transacciones cuadraron perfectamente. ¿Desea registrar el cierre definitivo?`;
             
@@ -520,10 +594,14 @@ window.CierreCajasLogic = {
         const totalUSD = selected.reduce((sum, t) => sum + parseFloat(t.Monto_Pago || 0), 0);
 
         const payload = {
-            icd: this.currentICD,
-            sucursal: `${this.headerData.LOC_CODE} - ${this.headerData.Nombre_Sucursal}`,
-            usuario_tsd: this.headerData.Nombre_Usuario,
-            fecha_tsd: this.headerData.CreateDate,
+            // Variables de la nueva arquitectura (Ya no hay 1 solo ICD ni 1 sola sucursal)
+            icds_involucrados: this.headerData.icdsRaw || '',
+            sucursales: this.headerData.sucursalesRaw || '',
+            
+            // Estos campos ya no aplican al modelo de corte por hora, los mandamos null para no romper el backend
+            usuario_tsd: 'Múltiples AR',
+            fecha_tsd: null, 
+            
             total_crc: totalCRC,
             total_usd: totalUSD,
             total_escaneadas: selected.length,
@@ -536,7 +614,8 @@ window.CierreCajasLogic = {
                 monto_usd: parseFloat(t.Monto_Pago || 0),
                 tc: parseFloat(t.Tipo_Cambio_Dia || 0),
                 monto_crc: parseFloat(t.Conversion || 0),
-                match_exitoso: t._selected ? 1 : 0
+                match_exitoso: t._selected ? 1 : 0,
+                fecha_pago: t.Pay_Date // <--- OBLIGATORIO para el nuevo cálculo de corte
             }))
         };
 
@@ -545,6 +624,8 @@ window.CierreCajasLogic = {
                 contrato: t.Numero_Contrato,
                 cliente: `${t.Nombre} ${t.Apellido}`.trim(),
                 monto_crc: parseFloat(t.Conversion || 0),
+                icd: t.ICD || "PENDIENTE TSD", // Enviamos el ICD original o "PENDIENTE TSD" si viene vacío
+                sucursal: t.Sucursal, // Enviamos la sucursal exacta donde falló
                 motivo: "" 
             }));
         }
@@ -563,7 +644,8 @@ window.CierreCajasLogic = {
             const data = await res.json();
 
             if (data.success) {
-                let msgExito = `El cierre de caja para el ICD ${this.currentICD} se guardó correctamente.\nFolio: #${data.id_cierre}`;
+                const nombreSucs = this.headerData.sucursalesRaw;
+                let msgExito = `El cierre de caja para las sucursales [${nombreSucs}] se guardó correctamente.\nFolio de Auditoría: #${data.id_cierre}`;
                 if (crearCasos) {
                     msgExito += `\n\n⚠️ Se crearon ${payload.casos_borrador.length} casos en "Borrador". Se han enviado a su Bandeja de Pendientes.`;
                 }
@@ -608,7 +690,7 @@ window.CierreCajasLogic = {
         const activeClass = "border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20".split(' ');
         const inactiveClass = "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300".split(' ');
 
-        // 1. Limpiar y Ocultar TODO
+        // 1. Limpiar y Ocultar TODO de forma segura
         tabs.forEach(t => {
             const btn = document.getElementById(`tab-${t}`);
             if (btn) {
@@ -618,7 +700,11 @@ window.CierreCajasLogic = {
             
             views[t].forEach(vId => {
                 const el = document.getElementById(vId);
-                if(el) el.classList.add('hidden');
+                // Asegurarse de que el elemento exista antes de tocar sus clases
+                if(el) {
+                    el.classList.add('hidden');
+                    el.classList.remove('flex'); // Limpiar flex si lo tuviera
+                }
             });
         });
 
@@ -629,23 +715,52 @@ window.CierreCajasLogic = {
             activeBtn.classList.add(...activeClass);
         }
 
-        // 3. Mostrar Vistas Correspondientes
+        // 3. Mostrar Vistas Correspondientes Seguras
         if (tab === 'workspace') {
-            document.getElementById('cc-search-section').classList.remove('hidden');
-            if (this.currentICD) {
-                document.getElementById('cc-workspace').classList.remove('hidden');
+            const searchSec = document.getElementById('cc-search-section');
+            if(searchSec) searchSec.classList.remove('hidden');
+            
+            if (this.currentFacturacion) {
+                const ws = document.getElementById('cc-workspace');
+                if(ws) ws.classList.remove('hidden');
             } else {
-                document.getElementById('cc-home-view').classList.remove('hidden');
+                const hv = document.getElementById('cc-home-view');
+                if(hv) hv.classList.remove('hidden');
             }
         } 
         else if (tab === 'history') {
-            document.getElementById('cc-history-view').classList.remove('hidden');
-            document.getElementById('cc-history-view').classList.add('flex');
+            const histView = document.getElementById('cc-history-view');
+            if(histView) {
+                histView.classList.remove('hidden');
+                histView.classList.add('flex');
+            }
             this.loadHistoryData();
         }
         else if (tab === 'audit') {
-            document.getElementById('cc-audit-view').classList.remove('hidden');
-            document.getElementById('cc-audit-view').classList.add('flex');
+            const auditView = document.getElementById('cc-audit-view');
+            if(auditView) {
+                auditView.classList.remove('hidden');
+                auditView.classList.add('flex');
+                
+                // Configurar fechas por defecto (Últimos 7 días) si están vacías
+                const inputDesde = document.getElementById('forense-desde');
+                const inputHasta = document.getElementById('forense-hasta');
+                if (!inputDesde.value) {
+                    const hoy = new Date();
+                    const hace7 = new Date(hoy);
+                    hace7.setDate(hoy.getDate() - 7);
+                    
+                    inputHasta.value = hoy.toISOString().split('T')[0];
+                    inputDesde.value = hace7.toISOString().split('T')[0];
+                    
+                    // Cargar datos automáticamente la primera vez
+                    this.loadForense();
+                }
+            } else {
+                // Si el div fue borrado accidentalmente del HTML, mostramos una alerta para que el DEV sepa qué falta.
+                console.error("Falta el contenedor <div id='cc-audit-view'> en cierre_cajas.php");
+                SysUI.alert("Error de Interfaz: El módulo de Auditoría no está disponible en este momento.", "Falta Vista", "error");
+            }
         }
     },
 
@@ -939,108 +1054,142 @@ window.CierreCajasLogic = {
     },
 
     // =====================================================================
-    // MÓDULO DE AUDITORÍA (ICD GLOBAL)
+    // MÓDULO HISTORIAL FACTURACIÓN FORENSE (SERVER-SIDE PAGINATION)
     // =====================================================================
     vgAudit: null,
+    forensePage: 1,
 
-    searchAuditICD: async function() {
-        const input = document.getElementById('audit-icd-input');
-        const icdValue = input.value.trim().toUpperCase();
-        if(!icdValue) return SysUI.alert("Por favor digite un número de ICD a auditar.", "Campo Vacío", "warning");
+    // Esta función se llama desde los botones de Buscar y desde Enter (resetea la paginación a 1)
+    resetAndLoadForense: function() {
+        this.forensePage = 1;
+        this.loadForense();
+    },
 
-        document.getElementById('audit-empty').classList.add('hidden');
-        document.getElementById('audit-content').classList.add('hidden');
+    loadForense: async function() {
+        const fDesde = document.getElementById('forense-desde').value;
+        const fHasta = document.getElementById('forense-hasta').value;
+        const fBuscar = document.getElementById('forense-buscar').value.trim();
+
+        if(!fDesde || !fHasta) return SysUI.alert("Debe seleccionar un rango de fechas válido.", "Filtros", "warning");
+
         document.getElementById('cc-loading').classList.remove('hidden');
         document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            const res = await fetch(`api/get_audit_icd_cc.php?icd=${encodeURIComponent(icdValue)}`);
+            const url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&page=${this.forensePage}`;
+            const res = await fetch(url);
             const json = await res.json();
             
             document.getElementById('cc-loading').classList.add('hidden');
             document.getElementById('cc-loading').classList.remove('flex');
 
-            if (!json.success) {
-                document.getElementById('audit-empty').classList.remove('hidden');
-                return SysUI.alert(json.error, "Auditoría", "warning");
-            }
+            if (!json.success) return SysUI.alert(json.error, "Error en Auditoría", "error");
 
-            // Llenar Metadatos
-            document.getElementById('ad-icd').innerText = json.header.ICD;
-            document.getElementById('ad-sucursal').innerText = json.header.Sucursal;
-            document.getElementById('ad-fecha-tsd').innerText = json.header.FechaTSD.split('.')[0];
-            
-            const badgeCierre = document.getElementById('ad-estado-cierre');
-            if (json.header.CerradoLocalmente) {
-                badgeCierre.className = "text-sm font-black flex items-center gap-1.5 text-green-600 dark:text-green-400";
-                badgeCierre.innerHTML = `<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg> CERRADO`;
-                badgeCierre.title = `Cerrado por: ${json.header.CerradoPor}`;
-            } else {
-                badgeCierre.className = "text-sm font-black flex items-center gap-1.5 text-amber-500";
-                badgeCierre.innerHTML = `⚠️ NO CERRADO AÚN`;
-                badgeCierre.title = "Este ICD aún no ha sido procesado en el Módulo de Trabajo.";
-            }
+            // 1. Actualizar KPIs
+            document.getElementById('kpi-tx').innerText = json.kpis.total_tx;
+            document.getElementById('kpi-crc').innerText = `₡${parseFloat(json.kpis.total_crc).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('kpi-usd').innerText = `$${parseFloat(json.kpis.total_usd).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('kpi-tickets').innerText = json.kpis.total_tickets;
 
-            // Preparar y Pintar Tabla
+            // 2. Formateadores para VanillaGrid
             const statusFormatter = (cell) => {
-                const val = cell.getValue();
-                let color = 'bg-slate-100 text-slate-500 dark:bg-slate-800 border border-slate-200 dark:border-slate-700';
+                const val = cell.getValue() || 'LIMPIO (MATCH)';
+                let color = 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:border-slate-700';
                 
-                if(val === 'MATCH EXACTO') color = 'bg-green-100 text-green-700 border border-green-200 dark:border-green-800';
-                if(val === 'NO REGISTRADO AÚN') color = 'bg-slate-100 text-slate-400 italic';
+                if(val === 'LIMPIO (MATCH)') color = 'bg-emerald-100 text-emerald-700 border border-emerald-200 dark:border-emerald-800';
                 if(val === 'NO_REPORTADO') color = 'bg-red-100 text-red-700 border border-red-200 dark:border-red-800';
                 if(val.includes('PENDIENTE')) color = 'bg-amber-100 text-amber-700 border border-amber-200 dark:border-amber-800';
                 if(val === 'RESUELTO') color = 'bg-blue-100 text-blue-700 border border-blue-200 dark:border-blue-800';
                 
-                return `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest ${color}">${val.replace(/_/g, ' ')}</span>`;
+                return `<span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest ${color}">${val.replace(/_/g, ' ')}</span>`;
             };
 
+            // 3. Definir Columnas
             const cols = [
-                { title: "Contrato", field: "Contrato" },
-                { title: "Cliente", field: "Cliente" },
-                { title: "Tarjeta", field: "Tarjeta" },
-                { title: "Monto", field: "MontoCRC", formatter: "money", hozAlign: "right", bottomCalc: "sum" },
-                { title: "Estado Actual", field: "Estado", formatter: statusFormatter },
-                { title: "Ticket #", field: "IdCaso", hozAlign: "center", formatter: (c) => c.getValue() ? `<span class="text-indigo-500 font-bold underline cursor-pointer">#${c.getValue()}</span>` : '-' }
+                { title: "Fecha", field: "FechaCierre" },
+                { title: "SUC", field: "Sucursal" },
+                { title: "Contrato", field: "Numero_Contrato" },
+                { title: "Cliente", field: "NombreCliente" },
+                { title: "AUT", field: "Numero_Autorizacion" },
+                { title: "Monto CRC", field: "MontoCRC", formatter: "money", hozAlign: "right" },
+                { title: "Cajero", field: "Cajero" },
+                { title: "Estado", field: "EstadoTicket", formatter: statusFormatter },
+                { title: "Ticket", field: "IdCaso", hozAlign: "center", formatter: (c) => c.getValue() ? `<span class="text-indigo-500 font-bold underline cursor-pointer">#${c.getValue()}</span>` : '-' }
             ];
 
-            this.vgAudit = new VanillaGrid('#audit-grid', json.transacciones, cols, {
-                onRowDblClick: (row) => {
-                    if (row.IdCaso) this.showTimeline(row.IdCaso);
-                    else SysUI.alert("Esta transacción no posee un Ticket (Caso) asociado porque hizo Match exacto o aún no ha sido registrada.", "Sin Historial", "info");
-                }
-            });
+            // 4. Renderizar Grid (Solo 50 filas por página)
+            if (this.vgAudit) {
+                this.vgAudit.updateData(json.transacciones);
+            } else {
+                this.vgAudit = new VanillaGrid('#forense-grid', json.transacciones, cols, {
+                    onRowDblClick: (row) => {
+                        if (row.IdCaso) this.showTimeline(row.IdCaso);
+                        else SysUI.alert("Esta transacción se concilió con éxito (Match Exacto) y no posee Ticket de error asociado.", "Transacción Limpia", "info");
+                    }
+                });
+            }
 
-            document.getElementById('audit-content').classList.remove('hidden');
-            document.getElementById('audit-content').classList.add('flex');
+            // 5. Control de Paginación
+            document.getElementById('forense-pagination').classList.remove('hidden');
+            document.getElementById('pag-forense-current').innerText = json.paginacion.pagina_actual;
+            document.getElementById('pag-forense-total').innerText = json.paginacion.total_paginas;
+            document.getElementById('pag-forense-registros').innerText = `${json.paginacion.total_registros} registros totales`;
+
+            document.getElementById('btn-forense-prev').disabled = (json.paginacion.pagina_actual <= 1);
+            document.getElementById('btn-forense-next').disabled = (json.paginacion.pagina_actual >= json.paginacion.total_paginas);
 
         } catch (e) {
-            console.error(e);
-            SysUI.alert("Error de red al auditar el ICD.", "Error", "error");
-            document.getElementById('audit-empty').classList.remove('hidden');
+            document.getElementById('cc-loading').classList.add('hidden');
+            document.getElementById('cc-loading').classList.remove('flex');
+            SysUI.alert("Error de red al consultar el explorador.", "Error", "error");
         }
+    },
+
+    changeForensePage: function(direction) {
+        this.forensePage += direction;
+        // Animación visual de carga en la tabla
+        document.getElementById('forense-grid').innerHTML = '<div class="flex justify-center py-20"><div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div></div>';
+        this.loadForense();
     }
 };
 
 // =========================================================================
-// HERRAMIENTA DE AUDITORÍA: REVELAR DATOS OCULTOS DEL ICD ACTUAL (F12)
-// Ejecutar en consola: window.revelarSecretosICD()
+// HERRAMIENTA DE AUDITORÍA: REVELAR DATOS OCULTOS DEL LOTE ACTUAL (F12)
+// Ejecutar en consola: window.rev() o window.rev('1234') o window.rev(50000)
 // =========================================================================
-window.rev = function() {
-    console.log("🕵️‍♂️ Buscando datos enmascarados en la RAM...");
+window.rev = function(busqueda = '') {
+    console.log("🕵️‍♂️ Consultando bóveda de RAM...");
     
-    // Verificamos si el módulo está abierto y tiene transacciones cargadas
     if (!window.CierreCajasLogic || !window.CierreCajasLogic.transacciones || window.CierreCajasLogic.transacciones.length === 0) {
-        console.warn("⚠️ No hay un ICD activo con transacciones cargadas en memoria.");
+        console.warn("⚠️ No hay transacciones cargadas en el módulo de trabajo.");
         return;
     }
 
-    const t = window.CierreCajasLogic.transacciones;
-    console.log(`✅ Mostrando ${t.length} transacciones originales del ICD: ${window.CierreCajasLogic.currentICD}`);
+    let t = window.CierreCajasLogic.transacciones;
+    
+    // Aplicamos filtro ninja si mandan un parámetro
+    if (busqueda !== '') {
+        const termino = String(busqueda).toLowerCase().trim();
+        t = t.filter(fila => {
+            const auth = (fila.Numero_Autorizacion || 'SIN_AUT').toLowerCase();
+            const cto = (fila.Numero_Contrato || '').toLowerCase();
+            const crc = Math.abs(parseFloat(fila.Conversion || 0)).toString();
+            const usd = Math.abs(parseFloat(fila.Monto_Pago || 0)).toString();
+            
+            // Busca coincidencias parciales en Auth, Contrato o Montos (ignorando el signo de los montos)
+            return auth.includes(termino) || cto.includes(termino) || crc.includes(termino) || usd.includes(termino);
+        });
 
-    // Mapeamos solo los campos que están ocultos por el "Doble Ciego" para que el analista pueda verlos en una tabla limpia
+        console.log(`🎯 Filtrando por: "${busqueda}"... Se encontraron ${t.length} coincidencias.`);
+    } else {
+        console.log(`✅ Mostrando todas las ${t.length} transacciones originales del lote actual.`);
+    }
+
+    if (t.length === 0) return;
+
+    // Mapeamos para la tabla visual
     const datosOcultos = t.map((fila, index) => ({
-        "# Fila": index + 1,
+        "Sucursal": fila.Sucursal,
         "Contrato": fila.Numero_Contrato,
         "Cliente": `${fila.Nombre} ${fila.Apellido}`.trim(),
         "Estado": fila._selected ? "✅ MATCH" : "❌ OCULTO",

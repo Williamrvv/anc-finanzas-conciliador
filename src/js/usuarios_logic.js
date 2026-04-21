@@ -29,7 +29,7 @@ window.UsuariosLogic = {
             this.allUsers = data.usuarios;
             this.roles = data.roles;
             this.sucursalesTSD = data.sucursales_tsd || [];
-            this.asignacionesBD = data.asignaciones_jefes || [];
+            this.asignacionesBD = data.asignaciones_bd || [];
             
             this.renderRolesSelects();
             
@@ -163,9 +163,9 @@ window.UsuariosLogic = {
             document.getElementById('u-puesto').value = user.Puesto;
             document.getElementById('u-rol').value = user.Id_Rol;
             
-            // Cargar sucursales si es Jefe
+            // Cargar sucursales si es Jefe o Agente
             this.selectedBranches.clear();
-            const susSucursales = this.asignacionesBD.filter(a => a.EmailJefe === user.Email);
+            const susSucursales = this.asignacionesBD.filter(a => a.Email === user.Email);
             susSucursales.forEach(s => this.selectedBranches.set(s.CodigoSucursal, s.NombreSucursal));
             
             // Set Switches
@@ -222,11 +222,11 @@ window.UsuariosLogic = {
         const elRol = document.getElementById('u-rol');
         const roleName = elRol.options[elRol.selectedIndex].text.toLowerCase();
         
-        if (roleName === 'jefe') {
+        if (roleName === 'jefe' || roleName === 'agente' || roleName === 'admin') {
             if (this.selectedBranches.size === 0) {
                 btn.disabled = false;
                 btn.innerText = "Guardar Cambios";
-                return alert("Debe seleccionar al menos una sucursal para el rol Jefe.");
+                return alert(`Debe seleccionar al menos una sucursal para el rol ${roleName.toUpperCase()}.`);
             }
             // Adjuntar las sucursales como JSON
             const arrSucs = Array.from(this.selectedBranches, ([id, nombre]) => ({ id, nombre }));
@@ -262,7 +262,8 @@ window.UsuariosLogic = {
         
         const roleName = elRol.options[elRol.selectedIndex].text.toLowerCase();
         
-        if (roleName === 'jefe') {
+        // Ahora se muestra para Jefes, Agentes y Admins
+        if (roleName === 'jefe' || roleName === 'agente' || roleName === 'admin') {
             container.classList.remove('hidden');
             this.renderPills();
         } else {

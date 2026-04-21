@@ -58,25 +58,66 @@ if (empty($token)) {
                 </div>
             <?php elseif ($historialResuelto): ?>
                 <!-- PANTALLA: YA RESUELTO (La carrera la ganó el otro) -->
-                <div class="text-center py-6">
-                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 text-green-500 mb-4">
-                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                
+                <!-- 1. Contexto del Caso (Enriquecido) -->
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 shadow-sm">
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-slate-500 font-bold uppercase text-[10px]">Contrato</span>
+                        <span class="font-black text-slate-800"><?php echo htmlspecialchars($caso['NumeroContrato']); ?></span>
                     </div>
-                    <h2 class="text-xl font-bold text-slate-800 mb-2">Este caso ya fue resuelto</h2>
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-slate-500 font-bold uppercase text-[10px]">Cliente</span>
+                        <span class="font-bold text-slate-700 text-right truncate w-48" title="<?php echo htmlspecialchars($caso['NombreCliente']); ?>">
+                            <?php echo htmlspecialchars($caso['NombreCliente']); ?>
+                        </span>
+                    </div>
+                    <div class="flex justify-between text-sm mb-2">
+                        <span class="text-slate-500 font-bold uppercase text-[10px]">Sucursal</span>
+                        <span class="font-bold text-slate-700"><?php echo htmlspecialchars($caso['Sucursal_Relacionada']); ?></span>
+                    </div>
+                    <div class="flex justify-between text-sm pt-2 border-t border-slate-200 mt-2">
+                        <span class="text-slate-500 font-bold uppercase text-[10px]">Monto colones</span>
+                        <span class="font-black text-red-600 font-mono">₡<?php echo number_format($caso['MontoCRC'], 2); ?></span>
+                    </div>
+                </div>
+
+                <!-- 2. Alerta de Resolución -->
+                <div class="text-center py-4">
+                    <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 text-green-500 mb-3 shadow-inner">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <h2 class="text-lg font-black text-slate-800 mb-4">El ticket ya fue cerrado en TSD</h2>
                     
-                    <div class="mt-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-left text-sm">
+                    <!-- 3. Bitácora de Quién lo resolvió -->
+                    <div class="bg-white p-4 rounded-xl border border-slate-200 text-left text-sm shadow-sm">
                         <div class="mb-2">
                             <span class="block text-[10px] font-bold text-slate-500 uppercase">Resuelto por:</span>
-                            <span class="font-bold text-slate-800"><?php echo htmlspecialchars($historialResuelto['EmailActor']); ?></span>
+                            <?php 
+                                // 1. Intentamos usar el Email real si existe (logueado en el sistema)
+                                $actorVisual = $historialResuelto['EmailActor'];
+                                
+                                // 2. Si es NULL, sabemos que se resolvió por Token (Correo Externo).
+                                // Extraemos el nombre que escondimos en el ComentarioAdicional usando Regex.
+                                if (empty($actorVisual)) {
+                                    $comentario = $historialResuelto['ComentarioAdicional'] ?? '';
+                                    // Buscamos el texto entre "Resuelto vía Correo por: " y el pipe " | "
+                                    if (preg_match('/por:\s*(.+?)\s*\|/', $comentario, $matches)) {
+                                        $actorVisual = $matches[1] . " (Vía Email)";
+                                    } else {
+                                        $actorVisual = "Servicio al Cliente (Externo)";
+                                    }
+                                }
+                            ?>
+                            <span class="font-bold text-slate-800"><?php echo htmlspecialchars($actorVisual); ?></span>
                         </div>
                         <div class="mb-2">
                             <span class="block text-[10px] font-bold text-slate-500 uppercase">Fecha:</span>
-                            <span class="text-slate-600"><?php echo date('d/m/Y H:i', strtotime($historialResuelto['FechaAccion'])); ?></span>
+                            <span class="text-slate-600"><?php echo date('d/m/Y H:i', strtotime($historialResuelto['FechaAccion'] ?? date('Y-m-d'))); ?></span>
                         </div>
                         <?php if(!empty($historialResuelto['ComentarioAdicional'])): ?>
                         <div class="mt-3 pt-3 border-t border-slate-200">
                             <span class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Notas del ajuste:</span>
-                            <p class="text-slate-700 italic">"<?php echo htmlspecialchars($historialResuelto['ComentarioAdicional']); ?>"</p>
+                            <p class="text-slate-700 italic">"<?php echo htmlspecialchars($historialResuelto['ComentarioAdicional'] ?? ''); ?>"</p>
                         </div>
                         <?php endif; ?>
                     </div>

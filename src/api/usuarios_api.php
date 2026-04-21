@@ -29,15 +29,19 @@ try {
         $pdoTsd = TSDDatabase::connect();
         $stmtSucs = $pdoTsd->query("SELECT Location AS ID, NAME FROM dbo.Setup WHERE DeactivateLocation = 0 AND Hidden = 0 AND Country = 'CRI' ORDER BY Location");
         
-        // Cargar asignaciones actuales
-        $stmtJefes = $pdo->query("SELECT EmailJefe, CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion");
+        // Cargar asignaciones actuales (Unificamos Jefes y Agentes para el Frontend)
+        $stmtAsignaciones = $pdo->query("
+            SELECT EmailJefe AS Email, CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion
+            UNION ALL
+            SELECT EmailAgente AS Email, CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion
+        ");
 
         echo json_encode([
             'success' => true, 
             'usuarios' => $stmtUsers->fetchAll(), 
             'roles' => $stmtRoles->fetchAll(),
             'sucursales_tsd' => $stmtSucs->fetchAll(),
-            'asignaciones_jefes' => $stmtJefes->fetchAll()
+            'asignaciones_bd' => $stmtAsignaciones->fetchAll()
         ]);
     }
     elseif ($method === 'POST') {
@@ -79,28 +83,31 @@ try {
             $stmt->execute([$email, $nombre, $apellidos, $puesto, $idRol, $activo, $puedeAdmin, $passHash]);
         }
 
-        // --- LÓGICA DE JEFATURAS ---
+        // --- LÓGICA DE SUCURSALES (JEFES Y AGENTES) ---
         $stmtRol = $pdo->prepare("SELECT Nombre_Rol FROM Tbl_Roles WHERE Id_Rol = ?");
         $stmtRol->execute([$idRol]);
-        $roleName = $stmtRol->fetchColumn();
+        $roleName = strtolower($stmtRol->fetchColumn());
 
-        // 1. Borramos cualquier asignación previa (Limpieza)
-        $stmtDel = $pdo->prepare("DELETE FROM Tbl_Jefes_Estacion WHERE EmailJefe = ?");
-        $stmtDel->execute([$email]);
+        // 1. Borramos cualquier asignación previa en ambas tablas por si cambió de rol (Limpieza)
+        $pdo->prepare("DELETE FROM Tbl_Jefes_Estacion WHERE EmailJefe = ?")->execute([$email]);
+        $pdo->prepare("DELETE FROM Tbl_Agentes_Estacion WHERE EmailAgente = ?")->execute([$email]);
 
-        // 2. Si es jefe, insertamos las nuevas sucursales
-        if ($roleName === 'jefe') {
+        // 2. Insertamos las nuevas sucursales si aplica
+        if ($roleName === 'jefe' || $roleName === 'agente' || $roleName === 'admin') {
             $sucursales = json_decode($_POST['sucursalesJSON'] ?? '[]', true);
-            if (empty($sucursales)) throw new Exception("Faltan sucursales para la jefatura.");
+            if (empty($sucursales)) throw new Exception("Debe asignar al menos una sucursal para este rol.");
 
-            $stmtIns = $pdo->prepare("INSERT INTO Tbl_Jefes_Estacion (CodigoSucursal, NombreSucursal, NombreJefe, EmailJefe, Activo) VALUES (?, ?, ?, ?, 1)");
+            if ($roleName === 'jefe' || $roleName === 'admin') {
+                $stmtIns = $pdo->prepare("INSERT INTO Tbl_Jefes_Estacion (CodigoSucursal, NombreSucursal, NombreJefe, EmailJefe, Activo) VALUES (?, ?, ?, ?, 1)");
+            } else {
+                $stmtIns = $pdo->prepare("INSERT INTO Tbl_Agentes_Estacion (CodigoSucursal, NombreSucursal, NombreAgente, EmailAgente, Activo) VALUES (?, ?, ?, ?, 1)");
+            }
             
             foreach ($sucursales as $suc) {
                 try {
                     $stmtIns->execute([$suc['id'], $suc['nombre'], $nombre, $email]);
                 } catch (PDOException $ex) {
-                    // 23000 = Violación de índice único (Una sucursal no puede tener 2 jefes por el UNIQUE NONCLUSTERED del esquema)
-                    if ($ex->getCode() == 23000) {
+                    if ($ex->getCode() == 23000 && $roleName === 'jefe') {
                         throw new Exception("La sucursal {$suc['id']} ya está asignada a otro jefe en el sistema. Debe retirarla del otro usuario primero.");
                     }
                     throw $ex;

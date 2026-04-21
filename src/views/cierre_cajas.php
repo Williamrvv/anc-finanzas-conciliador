@@ -20,98 +20,55 @@
             Trazabilidad de Casos
         </button>
         <button onclick="window.CierreCajasLogic.switchTab('audit')" id="tab-audit" class="whitespace-nowrap px-6 py-2.5 text-sm font-bold rounded-t-lg transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 dark:hover:text-slate-300">
-            Auditoría de ICD
+            Historial de Facturación
         </button>
     </div>
 
-    <!-- BUSCADOR ICD (Exclusivo del Módulo de Trabajo) -->
-    <div id="cc-search-section" class="flex flex-col sm:flex-row items-center gap-3 mb-6 bg-indigo-50/50 dark:bg-indigo-900/10 p-3 rounded-xl border border-indigo-100 dark:border-indigo-800/30 transition-all">
-        <span class="text-sm font-black text-indigo-800 dark:text-indigo-400 hidden sm:block uppercase tracking-widest ml-2 whitespace-nowrap">Cargar ICD</span>
-        <div class="flex-grow w-full relative">
-            <input type="text" id="cc-icd-input" onkeydown="if(event.key === 'Enter') { event.preventDefault(); window.CierreCajasLogic.searchICD(); }" class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold uppercase transition-all text-slate-800 dark:text-white shadow-sm" placeholder="Digite el número de ICD... Ej: SJOT71-12345" autocomplete="off">
-            <span class="absolute left-3 top-2.5 text-slate-400">📄</span>
-        </div>
-        <button onclick="window.CierreCajasLogic.searchICD()" id="btn-search-icd" class="w-full sm:w-32 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-colors flex items-center justify-center gap-2">
-            Buscar
-        </button>
-    </div>
-
-    <!-- ========================================== -->
-    <!-- VISTA AUDITORÍA (Busca y revisa cualquier ICD) -->
-    <!-- ========================================== -->
-    <div id="cc-audit-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
+    <!-- PANEL CENTRAL AUTOMÁTICO (Exclusivo del Módulo de Trabajo) -->
+    <div id="cc-search-section" class="flex flex-col items-center justify-center text-center py-12 px-6 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 mb-6 animate-fade-in-up transition-all w-full shadow-sm mx-auto">
         
-        <div class="flex flex-col sm:flex-row items-center gap-3 mb-6 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span class="text-sm font-black text-slate-500 dark:text-slate-400 hidden sm:block uppercase tracking-widest ml-2 whitespace-nowrap">Auditar ICD</span>
-            <div class="flex-grow w-full relative">
-                <input type="text" id="audit-icd-input" onkeydown="if(event.key === 'Enter') { event.preventDefault(); window.CierreCajasLogic.searchAuditICD(); }" class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-slate-500 outline-none text-sm font-bold uppercase transition-all text-slate-800 dark:text-white shadow-sm" placeholder="Digite el número de ICD para auditar..." autocomplete="off">
-                <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
-            </div>
-            <button onclick="window.CierreCajasLogic.searchAuditICD()" class="w-full sm:w-32 bg-slate-600 hover:bg-slate-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-colors flex items-center justify-center gap-2">
-                Buscar
+        <div class="bg-white dark:bg-slate-800 w-20 h-20 flex items-center justify-center rounded-full shadow-md mb-6 mx-auto">
+            <span class="text-4xl drop-shadow-sm block translate-y-0.5">🧾</span>
+        </div>
+        
+        <h2 class="text-2xl font-black text-slate-800 dark:text-white mb-3">Facturación Continua</h2>
+        <p class="text-sm text-slate-500 font-medium max-w-xl mx-auto mb-8 leading-relaxed">
+            El sistema buscará en TSD todas las facturas generadas a partir del último corte de caja registrado para las sucursales que tiene asignadas.
+        </p>
+        
+        <!-- INYECCIÓN DINÁMICA: Sucursales Asignadas -->
+        <div id="home-sucursales-list" class="flex flex-wrap justify-center items-center gap-2 mb-8 w-full max-w-2xl mx-auto empty:hidden">
+            <!-- JS inyecta las píldoras de las sucursales aquí -->
+        </div>
+
+        <div class="w-full flex justify-center">
+            <button onclick="window.CierreCajasLogic.loadFacturacion()" id="btn-load-fact" class="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-xl font-black shadow-lg shadow-indigo-500/30 transition-all flex items-center justify-center gap-3 transform hover:-translate-y-1 hover:shadow-indigo-500/50 w-full sm:w-auto min-w-[300px]">
+                <svg class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                CARGAR FACTURACIÓN
             </button>
         </div>
-
-        <div id="audit-empty" class="flex flex-col items-center justify-center py-10 opacity-70">
-            <span class="text-5xl mb-3 drop-shadow-sm">📋</span>
-            <span class="text-sm text-slate-500 text-center font-medium">Busque un ICD para ver su estado actual<br>y el estatus individual de cada transacción.</span>
-        </div>
-
-        <div id="audit-content" class="hidden flex-col flex-grow">
-            <!-- Metadatos Auditoría -->
-            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm w-full mb-4 p-5 grid grid-cols-2 md:grid-cols-4 gap-6 items-start relative overflow-hidden">
-                <div class="absolute top-0 left-0 w-1.5 h-full bg-slate-400"></div>
-                <div class="pl-2 lg:pl-4">
-                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">ICD Auditado</span>
-                    <span id="ad-icd" class="text-base sm:text-lg font-black text-slate-700 dark:text-slate-300 font-mono block truncate"></span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Sucursal TSD</span>
-                    <span id="ad-sucursal" class="text-sm font-bold text-slate-700 dark:text-slate-200 block truncate"></span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Creado en TSD</span>
-                    <span id="ad-fecha-tsd" class="text-sm font-bold text-slate-700 dark:text-slate-200 block truncate"></span>
-                </div>
-                <div class="bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
-                    <span class="text-[10px] text-slate-400 uppercase font-bold block mb-1">Estado del Cierre</span>
-                    <span id="ad-estado-cierre" class="text-sm font-black flex items-center gap-1.5"></span>
-                </div>
-            </div>
-
-            <!-- Tabla de Vouchers -->
-            <div class="flex justify-between items-center mb-2 mt-4">
-                <h3 class="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Desglose de Transacciones</h3>
-                <span class="text-[10px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Doble clic para ver historial</span>
-            </div>
-            <div id="audit-grid" class="w-full flex-grow min-h-[400px]"></div>
-        </div>
+        
     </div>
 
     <div id="cc-loading" class="hidden flex-col items-center justify-center py-10">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2"></div>
-        <span class="text-sm text-slate-500">Consultando a TSD...</span>
+        <span class="text-sm text-slate-500">Analizando cortes y consultando TSD...</span>
     </div>
 
     <!-- ========================================== -->
     <!-- 1. VISTA HOME (Bandeja Global del Usuario) -->
     <!-- ========================================== -->
     <div id="cc-home-view" class="flex flex-col w-full py-4 transition-all">
-        <div id="cc-empty-state" class="flex flex-col items-center justify-center opacity-70 mb-8 transition-all duration-300">
-            <span class="text-5xl mb-3 drop-shadow-sm">🧾</span>
-            <span class="text-sm text-slate-500 text-center font-medium">Ingrese el número de ICD en el buscador<br>para iniciar el cuadre de caja.</span>
-        </div>
-
         <div id="cc-mi-bandeja" class="hidden animate-fade-in-up w-full mt-2">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
                 <h2 class="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
                     <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span>
-                    Mis Casos Pendientes
+                    Mis Casos Pendientes de Corrección
                     <span id="cc-mi-count" class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md text-[10px] ml-1">0</span>
                 </h2>
                 <button onclick="window.CierreCajasLogic.enviarSeleccionadosAJefatura('home')" id="cc-btn-report-home" class="hidden bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg font-bold shadow-sm transition-colors items-center gap-2 text-xs">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-                    Reportar
+                    Reportar Seleccionados
                 </button>
             </div>
             <div id="cc-mi-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 pb-10"></div>
@@ -119,39 +76,29 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- 2. VISTA WORKSPACE (Aparece al buscar un ICD) -->
+    <!-- 2. VISTA WORKSPACE (Aparece al cargar facturación) -->
     <!-- ========================================== -->
     <div id="cc-workspace" class="hidden flex-col gap-4 flex-grow overflow-hidden">
         
         <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm w-full mb-4 flex flex-col overflow-hidden shrink-0">
-            <div class="p-4 lg:p-5 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 lg:gap-6 items-start relative">
-                <div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-                <div class="pl-2 lg:pl-4">
-                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Número ICD</span>
-                    <span id="meta-icd" class="text-base sm:text-lg font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight truncate block"></span>
+            <div class="p-4 lg:p-5 grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 items-start relative">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-green-500"></div>
+                <div class="pl-2 lg:pl-4 col-span-1 md:col-span-2">
+                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Rango de Cortes Cargados</span>
+                    <div id="meta-sucursales-list" class="text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight space-y-1">
+                        <!-- JS inyecta la lista de sucursales y sus horas de corte -->
+                    </div>
                 </div>
                 <div>
-                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Sucursal</span>
-                    <span id="meta-sucursal" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight truncate block"></span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Marca Operativa</span>
-                    <span id="meta-marca" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold shadow-sm transition-colors mt-0.5"></span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Registrado TSD</span>
-                    <span id="meta-usuario" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight truncate block"></span>
-                </div>
-                <div>
-                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">Fecha / Hora</span>
-                    <span id="meta-fecha" class="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight truncate block"></span>
+                    <span class="text-[10px] text-slate-400 dark:text-slate-500 uppercase font-bold tracking-widest block mb-1">ICDs Involucrados (TSD)</span>
+                    <span id="meta-icd-list" class="text-xs font-black text-indigo-600 dark:text-indigo-400 font-mono leading-tight block whitespace-pre-line"></span>
                 </div>
             </div>
 
             <div class="bg-indigo-50/50 dark:bg-indigo-900/20 p-4 lg:p-5 border-t border-indigo-100 dark:border-indigo-800/50 flex flex-col md:flex-row items-center gap-4 lg:gap-6">
                 <div class="shrink-0 w-full md:w-auto text-center md:text-left">
-                    <span class="block text-sm font-black text-indigo-700 dark:text-indigo-300">🔍 Doble Ciego</span>
-                    <span class="text-[10px] text-indigo-500 dark:text-indigo-400">Verifique Autorización y Monto</span>
+                    <span class="block text-sm font-black text-indigo-700 dark:text-indigo-300">🔍 Cruce de Validación</span>
+                    <span class="text-[10px] text-indigo-500 dark:text-indigo-400">Ingrese la Autorización y el Monto del voucher</span>
                 </div>
                 
                 <form onsubmit="return false;" class="flex flex-col sm:flex-row gap-3 w-full md:w-auto flex-grow justify-end">
@@ -253,6 +200,77 @@
         </div>
 
     </div>
+
+    <!-- ========================================== -->
+    <!-- 4. EXPLORADOR FORENSE 360 (Búsqueda Transaccional) -->
+    <!-- ========================================== -->
+    <div id="cc-audit-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
+        
+        <!-- Panel de Filtros -->
+        <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 shrink-0">
+            <h2 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                Auditoría Global de Transacciones
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Inicio</label>
+                    <input type="date" id="forense-desde" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Fin</label>
+                    <input type="date" id="forense-hasta" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                </div>
+                <div class="md:col-span-2 relative">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Búsqueda Universal</label>
+                    <input type="text" id="forense-buscar" onkeydown="if(event.key === 'Enter') window.CierreCajasLogic.resetAndLoadForense()" class="w-full pl-9 pr-24 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white placeholder-slate-400" placeholder="Contrato, Cliente o Autorización..." autocomplete="off">
+                    <span class="absolute left-3 top-[26px] text-slate-400">🔍</span>
+                    <button onclick="window.CierreCajasLogic.resetAndLoadForense()" class="absolute right-1 top-[22px] bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-xs font-bold transition-colors shadow-sm">Buscar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPIs Dinámicos -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 shrink-0">
+            <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 p-4 rounded-xl">
+                <div class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1">Transacciones</div>
+                <div id="kpi-tx" class="text-2xl font-black text-indigo-700 dark:text-indigo-400 font-mono">0</div>
+            </div>
+            <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 p-4 rounded-xl">
+                <div class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Total Colones (CRC)</div>
+                <div id="kpi-crc" class="text-2xl font-black text-emerald-700 dark:text-emerald-400 font-mono">₡0.00</div>
+            </div>
+            <div class="bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/30 p-4 rounded-xl">
+                <div class="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">Total Dólares (USD)</div>
+                <div id="kpi-usd" class="text-2xl font-black text-green-700 dark:text-green-400 font-mono">$0.00</div>
+            </div>
+            <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30 p-4 rounded-xl">
+                <div class="text-[10px] font-bold text-rose-500 uppercase tracking-widest mb-1">Tickets Generados</div>
+                <div id="kpi-tickets" class="text-2xl font-black text-rose-700 dark:text-rose-400 font-mono">0</div>
+            </div>
+        </div>
+
+        <!-- Tabla de Resultados -->
+        <!-- La clase max-h-[60vh] y overflow-auto fuerzan el scroll dentro de la tabla y activan los Sticky Headers -->
+        <div class="w-full flex-grow bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4">
+            <div id="forense-grid" class="w-full max-h-[60vh] overflow-auto custom-scrollbar"></div>
+        </div>
+
+        <!-- Paginación Server-Side Forense -->
+        <div id="forense-pagination" class="hidden flex justify-between items-center bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+            <span class="text-xs text-slate-500 font-bold">
+                Página <span id="pag-forense-current" class="text-indigo-600 dark:text-indigo-400 text-sm font-black">1</span> de <span id="pag-forense-total">1</span>
+                <span class="ml-2 px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded-md text-[10px]" id="pag-forense-registros">0 registros</span>
+            </span>
+            <div class="flex gap-2">
+                <button onclick="window.CierreCajasLogic.changeForensePage(-1)" id="btn-forense-prev" class="px-4 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Anterior</button>
+                <button onclick="window.CierreCajasLogic.changeForensePage(1)" id="btn-forense-next" class="px-4 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors">Siguiente</button>
+            </div>
+        </div>
+    </div>
+
+</div> <!-- FIN DEL CONTENEDOR ANIMADO -->
     <div id="cc-history-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
         
         <!-- Barra de Búsqueda Global -->

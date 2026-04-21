@@ -40,15 +40,32 @@ try {
         $sql .= " AND C.EmailCreador = ? ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$emailUsuario]);
+        
+        // --- NUEVO: Extraer sucursales asignadas para mostrar en el Home ---
+        $rolUsuario = $_SESSION['user']['role'] ?? '';
+        $sucursalesHome = [];
+
+        if ($rolUsuario === 'agente') {
+            $stmtSucs = $pdo->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion WHERE EmailAgente = ? AND Activo = 1");
+            $stmtSucs->execute([$emailUsuario]);
+            $sucursalesHome = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
+        } elseif (in_array($rolUsuario, ['jefe', 'admin', 'servicio_cliente'])) {
+            // Jefes, Administradores y SC guardan sus sucursales en Tbl_Jefes_Estacion
+            $stmtSucs = $pdo->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion WHERE EmailJefe = ? AND Activo = 1");
+            $stmtSucs->execute([$emailUsuario]);
+            $sucursalesHome = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
+        }
+        
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll(), 'mis_sucursales' => $sucursalesHome]);
+
     } else {
         // VISTA COLABORATIVA: Traer los NO REPORTADOS de esa Sucursal (Míos o de otros)
         $sql .= " AND C.Sucursal_Relacionada LIKE ? AND C.Estado = 'NO_REPORTADO' ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$sucursal . '%']);
+        
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
     }
-
-    echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
-
 } catch (Throwable $e) {
     echo json_encode(['success' => false, 'error' => 'Error BD: ' . $e->getMessage()]);
 }

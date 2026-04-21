@@ -54,7 +54,8 @@ class VanillaGrid {
 
         // --- THEAD ---
         const thead = document.createElement('thead');
-        thead.className = "bg-slate-100 dark:bg-slate-700 sticky top-0 z-20 shadow-sm";
+        // El 'top-0' asegura el Sticky Header dentro del contenedor con overflow-auto
+        thead.className = "bg-slate-100 dark:bg-slate-700 sticky top-0 z-[25] shadow-sm";
 
         // Fila 1: Títulos (Con Drag & Drop y Sort arreglado)
         const trTitles = document.createElement('tr');
@@ -114,8 +115,9 @@ class VanillaGrid {
         const trFilters = document.createElement('tr');
         this.columns.forEach((col, idx) => {
             const th = document.createElement('th');
+
             // UX STICKY: El filtro también debe quedarse quieto
-            let stickyClass = "";
+            let stickyClass = "top-[37px]"; // Se pega debajo de la Fila 1 (Altura del header)
             if (col.formatter === 'checkbox') {
                 stickyClass = "sticky left-0 z-30 bg-slate-50 dark:bg-slate-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
             }
@@ -281,6 +283,7 @@ class VanillaGrid {
             td.dataset.c = colIdx;
             td.dataset.val = row[col.field] || '';
 
+            // Quitar overflow-hidden text-ellipsis para que el texto completo siempre se vea
             let cls = "px-3 py-1.5 whitespace-nowrap border-r border-slate-100 dark:border-slate-700 cursor-default text-xs ";
             if(col.hozAlign === 'right') cls += "text-right font-mono "; else cls += "text-left ";
 

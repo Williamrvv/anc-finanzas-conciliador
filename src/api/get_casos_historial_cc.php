@@ -36,14 +36,13 @@ try {
     
     $paramsActivos = [];
 
-    // RBAC: Filtros de Visibilidad
-    if ($rol === 'jefe') {
-        $sqlActivos .= " AND SUBSTRING(C.Sucursal_Relacionada, 1, CHARINDEX(' ', C.Sucursal_Relacionada + ' ') - 1) 
-                         IN (SELECT CodigoSucursal FROM Tbl_Jefes_Estacion WHERE EmailJefe = ? AND Activo = 1)";
-        $paramsActivos[] = $emailUsuario;
-    } 
-    elseif ($rol === 'agente') {
-        $sqlActivos .= " AND C.EmailCreador = ?";
+    // RBAC: Filtros de Visibilidad Universales
+    // Si no es servicio_cliente, DEBE tener sucursales asignadas
+    if ($rol !== 'servicio_cliente') {
+        $tablaVinculo = ($rol === 'agente') ? 'Tbl_Agentes_Estacion' : 'Tbl_Jefes_Estacion';
+        $columnaEmail = ($rol === 'agente') ? 'EmailAgente' : 'EmailJefe';
+        
+        $sqlActivos .= " AND EXISTS (SELECT 1 FROM $tablaVinculo V WHERE V.$columnaEmail = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsActivos[] = $emailUsuario;
     }
 
@@ -63,13 +62,11 @@ try {
     $paramsResueltos = [];
 
     // RBAC
-    if ($rol === 'jefe') {
-        $sqlBaseResueltos .= " AND SUBSTRING(C.Sucursal_Relacionada, 1, CHARINDEX(' ', C.Sucursal_Relacionada + ' ') - 1) 
-                               IN (SELECT CodigoSucursal FROM Tbl_Jefes_Estacion WHERE EmailJefe = ? AND Activo = 1)";
-        $paramsResueltos[] = $emailUsuario;
-    } 
-    elseif ($rol === 'agente') {
-        $sqlBaseResueltos .= " AND C.EmailCreador = ?";
+    if ($rol !== 'servicio_cliente') {
+        $tablaVinculo = ($rol === 'agente') ? 'Tbl_Agentes_Estacion' : 'Tbl_Jefes_Estacion';
+        $columnaEmail = ($rol === 'agente') ? 'EmailAgente' : 'EmailJefe';
+        
+        $sqlBaseResueltos .= " AND EXISTS (SELECT 1 FROM $tablaVinculo V WHERE V.$columnaEmail = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsResueltos[] = $emailUsuario;
     }
 

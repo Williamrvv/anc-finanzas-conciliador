@@ -24,7 +24,8 @@ if (!$data || empty($data['transacciones'])) {
     exit;
 }
 
-$icd = $data['icd'] ?? '';
+$icdsRaw = $data['icds_involucrados'] ?? ''; // Ahora recibimos un string: "ICD1, ICD2"
+$sucursalesRaw = $data['sucursales'] ?? '';
 $emailUsuario = $_SESSION['user']['email'] ?? null;
 
 if (!$emailUsuario) {
@@ -33,22 +34,27 @@ if (!$emailUsuario) {
 }
 
 try {
-    // 1. VALIDACIÓN JUST-IN-TIME EN TSD
-    if (class_exists('TSDDatabase')) {
+    // 1. VALIDACIÓN JUST-IN-TIME EN TSD (Múltiples ICDs)
+    $icdsArray = array_filter(array_map('trim', explode(',', preg_replace('/\(.*?\)/', '', $icdsRaw)))); // Limpiamos los nombres de usuario entre paréntesis
+    
+    if (class_exists('TSDDatabase') && count($icdsArray) > 0) {
         $pdoTsd = TSDDatabase::connect();
-        $stmtTsd = $pdoTsd->prepare("SELECT TOP (1) POST_FLAG FROM dbo.DBR WHERE DBRNum = ?");
-        $stmtTsd->execute([$icd]);
-        $rowTsd = $stmtTsd->fetch();
+        $inClause = str_repeat('?,', count($icdsArray) - 1) . '?';
+        $stmtTsd = $pdoTsd->prepare("SELECT DBRNum, POST_FLAG FROM dbo.DBR WHERE DBRNum IN ($inClause)");
+        $stmtTsd->execute($icdsArray);
+        $resultadosTSD = $stmtTsd->fetchAll(PDO::FETCH_ASSOC);
 
-        if (!$rowTsd) {
-            echo json_encode(['success' => false, 'error' => "El ICD '$icd' no existe en TSD."]);
-            exit;
+        $abiertos = [];
+        foreach ($resultadosTSD as $row) {
+            if (empty($row['POST_FLAG']) || $row['POST_FLAG'] == '0') {
+                $abiertos[] = $row['DBRNum'];
+            }
         }
 
-        if (empty($rowTsd['POST_FLAG']) || $rowTsd['POST_FLAG'] == '0') {
+        if (!empty($abiertos)) {
             echo json_encode([
                 'success' => false, 
-                'error' => "⚠️ Cierre Incompleto en TSD.\n\nEl ICD $icd aún se encuentra en estado 'Pre-Cierre'. Finalice el proceso en TSD antes de guardar en IRI."
+                'error' => "⚠️ Cierre Incompleto en TSD.\n\nLos siguientes ICDs aún se encuentran abiertos: " . implode(', ', $abiertos) . "\nFinalice el proceso en TSD antes de guardar en IRI."
             ]);
             exit;
         }
@@ -63,16 +69,12 @@ try {
                   (ICD, Sucursal, UsuarioRegistroTSD, FechaRegistroTSD, EmailUsuario, TotalVerificadoCRC, TotalVerificadoUSD, TransaccionesEscaneadas, TotalTransacciones) 
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
-    $fechaTSD = null;
-    if (!empty($data['fecha_tsd']) && $data['fecha_tsd'] !== 'N/A') {
-        $rawDate = explode('.', $data['fecha_tsd'])[0]; 
-        $ts = strtotime($rawDate);
-        if ($ts !== false) $fechaTSD = date('Y-m-d\TH:i:s', $ts);
-    }
+    // Al ser un cierre continuo, usamos la hora actual para FechaRegistroTSD como marca de corte
+    $fechaTSD = date('Y-m-d\TH:i:s');
 
     $stmtH = $pdo->prepare($sqlHeader);
     $stmtH->execute([
-        $icd, $data['sucursal'], $data['usuario_tsd'], $fechaTSD, 
+        $icdsRaw, $sucursalesRaw, 'Múltiples AR', $fechaTSD, 
         $emailUsuario, floatval($data['total_crc'] ?? 0), floatval($data['total_usd'] ?? 0),
         intval($data['total_escaneadas'] ?? 0), intval($data['total_transacciones'] ?? 0)
     ]);
@@ -81,14 +83,23 @@ try {
 
     // Detalle
     $sqlDetail = "INSERT INTO Tbl_CierreCaja_Detalle 
-                  (IdCierre, Numero_Contrato, NombreCliente, Tipo_Tarjeta, Numero_Autorizacion, MontoUSD, TipoCambio, MontoCRC, MatchExitoso) 
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                  (IdCierre, Numero_Contrato, NombreCliente, Tipo_Tarjeta, Numero_Autorizacion, MontoUSD, TipoCambio, MontoCRC, MatchExitoso, Fecha_Transaccion) 
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmtD = $pdo->prepare($sqlDetail);
 
     foreach ($data['transacciones'] as $t) {
+        // Formateo estricto ISO8601 (YYYY-MM-DDTHH:MM:SS) para que SQL Server NUNCA se confunda
+        $fechaSegura = null;
+        if (!empty($t['fecha_pago'])) {
+            $timestamp = strtotime(str_replace('.000', '', $t['fecha_pago'])); // Quitamos los milisegundos de TSD
+            if ($timestamp !== false) {
+                $fechaSegura = date('Y-m-d\TH:i:s', $timestamp);
+            }
+        }
+
         $stmtD->execute([
             $idCierre, $t['contrato'], $t['nombre'], $t['tarjeta'], $t['autorizacion'],
-            $t['monto_usd'], $t['tc'], $t['monto_crc'], $t['match_exitoso']
+            $t['monto_usd'], $t['tc'], $t['monto_crc'], $t['match_exitoso'], $fechaSegura
         ]);
     }
 
@@ -106,8 +117,11 @@ try {
 
         foreach ($data['casos_borrador'] as $caso) {
             $motivoSeguro = empty($caso['motivo']) ? "" : $caso['motivo'];
+            $icdIndividual = !empty($caso['icd']) ? $caso['icd'] : 'PENDIENTE TSD';
+            $sucIndividual = !empty($caso['sucursal']) ? $caso['sucursal'] : $sucursalesRaw;
+
             $stmtCaso->execute([
-                $idCierre, $icd, $data['sucursal'], $caso['contrato'], $caso['cliente'],
+                $idCierre, $icdIndividual, $sucIndividual, $caso['contrato'], $caso['cliente'],
                 $caso['monto_crc'], $motivoSeguro, $emailUsuario
             ]);
             
