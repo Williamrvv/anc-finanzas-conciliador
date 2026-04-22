@@ -87,11 +87,14 @@ try {
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmtD = $pdo->prepare($sqlDetail);
 
+    $stmtCerrarTicket = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'CERRADO' WHERE IdCaso = ? AND Estado = 'RESUELTO'");
+    $stmtHistCerrar = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'ESTADO_CERRADO', ?, 'Match Inteligente: El Agente Rentista vinculó la transacción de ajuste de TSD con este caso durante el Cierre de Cajas.')");
+
     foreach ($data['transacciones'] as $t) {
-        // Formateo estricto ISO8601 (YYYY-MM-DDTHH:MM:SS) para que SQL Server NUNCA se confunda
+        // Formateo estricto ISO8601
         $fechaSegura = null;
         if (!empty($t['fecha_pago'])) {
-            $timestamp = strtotime(str_replace('.000', '', $t['fecha_pago'])); // Quitamos los milisegundos de TSD
+            $timestamp = strtotime(str_replace('.000', '', $t['fecha_pago']));
             if ($timestamp !== false) {
                 $fechaSegura = date('Y-m-d\TH:i:s', $timestamp);
             }
@@ -101,6 +104,15 @@ try {
             $idCierre, $t['contrato'], $t['nombre'], $t['tarjeta'], $t['autorizacion'],
             $t['monto_usd'], $t['tc'], $t['monto_crc'], $t['match_exitoso'], $fechaSegura
         ]);
+
+        // Cierre definitivo del Bucle (Match Inteligente)
+        if (!empty($t['id_caso_cerrar'])) {
+            $stmtCerrarTicket->execute([$t['id_caso_cerrar']]);
+            // Solo insertamos en el historial si el UPDATE afectó la fila (para evitar dobles registros)
+            if ($stmtCerrarTicket->rowCount() > 0) {
+                $stmtHistCerrar->execute([$t['id_caso_cerrar'], $emailUsuario]);
+            }
+        }
     }
 
     // Casos Borrador (NO_REPORTADO)

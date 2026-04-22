@@ -19,8 +19,8 @@ $hoy = date('Y-m-d');
 // ========================================================
 // MODO PRUEBAS UAT: Forzar hora de inicio (Eliminar en Prod)
 // ========================================================
-$FORZAR_PRUEBA = true; 
-$HORA_PRUEBA = "07:00:00"; 
+$FORZAR_PRUEBA = false;
+$HORA_PRUEBA = "06:00:00"; 
 // ========================================================
 
 try {
@@ -131,12 +131,32 @@ try {
         }
     }
 
+    // 5. MATCH INTELIGENTE: Buscar si hay casos RESUELTOS para estos contratos
+    $casosResueltosMatch = [];
+    $contratosUnicos = array_unique(array_filter(array_column($transacciones, 'Numero_Contrato')));
+    
+    if (!empty($contratosUnicos)) {
+        $inClauseC = str_repeat('?,', count($contratosUnicos) - 1) . '?';
+        // Buscamos los resueltos. Ordenamos ASC para que si hay varios, el array se quede con el más reciente.
+        $stmtMatch = $pdoLocal->prepare("
+            SELECT IdCaso, NumeroContrato, MontoCRC 
+            FROM Tbl_Casos_TSD 
+            WHERE Estado = 'RESUELTO' AND NumeroContrato IN ($inClauseC)
+            ORDER BY IdCaso ASC
+        ");
+        $stmtMatch->execute(array_values($contratosUnicos));
+        foreach ($stmtMatch->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $casosResueltosMatch[$row['NumeroContrato']] = $row;
+        }
+    }
+
     echo json_encode([
         'success' => true,
         'metadatos' => $infoMetadatos,
-        'icds_info' => implode(', ', $icdsInfo), // Ej: SJOT71-123 (AutoEOD), SJOT71-124 (JPEREZ)
+        'icds_info' => implode(', ', $icdsInfo), 
         'icds_abiertos' => $icdsAbiertos,
-        'transacciones' => $transacciones
+        'transacciones' => $transacciones,
+        'casos_resueltos' => $casosResueltosMatch // <-- Enviamos los matches encontrados
     ]);
 
 } catch (Throwable $e) { // Usamos Throwable para atrapar Fatal Errors de PHP

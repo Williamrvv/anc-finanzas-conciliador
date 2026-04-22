@@ -3,6 +3,7 @@ window.CierreCajasLogic = {
     headerData: null,
     transacciones: [],
     pendientesData: [],
+    casosResueltosInfo: {}, // <-- Almacena los tickets listos para cerrar
     currentUser: window.CURRENT_USER_NAME || 'Analista',
     vgHistory: null, // Motor VanillaGrid para el historial
     activeTimelineId: null,
@@ -318,6 +319,8 @@ window.CierreCajasLogic = {
                 await SysUI.alert(msg, "Alerta de Cierre TSD", "warning");
             }
 
+            this.casosResueltosInfo = data.casos_resueltos || {}; // Guardar en RAM los tickets resueltos detectados
+            
             // Adaptamos _selected o matched dependiendo de cómo lo use tu renderTransacciones
             this.transacciones = data.transacciones.map(t => ({...t, matched: false, _selected: false}));
             this.renderTransacciones();
@@ -502,9 +505,41 @@ window.CierreCajasLogic = {
                         <div class="text-[10px] font-bold ${isSel ? 'text-slate-500' : (esNegativo ? 'text-red-400' : 'text-slate-500 tracking-widest opacity-60')}">${displayMontoCRC}</div>
                     </div>
                 </div>`;
+            
+            // ALERTA DE MATCH INTELIGENTE (Si el contrato tiene un caso resuelto)
+            const casoR = this.casosResueltosInfo[t.Numero_Contrato];
+            if (casoR && !isSel) {
+                div.innerHTML += `
+                <div class="w-full mt-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 animate-pulse shadow-sm">
+                    <div class="text-[10px] text-blue-700 dark:text-blue-300">
+                        <span class="font-black block mb-0.5">💡 MATCH DETECTADO: Ticket #${casoR.IdCaso} (Resuelto en TSD)</span>
+                        Monto Original Error: ₡${parseFloat(casoR.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}
+                    </div>
+                    <button onclick="window.CierreCajasLogic.matchConTicket(${t.originalIndex}, ${casoR.IdCaso})" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-[10px] font-bold shadow transition-colors shrink-0 whitespace-nowrap">
+                        Vincular y Cerrar Ciclo
+                    </button>
+                </div>`;
+            } else if (t._matchedTicket) {
+                div.innerHTML += `
+                <div class="w-full mt-3 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded-lg p-2 text-center text-emerald-700 dark:text-emerald-400 text-[10px] font-black shadow-inner">
+                    ✅ VINCULADO AUTOMÁTICAMENTE CON TICKET #${t._matchedTicket}
+                </div>`;
+            }
+
             list.appendChild(div);
         });
         this.updateTotals();
+    },
+
+    // Función que se dispara al presionar el botón de Vincular
+    matchConTicket: function(originalIndex, idCaso) {
+        let tReal = this.transacciones[originalIndex];
+        if (tReal) {
+            tReal._selected = true;
+            tReal._matchTime = Date.now();
+            tReal._matchedTicket = idCaso; // Bandera para que el backend sepa que debe cerrarlo
+            this.renderTransacciones();
+        }
     },
 
     updateTotals: function() {
@@ -615,7 +650,8 @@ window.CierreCajasLogic = {
                 tc: parseFloat(t.Tipo_Cambio_Dia || 0),
                 monto_crc: parseFloat(t.Conversion || 0),
                 match_exitoso: t._selected ? 1 : 0,
-                fecha_pago: t.Pay_Date // <--- OBLIGATORIO para el nuevo cálculo de corte
+                fecha_pago: t.Pay_Date,
+                id_caso_cerrar: t._matchedTicket || null // <-- Avisamos al backend
             }))
         };
 
