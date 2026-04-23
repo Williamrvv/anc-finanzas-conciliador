@@ -195,7 +195,12 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
             <span id="gst-sum" class="font-bold text-slate-800 dark:text-white">0</span>
         </div>
     </div>
-    
+
+    <!-- CSS y JS de Flatpickr (Calendario Rango) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+
     <!-- Motor de Modales Moderno -->
     <script src="js/sys_ui.js"></script>
     <!-- Cargar nuestro nuevo motor -->
@@ -207,6 +212,7 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <!-- Lógica Modular de conciliaciones -->
     <script src="js/bac_logic.js"></script>
     <script src="js/scotia_logic.js"></script>
+    <script src="js/tsd_logic_m3.js"></script>
     <!-- Módulo Usuarios -->
     <script src="js/usuarios_logic.js"></script>
     <!-- Lógica Módulo Cierre de Caja -->

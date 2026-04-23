@@ -1288,19 +1288,29 @@ window.ConciliacionLogic = {
             else if(str.includes(',')) str = str.replace(',', '.');
             return parseFloat(str) || 0;
         };
+        // NUEVO: Limpiador de Fechas Seriales de Excel
+        const cleanD = (v) => v ? window.ConciliacionLogic.formatDateCR(v) : null;
 
         record.RawBAC = null; record.RawScotia = null; record.RawPagadoBAC = null; record.RawPagadoScotia = null;
 
         if (banco === 'BAC' && origen !== 'PAGADO') {
             const h = this.data.headers.detalle || [];
+            
+            // Rescate inteligente del nombre comercial desde el modal
+            let comercioManual = '';
+            if (isAjuste) {
+                let idxComercio = Object.keys(h).find(k => h[k] && (h[k].toLowerCase().includes('comercio') || h[k].toLowerCase().includes('fantasia'))) || "3";
+                comercioManual = r[idxComercio] || '';
+            }
+
             record.RawBAC = {
                 NUMERO_AFILIADO: getV('AFILIADO', h) || r._id,
-                NOMBRECOMERCIO: getV('COMERCIO', h),
-                FECHA_TRANSACCION: getV('TRANSACCION', h),
-                FECHA_CIERRE_DATAFONO: getV('CIERRE', h),
-                FECHA_PAGO: getV('PAGO', h),
-                NUMERO_DE_TARJETA: getV('TARJETA', h) || r._tarjeta,
-                AUTORIZACION: getV('AUTORIZA', h) || r._auth,
+                NOMBRECOMERCIO: getV('COMERCIO', h) || getV('FANTASIA', h) || comercioManual,
+                FECHA_TRANSACCION: cleanD(getV('TRANSACCION', h) || r._fecha), // <-- Rescate de Fecha Modal
+                FECHA_CIERRE_DATAFONO: cleanD(getV('CIERRE', h) || r._fecha),
+                FECHA_PAGO: cleanD(getV('PAGO', h) || r._fechaPago || r._fecha), // <-- Rescate de Fecha Pago Modal
+                NUMERO_DE_TARJETA: getV('TARJETA', h) || r._tarjeta, // <-- Rescate Tarjeta Modal
+                AUTORIZACION: getV('AUTORIZA', h) || r._auth, // <-- Rescate Auth Modal
                 TERMINAL: getV('TERMINAL', h),
                 MONTO_VENTA: cleanN(getV('VENTA', h) || r._venta),
                 COMISION: cleanN(getV('COMISION', h) || r._comision),
@@ -1316,20 +1326,27 @@ window.ConciliacionLogic = {
         } 
         else if (banco === 'SCOTIA' && origen !== 'PAGADO') {
             const h = this.data.headers.scotia_detalle || [];
+            
+            let comercioManual = '';
+            if (isAjuste) {
+                let idxComercio = Object.keys(h).find(k => h[k] && (h[k].toLowerCase().includes('comercio') || h[k].toLowerCase().includes('fantasia') || h[k].toLowerCase().includes('raz'))) || "2";
+                comercioManual = r[idxComercio] || '';
+            }
+
             record.RawScotia = {
                 Fuente: getV('Fuente', h),
-                Fecha_Pago: getV('Fecha Pago', h) || r._fecha,
+                Fecha_Pago: cleanD(getV('Fecha Pago', h) || r._fechaPago || r._fecha), // <-- Rescate Fecha Modal
                 Moneda: getV('Moneda', h),
                 Transaccion: getV('Transacci', h),
                 Razon_Social: getV('Razón', h) || getV('Razon', h),
                 MerID: getV('MerID', h) || r._extractedId || r._id,
-                Nombre: getV('Nombre', h) || r._desc,
-                Fecha_Lote_Ajuste: getV('Fecha Lote', h),
+                Nombre: getV('Nombre', h) || r._desc || comercioManual,
+                Fecha_Lote_Ajuste: cleanD(getV('Fecha Lote', h) || r._fecha), // <-- Rescate Fecha Modal
                 Numero_Lote_Ajuste: getV('Número Lote', h) || getV('Numero Lote', h) || r._liq,
                 Terminal: getV('Terminal', h),
                 Numero_Pago: getV('Número Pago', h) || getV('Numero Pago', h) || getV('Pago', h),
-                Numero_Autorizacion: getV('Autoriza', h) || r._auth,
-                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta,
+                Numero_Autorizacion: getV('Autoriza', h) || r._auth, // <-- Rescate Auth Modal
+                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta, // <-- Rescate Tarjeta Modal
                 Monto_Orig: cleanN(getV('Monto Orig', h)),
                 Monto_Bruto: cleanN(getV('Monto Bruto', h) || r._bruto),
                 Monto_Comision_Total: cleanN(getV('Monto Comisión Total', h) || getV('Monto Comision Total', h) || r._comision),
@@ -1346,7 +1363,7 @@ window.ConciliacionLogic = {
         else if (banco === 'BAC' && origen === 'PAGADO') {
             const h = this.data.headers.pagado || [];
             record.RawPagadoBAC = {
-                Fecha: getV('Fecha', h) || r._fecha,
+                Fecha: cleanD(getV('Fecha', h) || r._fecha),
                 Descripcion: getV('Descripci', h) || r._desc,
                 Referencia: getV('Referencia', h) || r._liqRef,
                 Codigo: getV('Código', h) || getV('Codigo', h) || r._codigo, 
@@ -1359,7 +1376,7 @@ window.ConciliacionLogic = {
             const h = this.data.headers.scotia_pagado || [];
             record.RawPagadoScotia = {
                 Numero_Referencia: getV('Referencia', h),
-                Fecha_Movimiento: getV('Fecha', h) || r._fecha,
+                Fecha_Movimiento: cleanD(getV('Fecha', h) || r._fecha),
                 Descripcion: getV('Descripci', h) || r._desc,
                 Monto: cleanN(getV('Monto', h)) || cleanN(r._monto),
                 Saldo: cleanN(getV('Saldo', h)),
@@ -1555,8 +1572,9 @@ window.ConciliacionLogic = {
                 pct += Math.floor(Math.random() * 15) + 5;
                 if(pct > 85) pct = 85;
                 elBar.style.width = pct + '%'; elPct.innerText = pct + '%';
-                if(pct > 20) elTxt.innerText = "Sincronizando con Base de Datos...";
-                if(pct > 50) elTxt.innerText = "Aplicando restricciones de Idempotencia...";
+                if(pct > 20) elTxt.innerText = "Transfiriendo paquete de datos...";
+                if(pct > 40) elTxt.innerText = "Verificando saldos y previniendo duplicados...";
+                if(pct > 65) elTxt.innerText = "Registrando datos por paquetes en la base de datos...";
             }
         }, 300);
 
