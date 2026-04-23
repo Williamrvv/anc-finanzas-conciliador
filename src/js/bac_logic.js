@@ -66,12 +66,25 @@ window.BACLogic = {
         const idxFecha = currentHeaders.findIndex(h => /fecha/i.test(h)); 
 
         const cleanNum = (val) => {
-            if(!val) return 0;
-            let clean = String(val).replace(/["'\s]/g, '');
-            if(clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
-            else if((clean.match(/\./g) || []).length > 1) clean = clean.replace(/\./g, '');
-            const num = parseFloat(clean);
-            return Math.round((num + Number.EPSILON) * 100) / 100 || 0;
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return val;
+            let str = String(val).trim().replace(/['"\s₡$]/g, '');
+            let isNegative = false;
+            if (str.endsWith('-')) { isNegative = true; str = str.slice(0, -1); } 
+            else if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
+            else if (str.startsWith('-')) { isNegative = true; str = str.substring(1); }
+            
+            if (str.includes(',') && str.includes('.')) str = str.replace(/,/g, ''); 
+            else if (str.includes(',')) {
+                if ((str.match(/,/g) || []).length > 1) str = str.replace(/,/g, '');
+                else str = str.replace(',', '.');
+            }
+            const dotParts = str.split('.');
+            if (dotParts.length > 2) str = dotParts.slice(0, -1).join('') + '.' + dotParts.pop();
+
+            const num = parseFloat(str);
+            if (isNaN(num)) return 0;
+            return Math.round(((isNegative ? -Math.abs(num) : Math.abs(num)) + Number.EPSILON) * 100) / 100;
         };
 
         // 4. EXTRAER Y MAPEAR FILAS
@@ -222,9 +235,21 @@ window.BACLogic = {
             if(firstCell.includes('total') || firstCell.includes('saldo final') || firstCell.includes('resumen')) break;
 
             const parseMoney = (raw) => {
+                if (raw === null || raw === undefined || raw === '') return 0;
                 if (typeof raw === 'number') return raw;
-                if (typeof raw === 'string') return parseFloat(raw.replace(/\s/g,'').replace(',','.')) || 0;
-                return 0;
+                let str = String(raw).trim().replace(/['"\s₡$]/g, '');
+                let isNegative = false;
+                if (str.endsWith('-')) { isNegative = true; str = str.slice(0, -1); } 
+                else if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
+                else if (str.startsWith('-')) { isNegative = true; str = str.substring(1); }
+                
+                if (str.includes(',') && str.includes('.')) str = str.replace(/,/g, ''); 
+                else if (str.includes(',')) {
+                    if ((str.match(/,/g) || []).length > 1) str = str.replace(/,/g, '');
+                    else str = str.replace(',', '.');
+                }
+                const num = parseFloat(str);
+                return isNaN(num) ? 0 : (isNegative ? -Math.abs(num) : Math.abs(num));
             };
 
             const m = parseMoney(row[iCredito]);

@@ -24,7 +24,7 @@ try {
     $pdoBancos = Database::connect();
 
     // ==========================================
-    // 1. QUERY TSD (Usa $pdoTSD) - Filtrado para Costa Rica
+    // 1. QUERY TSD (Usa $pdoTSD) - Limpio, sin JOIN externo
     // ==========================================
     $sqlTSD = "
         SELECT
@@ -60,9 +60,27 @@ try {
     ";
     
     $stmtTSD = $pdoTSD->prepare($sqlTSD);
-    // Como usamos CAST a DATE y BETWEEN, ya no ocupamos variables con tiempo (00:00:00), pasamos el string directo.
     $stmtTSD->execute([':startDate' => $startDate, ':endDate' => $endDate]);
     $dataTSD = $stmtTSD->fetchAll();
+
+    // ==========================================
+    // 1.5 MERGE EN PHP: Agregar Tarjetas al array TSD
+    // ==========================================
+    $stmtTarjetas = $pdoBancos->query("SELECT NumeroContrato, Tarjeta_Ultimos4 FROM Tbl_Historial_Tarjetas");
+    $tarjetasRows = $stmtTarjetas->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Crear un diccionario rápido [Contrato => Tarjeta]
+    $mapaTarjetas = [];
+    foreach($tarjetasRows as $t) {
+        $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']);
+    }
+
+    // Inyectar la tarjeta a los resultados de TSD en memoria
+    foreach ($dataTSD as &$row) {
+        $contrato = trim($row['Contrato']);
+        $row['Tarjeta_Ultimos4'] = isset($mapaTarjetas[$contrato]) ? $mapaTarjetas[$contrato] : '';
+    }
+    unset($row); // Romper la referencia
 
     // ==========================================
     // 2. QUERY BANCOS (Extracción Directa de Detalles)

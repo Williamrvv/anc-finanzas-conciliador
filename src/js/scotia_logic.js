@@ -66,7 +66,8 @@ window.ScotiaLogic = {
             iva: getCurrIdx('retención iva'),
             isr: getCurrIdx('retención isr'),
             fecha: getCurrIdx('fecha'),
-            moneda: getCurrIdx('moneda') 
+            moneda: getCurrIdx('moneda'),
+            transaccion: getCurrIdx('transacci') // <-- buscador de "Transacción"
         };
         if(currCols.bruto === -1) currCols.bruto = getCurrIdx('monto orig');
         if(currCols.isr === -1) currCols.isr = getCurrIdx('retención is');
@@ -79,17 +80,26 @@ window.ScotiaLogic = {
         let currentMode = 'LOTE'; 
         let multiplicador = 1;
 
-        // PARSEADOR NUMÉRICO BLINDADO (Estándar Financiero)
-        const parseNum = (val) => {
-            if(!val) return 0;
-            if (typeof val === 'number') return val;
-            let str = String(val).replace(/["'\s₡$]/g, '');
-            if(str.includes(',') && str.includes('.')) str = str.replace(/,/g, '');
-            else if(str.includes(',')) str = str.replace(',', '.');
-            return parseFloat(str) || 0;
+        // PARSEADOR NUMÉRICO UNIVERSAL (Respeta Negativos Contables)
+        const parseNum = (v) => {
+            if (v === null || v === undefined || v === '') return 0;
+            if (typeof v === 'number') return v;
+            let str = String(v).trim().replace(/['"\s₡$]/g, '');
+            let isNegative = false;
+            if (str.endsWith('-')) { isNegative = true; str = str.slice(0, -1); } 
+            else if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
+            else if (str.startsWith('-')) { isNegative = true; str = str.substring(1); }
+            
+            if (str.includes(',') && str.includes('.')) str = str.replace(/,/g, ''); 
+            else if (str.includes(',')) {
+                if ((str.match(/,/g) || []).length > 1) str = str.replace(/,/g, '');
+                else str = str.replace(',', '.');
+            }
+            const num = parseFloat(str);
+            if (isNaN(num)) return 0;
+            return isNegative ? -Math.abs(num) : Math.abs(num);
         };
 
-        // Comenzamos a leer JUSTO DESPUÉS del encabezado
         for(let i = mainHeaderIdx + 1; i < rawRows.length; i++) {
             const row = rawRows[i];
             if(!row || row.length === 0) continue;
@@ -98,48 +108,59 @@ window.ScotiaLogic = {
 
             // A. Detección de Cambio de Bloque (LOTE vs AJUSTE)
             if(rowStr.includes('agrupado por') && rowStr.includes('transacción')) {
-                if(rowStr.includes('ajuste')) {
-                    currentMode = 'AJUSTE';
-                    multiplicador = -1; // INVERTIR SIGNO
-                } else {
-                    currentMode = 'LOTE';
-                    multiplicador = 1;  // Positivo
-                }
+                currentMode = rowStr.includes('ajuste') ? 'AJUSTE' : 'LOTE';
                 continue; 
             }
 
-            // B. Ignorar filas de subtotales y vacías
             if(rowStr.includes('monto neto') || rowStr.includes('subtotales')) continue;
 
-            // Eliminamos el splice() de la Columna Fantasma porque rompía la alineación de los índices de cabecera
             let workingRow = [...row];
     
-            // C. VALIDACIÓN CRÍTICA Y LIMPIEZA DE MerID
             let rawMerId = String(workingRow[currCols.merId] || '').trim();
-            // ¡CRÍTICO! Destruir la comilla simple inicial de Excel (Ej: '61680503)
             if (rawMerId.startsWith("'")) rawMerId = rawMerId.substring(1);
-            
             if(rawMerId === '') continue;
 
-            // D. Extracción de Datos usando los índices de ESTE archivo
-            const vBruto = Math.abs(parseNum(workingRow[currCols.bruto]));
-            const vNeto = Math.abs(parseNum(workingRow[currCols.neto]));
+            // D. Detección Inteligente de Ajustes (Leyendo la columna Transacción)
+            let isAjusteRow = false;
+            if (currCols.transaccion !== -1) {
+                const valTrans = String(workingRow[currCols.transaccion] || '').toLowerCase();
+                if (valTrans.includes('ajuste')) isAjusteRow = true;
+            }
+            if (currentMode === 'AJUSTE') isAjusteRow = true; // Fallback del bloque
+
+            // Extracción Matemática
+            let finalBruto = parseNum(workingRow[currCols.bruto]);
+            let finalNeto = parseNum(workingRow[currCols.neto]);
+            let vCom = parseNum(workingRow[currCols.com]);
+            let vIva = parseNum(workingRow[currCols.iva]);
+            let vIsr = parseNum(workingRow[currCols.isr]);
             
-            const finalNeto = vNeto * multiplicador;
-            const finalBruto = vBruto * multiplicador;
-            const vCom = Math.abs(parseNum(workingRow[currCols.com])) * multiplicador;
-            const vIva = Math.abs(parseNum(workingRow[currCols.iva])) * multiplicador;
-            const vIsr = Math.abs(parseNum(workingRow[currCols.isr])) * multiplicador; 
+            // INVERSIÓN TOTAL DE SIGNOS: Si el Excel dice "Ajuste", TODO es negativo
+            if (isAjusteRow) {
+                if (finalBruto > 0) finalBruto = -finalBruto;
+                if (finalNeto > 0) finalNeto = -finalNeto;
+                if (vCom > 0) vCom = -vCom;
+                if (vIva > 0) vIva = -vIva;
+                if (vIsr > 0) vIsr = -vIsr;
+            }
 
             // E. Mapeo al Master Header
             const mappedData = {};
             currentHeaders.forEach((h, currIdx) => {
                 const mIdx = indexMap[currIdx];
                 let cellVal = workingRow[currIdx];
-                // Limpiar la odiosa comilla simple de Excel
                 if (typeof cellVal === 'string' && cellVal.startsWith("'")) cellVal = cellVal.substring(1);
                 mappedData[String(mIdx)] = cellVal;
             });
+
+            // CRÍTICO: Inyectar los números ya en negativo al array de Base de Datos para que no guarde positivos
+            if (isAjusteRow) {
+                if (currCols.neto !== -1) mappedData[String(indexMap[currCols.neto])] = finalNeto;
+                if (currCols.bruto !== -1) mappedData[String(indexMap[currCols.bruto])] = finalBruto;
+                if (currCols.com !== -1) mappedData[String(indexMap[currCols.com])] = vCom;
+                if (currCols.iva !== -1) mappedData[String(indexMap[currCols.iva])] = vIva;
+                if (currCols.isr !== -1) mappedData[String(indexMap[currCols.isr])] = vIsr;
+            }
 
             // Forzar montos negativos en el objeto para la tabla
             if (multiplicador === -1) {
@@ -325,6 +346,7 @@ window.ScotiaLogic = {
         const iDesc = headers.findIndex(h => h.toLowerCase().includes('descripci'));
         const iMonto = headers.findIndex(h => h.toLowerCase().includes('monto'));
         const iFecha = headers.findIndex(h => h && String(h).toLowerCase().includes('fecha'));
+        const iTipo = headers.findIndex(h => h && (String(h).toLowerCase().includes('crédito') || String(h).toLowerCase().includes('credito') || String(h).toLowerCase().includes('débito') || String(h).toLowerCase().includes('debito') || String(h).toLowerCase().includes('tipo')));
 
         const newRows = [];
 
@@ -338,18 +360,34 @@ window.ScotiaLogic = {
             let rawM = row[iMonto];
             let m = 0;
 
-            if (typeof rawM === 'number') m = rawM;
-            else if (typeof rawM === 'string') {
-                let clean = rawM.replace(/[\s₡$]/g, '');
-                // Detección formato USA/CR
-                const commas = (clean.match(/,/g) || []).length;
-                const dots = (clean.match(/\./g) || []).length;
-                if (commas > 0 && dots > 0) {
-                    if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) m = parseFloat(clean.replace(/\./g, '').replace(',', '.'));
-                    else m = parseFloat(clean.replace(/,/g, ''));
-                } else if (commas > 0) m = parseFloat(clean.replace(/,/g, ''));
-                else m = parseFloat(clean);
+            if (typeof rawM === 'number') {
+                m = rawM;
+            } else if (typeof rawM === 'string') {
+                let str = rawM.trim().replace(/['"\s₡$]/g, '');
+                let isNegative = false;
+                if (str.endsWith('-')) { isNegative = true; str = str.slice(0, -1); } 
+                else if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
+                else if (str.startsWith('-')) { isNegative = true; str = str.substring(1); }
+                
+                if (str.includes(',') && str.includes('.')) str = str.replace(/,/g, ''); 
+                else if (str.includes(',')) {
+                    if ((str.match(/,/g) || []).length > 1) str = str.replace(/,/g, '');
+                    else str = str.replace(',', '.');
+                }
+                const num = parseFloat(str);
+                m = isNaN(num) ? 0 : (isNegative ? -Math.abs(num) : Math.abs(num));
             }
+            
+            // INTELIGENCIA BANCARIA: Si la columna de tipo dice "Débito", forzar a negativo
+            if (iTipo !== -1) {
+                const tipoStr = String(row[iTipo] || '').toLowerCase();
+                if (tipoStr.includes('débito') || tipoStr.includes('debito')) {
+                    if (m > 0) m = -m;
+                }
+            }
+            
+            // Inyectar a la celda original cruda para que viaje negativo a la BD
+            row[iMonto] = m;
             
             if (m !== 0) {
                 const desc = String(row[iDesc] || '').trim();

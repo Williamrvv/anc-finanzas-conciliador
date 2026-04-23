@@ -1281,12 +1281,29 @@ window.ConciliacionLogic = {
             return idx !== -1 ? r[String(idx)] : null;
         };
         const cleanN = (v) => {
-            if(!v) return 0;
-            if(typeof v === 'number') return v;
-            let str = String(v).replace(/['"\s₡$]/g, '');
-            if(str.includes(',') && str.includes('.')) str = str.replace(/,/g, '');
-            else if(str.includes(',')) str = str.replace(',', '.');
-            return parseFloat(str) || 0;
+            if (v === null || v === undefined || v === '') return 0;
+            if (typeof v === 'number') return v;
+            let str = String(v).trim().replace(/['"\s₡$]/g, '');
+            
+            // Detección de formatos negativos contables: "-1500", "1500-", "(1500)"
+            let isNegative = false;
+            if (str.endsWith('-')) { isNegative = true; str = str.slice(0, -1); } 
+            else if (str.startsWith('(') && str.endsWith(')')) { isNegative = true; str = str.slice(1, -1); } 
+            else if (str.startsWith('-')) { isNegative = true; str = str.substring(1); }
+            
+            // Reparación de comas y puntos (Múltiples formatos)
+            if (str.includes(',') && str.includes('.')) {
+                str = str.replace(/,/g, ''); 
+            } else if (str.includes(',')) {
+                if ((str.match(/,/g) || []).length > 1) str = str.replace(/,/g, '');
+                else str = str.replace(',', '.');
+            }
+            const dotParts = str.split('.');
+            if (dotParts.length > 2) str = dotParts.slice(0, -1).join('') + '.' + dotParts.pop();
+
+            const num = parseFloat(str);
+            if (isNaN(num)) return 0;
+            return isNegative ? -Math.abs(num) : Math.abs(num);
         };
         // NUEVO: Limpiador de Fechas Seriales de Excel
         const cleanD = (v) => v ? window.ConciliacionLogic.formatDateCR(v) : null;
