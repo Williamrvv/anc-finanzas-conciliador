@@ -21,6 +21,17 @@
                 </div>
             </div>
             
+            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+            <!-- Alerta de Diferencia Visual -->
+            <div class="flex flex-col px-3 relative">
+                <span class="text-[10px] font-bold text-slate-400 uppercase mb-0.5" title="Resaltar diferencias mayores o iguales a este monto">Alerta Dif. (₡)</span>
+                <div class="flex items-center gap-1 border-b border-slate-300 dark:border-slate-600 pb-1">
+                    <span class="text-red-500 font-bold text-xs">≥</span>
+                    <input type="number" id="tsd-threshold" value="10000" min="0" step="1" oninput="window.TSDLogic.updateThreshold()" class="bg-transparent text-sm font-bold text-red-600 dark:text-red-400 outline-none w-20 text-center">
+                </div>
+            </div>
+            
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
             
             <button id="btn-run-match" onclick="window.TSDLogic.fetchAndMatch()" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition-all shadow-md shadow-purple-500/20 flex items-center gap-2">
