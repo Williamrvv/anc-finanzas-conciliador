@@ -19,7 +19,7 @@ $hoy = date('Y-m-d');
 // ========================================================
 // MODO PRUEBAS UAT: Forzar hora de inicio (Eliminar en Prod)
 // ========================================================
-$FORZAR_PRUEBA = false;
+$FORZAR_PRUEBA = true;
 $HORA_PRUEBA = "06:00:00"; 
 // ========================================================
 

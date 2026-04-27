@@ -83,62 +83,60 @@ try {
     unset($row); // Romper la referencia
 
     // ==========================================
-    // 2. QUERY BANCOS (Extracción Directa de Detalles)
+    // 2. QUERY BANCOS (Extracción por Marca de Agua - ConsolidadoTSD)
     // ==========================================
     $sqlBancos = "
-        WITH TransaccionesCombinadas AS (
-            -- 1. EXTRACCIÓN DEL BAC CREDOMATIC
+        WITH FoliosNuevos AS (
+            -- 1. EXTRACCIÓN DIRECTA: BAC CREDOMATIC
             SELECT 
-                IdTransaccion,
+                b.IdTransaccion, -- Requerido para la Lista Negra (Blacklist) en el JS
+                c.IdCierre AS Folio_Cierre,
+                c.FechaCierre AS Fecha_Del_Folio,
                 'BAC' AS Banco,
-                NUMERO_AFILIADO AS Afiliado_MerID,
-                NOMBRECOMERCIO AS Nombre_Comercio,
-                RIGHT(RTRIM(LTRIM(NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
-                AUTORIZACION AS Numero_Autorizacion,
-                MONTO_VENTA AS Monto_Venta_Original,
-                FECHA_PAGO AS Fecha_Pago_Excel
-            FROM 
-                Tbl_Detalle_BAC
-            WHERE 
-                TRY_CONVERT(date, FECHA_PAGO, 103) >= :startBAC 
-                AND TRY_CONVERT(date, FECHA_PAGO, 103) <= :endBAC
-                AND AUTORIZACION IS NOT NULL 
-                AND RTRIM(LTRIM(AUTORIZACION)) <> ''
+                b.NUMERO_AFILIADO AS Afiliado_MerID,
+                b.TERMINAL AS Codigo_Sucursal_Terminal,
+                b.NOMBRECOMERCIO AS Nombre_Sucursal_Comercio,
+                RIGHT(RTRIM(LTRIM(b.NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
+                b.AUTORIZACION AS Numero_Autorizacion,
+                b.MONTO_VENTA AS Monto_Venta_Original,
+                b.FECHA_PAGO AS Fecha_Pago_Excel
+            FROM Tbl_Detalle_BAC b
+            INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
+            WHERE c.ConsolidadoTSD IS NULL
+              AND b.AUTORIZACION IS NOT NULL 
+              AND RTRIM(LTRIM(b.AUTORIZACION)) <> ''
 
             UNION ALL
 
-            -- 2. EXTRACCIÓN DE SCOTIABANK (DAVIBANK)
+            -- 2. EXTRACCIÓN DIRECTA: SCOTIABANK (DAVIBANK)
             SELECT 
-                IdTransaccion,
+                s.IdTransaccion,
+                c.IdCierre AS Folio_Cierre,
+                c.FechaCierre AS Fecha_Del_Folio,
                 'SCOTIA' AS Banco,
-                MerID AS Afiliado_MerID,
-                Nombre AS Nombre_Comercio,
-                RIGHT(RTRIM(LTRIM(Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
-                Numero_Autorizacion AS Numero_Autorizacion,
-                Monto_Orig AS Monto_Venta_Original,
-                Fecha_Pago AS Fecha_Pago_Excel
-            FROM 
-                Tbl_Detalle_Scotia
-            WHERE 
-                (Numero_Tarjeta IS NOT NULL AND RTRIM(LTRIM(Numero_Tarjeta)) <> '')
-                AND TRY_CONVERT(date, Fecha_Pago, 103) >= :startScotia 
-                AND TRY_CONVERT(date, Fecha_Pago, 103) <= :endScotia
-                AND Numero_Autorizacion IS NOT NULL 
-                AND RTRIM(LTRIM(Numero_Autorizacion)) <> ''
+                s.MerID AS Afiliado_MerID,
+                s.Terminal AS Codigo_Sucursal_Terminal,
+                s.Nombre AS Nombre_Sucursal_Comercio,
+                RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
+                s.Numero_Autorizacion AS Numero_Autorizacion,
+                s.Monto_Orig AS Monto_Venta_Original,
+                s.Fecha_Pago AS Fecha_Pago_Excel
+            FROM Tbl_Detalle_Scotia s
+            INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
+            WHERE c.ConsolidadoTSD IS NULL
+              AND s.Numero_Autorizacion IS NOT NULL 
+              AND RTRIM(LTRIM(s.Numero_Autorizacion)) <> ''
+              AND s.Numero_Tarjeta IS NOT NULL 
+              AND RTRIM(LTRIM(s.Numero_Tarjeta)) <> ''
         )
         SELECT * 
-        FROM TransaccionesCombinadas
-        ORDER BY TRY_CONVERT(date, Fecha_Pago_Excel, 103) ASC, Banco ASC;
+        FROM FoliosNuevos
+        ORDER BY Folio_Cierre ASC, Banco ASC, TRY_CONVERT(date, Fecha_Pago_Excel, 103) ASC;
     ";
 
     $stmtBancos = $pdoBancos->prepare($sqlBancos);
-    // Pasamos las variables explícitamente para cada bloque del UNION para evitar errores de parámetros en PDO
-    $stmtBancos->execute([
-        ':startBAC' => $startDate, 
-        ':endBAC' => $endDate,
-        ':startScotia' => $startDate, 
-        ':endScotia' => $endDate
-    ]);
+    // Ya no se le pasan parámetros de fecha al query de Bancos, se ejecuta libre buscando folios pendientes
+    $stmtBancos->execute();
     $dataBancos = $stmtBancos->fetchAll();
 
     echo json_encode([

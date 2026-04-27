@@ -36,6 +36,24 @@ window.TSDLogic = {
         }
     },
 
+    openRawViewer: function() {
+        const dateVal = document.getElementById('tsd-date-picker').value;
+        if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas para consultar TSD.");
+
+        let start = dateVal, end = dateVal;
+        if (dateVal.includes(' a ')) {
+            [start, end] = dateVal.split(' a ');
+        }
+        
+        // Abre una ventana emergente nativa del navegador centrada
+        const width = 1200;
+        const height = 800;
+        const left = (screen.width - width) / 2;
+        const top = (screen.height - height) / 2;
+        
+        window.open(`visor_crudos.php?start=${start}&end=${end}`, 'VisorCrudosIRI', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
+    },
+
     fetchAndMatch: async function() {
         const dateVal = document.getElementById('tsd-date-picker').value;
         if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas válido.");
@@ -175,157 +193,224 @@ window.TSDLogic = {
         }
     },
 
-    // 4. Algoritmo de Cruce (Cero Tolerancia + Blacklist)
+    // 4. Algoritmo de Cruce Cascada 5 Fases (Doble Validación)
     runMatchingAlgorithm: function(tsdData, bancosData) {
-        console.log(`🧠 Ejecutando Algoritmo Estricto: ${tsdData.length} TSD vs ${bancosData.length} Bancos`);
+        console.log(`🧠 Ejecutando Algoritmo 5-Pass: ${tsdData.length} TSD vs ${bancosData.length} Bancos`);
 
         const gridData = [];
-        let bancosDisponibles = [...bancosData];
-        const huerfanosTSD = [];
+        let bancosDisponibles = [...bancosData]; 
+        let pendientesTSD = [...tsdData]; // TSD que aún no hacen match
 
         const cleanStr = (str) => String(str || '').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        // Blindaje contra espacios ocultos en la memoria RAM
-        const isBlacklisted = (knum, idTrans) => {
-            const key = String(knum).trim() + '|' + String(idTrans).trim();
-            return this.blacklist.includes(key);
-        };
+        const isBlacklisted = (knum, idTrans) => this.blacklist.includes(String(knum).trim() + '|' + String(idTrans).trim());
+        const isSameMonto = (m1, m2) => Math.abs(parseFloat(m1) - parseFloat(m2)) < 2; // Tolerancia de micro-céntimos
 
-        // --- PASADA 1: CRUCE ESTRICTO POR AUTORIZACIÓN ---
-        tsdData.forEach(tsdRow => {
-            const authTSD = cleanStr(tsdRow.Autorizacion);
+        // Función empaquetadora de Match exitoso
+        const processMatch = (tsdRow, bancoRow, matchType) => {
             const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
-            const tarjetaTSD = cleanStr(tsdRow.Tarjeta_Ultimos4);
-            const tarjetaTSDSegura = tarjetaTSD.length >= 4 ? tarjetaTSD.slice(-4) : tarjetaTSD;
-
-            let matchIdx = -1;
-            
-            if (authTSD !== '' && authTSD !== '0' && authTSD !== '000000') {
-                matchIdx = bancosDisponibles.findIndex(b => 
-                    cleanStr(b.Numero_Autorizacion) === authTSD && 
-                    !isBlacklisted(tsdRow.Contrato, b.IdTransaccion) // Validación de Mutabilidad
-                );
-            }
-
-            if (matchIdx !== -1) {
-                const matchedBanco = bancosDisponibles.splice(matchIdx, 1)[0];
-                const isNegative = montoTSD < 0;
-                
-                gridData.push({
-                    _uid: 'row_' + Math.random().toString(36).substr(2, 9),
-                    _tsdRaw: tsdRow,
-                    _bancoRaw: matchedBanco,
-                    _rowClass: isNegative 
-                        ? 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold' 
-                        : 'bg-[#fce4d6] dark:bg-[#7c6f69] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800',
-                    Contrato: tsdRow.Contrato,
-                    Cliente: tsdRow.Cliente,
-                    TarjetaTSD: tarjetaTSDSegura !== '' ? `****${tarjetaTSDSegura}` : 'S/D',
-                    Autorizacion: tsdRow.Autorizacion,
-                    MontoTSD: montoTSD,
-                    EstadoMatch: 'Auth Exacta',
-                    Banco_Nombre: matchedBanco.Banco,
-                    Banco_Auth: matchedBanco.Numero_Autorizacion,
-                    Banco_Monto: parseFloat(matchedBanco.Monto_Venta_Original),
-                    Diferencia: montoTSD - parseFloat(matchedBanco.Monto_Venta_Original)
-                });
-            } else {
-                // Va a la Pasada 2
-                huerfanosTSD.push({ tsdRow, montoTSD, tarjetaTSDSegura });
-            }
-        });
-
-        // --- PASADA 2: CRUCE ESTRICTO POR TARJETA ---
-        huerfanosTSD.forEach(item => {
-            const { tsdRow, montoTSD, tarjetaTSDSegura } = item;
-            let matchedBanco = null;
-            let matchType = 'Pendiente';
-            let bgColorClass = '';
+            const montoBanco = parseFloat(bancoRow.Monto_Venta_Original) || 0;
             const isNegative = montoTSD < 0;
+            const tarjetaTSD = cleanStr(tsdRow.Tarjeta_Ultimos4);
+            const tSegura = tarjetaTSD.length >= 4 ? tarjetaTSD.slice(-4) : tarjetaTSD;
 
-            if (tarjetaTSDSegura !== '' && tarjetaTSDSegura.length === 4) {
-                const matchIdx = bancosDisponibles.findIndex(b => {
-                    const bankCard = cleanStr(b.Tarjeta_Ultimos4).slice(-4);
-                    return bankCard === tarjetaTSDSegura && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion);
-                });
+            let bgColorClass = 'bg-[#fce4d6] dark:bg-[#7c6f69] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; // Default Naranja
+            if (matchType.includes('Tarjeta')) {
+                bgColorClass = 'bg-[#ddebf7] dark:bg-[#1e3a8a] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; // Azul
+            } else if (matchType.includes('Sugerencia')) {
+                bgColorClass = 'bg-[#ffe699] dark:bg-[#655b3d] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; // Amarillo
+            }
 
-                if (matchIdx !== -1) {
-                    matchedBanco = bancosDisponibles.splice(matchIdx, 1)[0];
-                    matchType = 'Match Tarjeta';
-                    // Si el monto es negativo Y cruzó, va gris. Si es positivo y cruzó, va azul.
-                    bgColorClass = isNegative 
-                        ? 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold'
-                        : 'bg-[#ddebf7] dark:bg-[#1e3a8a] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800';
-                }
+            if (isNegative) {
+                bgColorClass = 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold'; // Gris
             }
 
             gridData.push({
                 _uid: 'row_' + Math.random().toString(36).substr(2, 9),
                 _tsdRaw: tsdRow,
-                _bancoRaw: matchedBanco,
+                _bancoRaw: bancoRow,
                 _rowClass: bgColorClass,
                 Contrato: tsdRow.Contrato,
                 Cliente: tsdRow.Cliente,
-                TarjetaTSD: tarjetaTSDSegura !== '' ? `****${tarjetaTSDSegura}` : 'S/D',
+                TarjetaTSD: tSegura !== '' ? `****${tSegura}` : 'S/D',
                 Autorizacion: tsdRow.Autorizacion,
                 MontoTSD: montoTSD,
                 EstadoMatch: matchType,
-                Banco_Nombre: matchedBanco ? matchedBanco.Banco : '-',
-                Banco_Auth: matchedBanco ? matchedBanco.Numero_Autorizacion : '-',
-                Banco_Monto: matchedBanco ? parseFloat(matchedBanco.Monto_Venta_Original) : 0,
-                Diferencia: matchedBanco ? (montoTSD - parseFloat(matchedBanco.Monto_Venta_Original)) : montoTSD
+                Banco_Nombre: bancoRow.Banco,
+                Banco_Auth: bancoRow.Numero_Autorizacion,
+                Banco_Monto: montoBanco,
+                Diferencia: montoTSD - montoBanco
+            });
+        };
+
+        // --- FASE 1: AUTH + MONTO (Confianza Máxima) ---
+        let nextTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const authTSD = cleanStr(tsdRow.Autorizacion);
+            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+            let matchIdx = -1;
+            if (authTSD !== '' && authTSD !== '0' && authTSD !== '000000') {
+                matchIdx = bancosDisponibles.findIndex(b => cleanStr(b.Numero_Autorizacion) === authTSD && isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
+            }
+            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Auth + Monto');
+            else nextTSD.push(tsdRow);
+        });
+        pendientesTSD = nextTSD;
+
+        // --- FASE 2: AUTH SOLO ---
+        nextTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const authTSD = cleanStr(tsdRow.Autorizacion);
+            let matchIdx = -1;
+            if (authTSD !== '' && authTSD !== '0' && authTSD !== '000000') {
+                matchIdx = bancosDisponibles.findIndex(b => cleanStr(b.Numero_Autorizacion) === authTSD && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
+            }
+            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Auth Solo');
+            else nextTSD.push(tsdRow);
+        });
+        pendientesTSD = nextTSD;
+
+        // --- FASE 3: TARJETA + MONTO ---
+        nextTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const tSegura = cleanStr(tsdRow.Tarjeta_Ultimos4).slice(-4);
+            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+            let matchIdx = -1;
+            if (tSegura !== '' && tSegura.length === 4) {
+                matchIdx = bancosDisponibles.findIndex(b => cleanStr(b.Tarjeta_Ultimos4).slice(-4) === tSegura && isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
+            }
+            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Tarjeta + Monto');
+            else nextTSD.push(tsdRow);
+        });
+        pendientesTSD = nextTSD;
+
+        // --- FASE 4: TARJETA SOLO ---
+        nextTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const tSegura = cleanStr(tsdRow.Tarjeta_Ultimos4).slice(-4);
+            let matchIdx = -1;
+            if (tSegura !== '' && tSegura.length === 4) {
+                matchIdx = bancosDisponibles.findIndex(b => cleanStr(b.Tarjeta_Ultimos4).slice(-4) === tSegura && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
+            }
+            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Tarjeta Solo');
+            else nextTSD.push(tsdRow);
+        });
+        pendientesTSD = nextTSD;
+
+        // --- FASE 5: MONTO SOLO (Cortesía / Sugerencia) ---
+        nextTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+            let matchIdx = -1;
+            if (Math.abs(montoTSD) > 0) { // Ignorar ceros
+                matchIdx = bancosDisponibles.findIndex(b => isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
+            }
+            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Sugerencia (Monto)');
+            else nextTSD.push(tsdRow);
+        });
+        pendientesTSD = nextTSD;
+
+        // --- FASE 6: HUÉRFANOS TSD (Lo que no cruzó con nada) ---
+        pendientesTSD.forEach(tsdRow => {
+            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+            const tSegura = cleanStr(tsdRow.Tarjeta_Ultimos4).slice(-4);
+            gridData.push({
+                _uid: 'row_' + Math.random().toString(36).substr(2, 9),
+                _tsdRaw: tsdRow, _bancoRaw: null, _rowClass: '',
+                Contrato: tsdRow.Contrato, Cliente: tsdRow.Cliente,
+                TarjetaTSD: tSegura !== '' ? `****${tSegura}` : 'S/D',
+                Autorizacion: tsdRow.Autorizacion, MontoTSD: montoTSD,
+                EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
             });
         });
 
-        // --- SOBRANTES DE BANCO ---
+        // --- FASE 7: SOBRANTES BANCOS ---
         bancosDisponibles.forEach(b => {
             const m = parseFloat(b.Monto_Venta_Original);
             gridData.push({
                 _uid: 'row_' + Math.random().toString(36).substr(2, 9),
-                _tsdRaw: null,
-                _bancoRaw: b,
-                // Le quitamos la validación m < 0, ahora todos los sobrantes son texto atenuado sin fondo
+                _tsdRaw: null, _bancoRaw: b,
                 _rowClass: 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800',
-                Contrato: 'Solo Banco',
-                Cliente: b.Nombre_Comercio,
+                Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
                 TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D',
-                Autorizacion: '-',
-                MontoTSD: 0,
-                EstadoMatch: 'Sobrante',
-                Banco_Nombre: b.Banco,
-                Banco_Auth: b.Numero_Autorizacion,
-                Banco_Monto: m,
-                Diferencia: 0 - m
+                Autorizacion: '-', MontoTSD: 0,
+                EstadoMatch: 'Sobrante', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
             });
         });
 
-        // --- ORDENAMIENTO ESTÉTICO (AGRUPACIÓN) ---
+        // --- ORDENAMIENTO ESTÉTICO ---
         gridData.sort((a, b) => {
             const getWeight = (row) => {
-                const isMatch = row.EstadoMatch === 'Auth Exacta' || row.EstadoMatch === 'Match Tarjeta';
                 const isNegative = row.MontoTSD < 0 || row.Banco_Monto < 0;
-
-                // Regla 1: Conciliados por Autorización (Positivos)
-                if (isMatch && !isNegative && row.EstadoMatch === 'Auth Exacta') return 1;
-                // Regla 2: Conciliados por Tarjeta (Positivos)
-                if (isMatch && !isNegative && row.EstadoMatch === 'Match Tarjeta') return 2;
-                // Regla 3: Conciliados pero con montos Negativos
-                if (isMatch && isNegative) return 3;
-                // Regla 4: Resto (Sobrantes y Pendientes)
-                return 4;
+                if (isNegative && row.EstadoMatch !== 'Pendiente' && row.EstadoMatch !== 'Sobrante') return 6; 
+                if (row.EstadoMatch === 'Auth + Monto') return 1;
+                if (row.EstadoMatch === 'Auth Solo') return 2;
+                if (row.EstadoMatch === 'Tarjeta + Monto') return 3;
+                if (row.EstadoMatch === 'Tarjeta Solo') return 4;
+                if (row.EstadoMatch === 'Sugerencia (Monto)') return 5;
+                return 7;
             };
-
-            const weightA = getWeight(a);
-            const weightB = getWeight(b);
-            
-            // Si tienen pesos distintos, se ordenan por su grupo
+            const weightA = getWeight(a), weightB = getWeight(b);
             if (weightA !== weightB) return weightA - weightB;
-            
-            // Si pertenecen al mismo grupo, se ordenan alfabéticamente por Contrato para mantener orden
             return String(a.Contrato).localeCompare(String(b.Contrato));
         });
 
         this.currentGridData = gridData;
         this.renderGrid(gridData);
+    },
+
+    renderGrid: function(data) {
+        const columns = [
+            { title: "Contrato (TSD)", field: "Contrato", width: 100, headerFilter: true, cssClass: "font-mono font-bold" },
+            { title: "Cliente", field: "Cliente", headerFilter: true, width: 160, cssClass: "truncate text-[10px]" },
+            { title: "Tarjeta", field: "TarjetaTSD", width: 70, cssClass: "font-mono text-slate-500" },
+            { title: "Auth (TSD)", field: "Autorizacion", headerFilter: true, width: 90, cssClass: "font-mono" },
+            { title: "Monto", field: "MontoTSD", formatter: "money", hozAlign: "right", bottomCalc: "sum" },
+            
+            { 
+                title: "STATUS CRUCE", field: "EstadoMatch", headerFilter: true, width: 140, hozAlign: "center",
+                cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold shadow-inner cursor-pointer",
+                formatter: (cell) => {
+                    const val = cell.getValue();
+                    if(val === 'Auth + Monto') return '✔️ Auth+Monto';
+                    if(val === 'Auth Solo') return '✔️ Auth Solo';
+                    if(val === 'Tarjeta + Monto') return '💳 Tarjeta+Monto';
+                    if(val === 'Tarjeta Solo') return '💳 Tarjeta Solo';
+                    if(val === 'Sugerencia (Monto)') return '<span class="text-amber-600 dark:text-amber-400">⚠️ Sugerencia</span>';
+                    if(val === 'Pendiente' || val === 'Desconciliado') return '<span class="text-red-500">❌ Pendiente</span>';
+                    return val;
+                }
+            },
+            
+            { title: "Banco", field: "Banco_Nombre", width: 80, hozAlign: "center", headerFilter: true, cssClass: "text-blue-700 dark:text-blue-400 font-bold" },
+            { title: "Auth (Banco)", field: "Banco_Auth", headerFilter: true, width: 90, cssClass: "font-mono" },
+            { title: "Monto", field: "Banco_Monto", formatter: "money", hozAlign: "right", bottomCalc: "sum" },
+            { 
+                title: "Diferencia", field: "Diferencia", hozAlign: "right", 
+                formatter: (cell) => {
+                    const val = cell.getValue();
+                    const thresholdInput = document.getElementById('tsd-threshold');
+                    const threshold = thresholdInput ? Math.abs(parseFloat(thresholdInput.value)) || 0 : 10000;
+                    
+                    let formatted = new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(val);
+                    if (formatted.includes('.') && formatted.includes(',')) formatted = formatted.replace(/\./g, ' ');
+                    
+                    if (Math.abs(val) >= threshold) {
+                        return `<span class="text-red-700 dark:text-red-300 font-black bg-red-100 dark:bg-red-900/50 px-2 py-0.5 rounded shadow-sm border border-red-200 dark:border-red-800">${formatted}</span>`;
+                    }
+                    return `<span class="font-bold bg-white/40 dark:bg-black/30 px-2 py-0.5 rounded">${formatted}</span>`;
+                }
+            }
+        ];
+
+        if (this.grid) {
+            this.grid.updateData(data);
+        } else {
+            this.grid = new VanillaGrid("#table-result-tsd", data, columns, {
+                searchInputId: "search-tsd",
+                threshold: 0,
+                onRowDblClick: (row) => window.TSDLogic.openTransactionModal(row)
+            });
+        }
     },
 
     renderGrid: function(data) {

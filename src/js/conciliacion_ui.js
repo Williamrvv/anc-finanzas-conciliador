@@ -220,62 +220,69 @@ window.ConciliacionLogic = {
     resetState: function() {
         console.log("🧹 Purgando estado de memoria y DOM fantasma...");
         
-        // Apagar el reloj si se cierra o limpia la sesión
         if (this._autoSaveInterval) {
             clearInterval(this._autoSaveInterval);
             this._autoSaveInterval = null;
         }
 
-        // 1. LIMPIEZA DE RAM (Variables)
-        this.data = {
-            detalle: [], pagado: [], scotia_detalle: [], scotia_pagado: [],
-            files: { bac_detalle: [], bac_pagado: [], scotia_detalle: [], scotia_pagado: [] },
-            headers: {}, processed: {}
-        };
-        this.grids = { bac: null, scotia: null, bac_audit: null, scotia_audit: null, bac_manual: null, bac_deferred: null };
+        // 1. MUTACIÓN DIRECTA: Vaciar arrays existentes (Destruye referencias de memoria)
+        const purge = (arr) => { if (Array.isArray(arr)) arr.length = 0; };
         
-        if (this.manualMatches) this.manualMatches = [];
-        if (this.manualMatchesScotia) this.manualMatchesScotia = [];
-        if (this.deferredRows) this.deferredRows = { det: [], pag: [] };
+        if (this.data) {
+            purge(this.data.detalle); purge(this.data.pagado);
+            purge(this.data.scotia_detalle); purge(this.data.scotia_pagado);
+            if (this.data.files) {
+                purge(this.data.files.bac_detalle); purge(this.data.files.bac_pagado);
+                purge(this.data.files.scotia_detalle); purge(this.data.files.scotia_pagado);
+            }
+            this.data.headers = {}; this.data.processed = {};
+        }
 
-        // 2. LIMPIEZA DE DOM (Destrucción visual de las tablas e inputs)
+        // Matar Zombis de Conciliación Manual (En la clase principal)
+        purge(this.manualMatches);
+        purge(this.manualMatchesScotia);
+        if (this.deferredRows) { purge(this.deferredRows.det); purge(this.deferredRows.pag); }
+
+        // Matar Zombis en las clases Lógicas hijas (Evita resurrección)
+        if (window.BACLogic) {
+            purge(window.BACLogic.manualMatches);
+            if (window.BACLogic.deferredRows) { purge(window.BACLogic.deferredRows.det); purge(window.BACLogic.deferredRows.pag); }
+        }
+        if (window.ScotiaLogic) {
+            purge(window.ScotiaLogic.manualMatchesScotia);
+        }
+
+        // Destrucción de Grids (Libera eventos del DOM)
+        if (this.grids) {
+            Object.keys(this.grids).forEach(k => {
+                if (this.grids[k]) {
+                    if (typeof this.grids[k].destroy === 'function') this.grids[k].destroy();
+                    this.grids[k] = null;
+                }
+            });
+        }
+
+        // 2. LIMPIEZA DE DOM
         const domGrids = [
             'table-result-bac', 'table-exceptions-bac', 'table-deferred-bac', 'table-manual-bac',
             'table-result-scotia', 'table-exceptions-scotia',
             'bac-summary-container', 'scotia-summary-container'
         ];
-        domGrids.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = '';
-        });
+        domGrids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
 
-        // 3. LIMPIEZA DE TARJETAS Y DROPZONES
         const drops = ['drop-bac-detalle', 'drop-bac-pagado', 'drop-scotia-detalle', 'drop-scotia-pagado'];
         drops.forEach(id => {
             const el = document.getElementById(id);
-            if (el) {
-                el.classList.remove('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
-                el.classList.add('border-slate-300', 'bg-white', 'dark:bg-slate-800');
-            }
+            if (el) { el.classList.remove('border-green-500', 'bg-green-50', 'dark:bg-green-900/20'); el.classList.add('border-slate-300', 'bg-white', 'dark:bg-slate-800'); }
         });
 
         const cards = ['card-bac-detalle', 'card-bac-pagado', 'card-scotia-detalle', 'card-scotia-pagado', 'audit-bac', 'audit-scotia', 'audit-manual-bac', 'audit-deferred-bac'];
-        cards.forEach(id => {
-            const el = document.getElementById(id);
-            if(el) el.classList.add('hidden');
-        });
+        cards.forEach(id => { const el = document.getElementById(id); if(el) el.classList.add('hidden'); });
         
         const statusIds = ['status-bac-detalle', 'status-bac-pagado', 'status-scotia-detalle', 'status-scotia-pagado'];
-        statusIds.forEach(id => {
-            const el = document.getElementById(id);
-            if(el) { el.innerHTML = ''; el.classList.add('hidden'); }
-        });
+        statusIds.forEach(id => { const el = document.getElementById(id); if(el) { el.innerHTML = ''; el.classList.add('hidden'); }});
 
-        const totals = ['sum-depositos', 'sc-total-pagado'];
-        totals.forEach(id => {
-            const el = document.getElementById(id);
-            if(el) el.innerText = '0';
-        });
+        ['sum-depositos', 'sc-total-pagado'].forEach(id => { const el = document.getElementById(id); if(el) el.innerText = '0'; });
     },
 
     hasUnsavedData: function() {
@@ -1350,30 +1357,62 @@ window.ConciliacionLogic = {
                 comercioManual = r[idxComercio] || '';
             }
 
+            // EXTRACCIÓN PLANA
+            let vOrig = cleanN(getV('Monto Orig', h) || r['Monto Orig']);
+            let vBruto = cleanN(getV('Monto Bruto', h) || r._bruto);
+            let vComTot = cleanN(getV('Monto Comisión Total', h) || getV('Monto Comision Total', h) || r._comision || r['Monto Comisión']);
+            let vPComTot = cleanN(getV('% Comisión Total', h) || getV('% Comision Total', h) || r['% Comisión Total']);
+            let vComInt = cleanN(getV('Comisión Int', h) || getV('Comision Int', h));
+            let vPComInt = cleanN(getV('% Comisión Int', h) || getV('% Comision Int', h));
+            let vRetIva = cleanN(getV('Retención IVA', h) || getV('Retencion IVA', h) || r._iva || r['Retención IVA']);
+            let vPRetIva = cleanN(getV('% Retención IVA', h) || getV('% Retencion IVA', h) || r['% Retención IVA']);
+            let vRetIsr = cleanN(getV('Retención IS', h) || getV('Retencion IS', h) || r._isr || r['Retención ISR']);
+            let vNeto = cleanN(getV('Monto Neto', h) || r._neto);
+
+            // BLINDAJE DE NEGATIVOS: Si es Ajuste, TODO se vuelve negativo
+            let isAjusteRow = isAjuste || String(getV('Transacci', h) || r._mode || '').toUpperCase().includes('AJUSTE');
+            
+            if (isAjusteRow) {
+                if (vOrig > 0) vOrig = -vOrig;
+                if (vBruto > 0) vBruto = -vBruto;
+                if (vComTot > 0) vComTot = -vComTot;
+                if (vPComTot > 0) vPComTot = -vPComTot;
+                if (vComInt > 0) vComInt = -vComInt;
+                if (vPComInt > 0) vPComInt = -vPComInt;
+                if (vRetIva > 0) vRetIva = -vRetIva;
+                if (vPRetIva > 0) vPRetIva = -vPRetIva;
+                if (vRetIsr > 0) vRetIsr = -vRetIsr;
+                if (vNeto > 0) vNeto = -vNeto;
+                
+                // Forzar el tronco principal a negativo también
+                if (record.MontoBruto > 0) record.MontoBruto = -record.MontoBruto;
+                if (record.MontoNeto > 0) record.MontoNeto = -record.MontoNeto;
+            }
+
             record.RawScotia = {
                 Fuente: getV('Fuente', h),
-                Fecha_Pago: cleanD(getV('Fecha Pago', h) || r._fechaPago || r._fecha), // <-- Rescate Fecha Modal
+                Fecha_Pago: cleanD(getV('Fecha Pago', h) || r._fechaPago || r._fecha), 
                 Moneda: getV('Moneda', h),
                 Transaccion: getV('Transacci', h),
                 Razon_Social: getV('Razón', h) || getV('Razon', h),
                 MerID: getV('MerID', h) || r._extractedId || r._id,
                 Nombre: getV('Nombre', h) || r._desc || comercioManual,
-                Fecha_Lote_Ajuste: cleanD(getV('Fecha Lote', h) || r._fecha), // <-- Rescate Fecha Modal
+                Fecha_Lote_Ajuste: cleanD(getV('Fecha Lote', h) || r._fecha), 
                 Numero_Lote_Ajuste: getV('Número Lote', h) || getV('Numero Lote', h) || r._liq,
                 Terminal: getV('Terminal', h),
                 Numero_Pago: getV('Número Pago', h) || getV('Numero Pago', h) || getV('Pago', h),
-                Numero_Autorizacion: getV('Autoriza', h) || r._auth, // <-- Rescate Auth Modal
-                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta, // <-- Rescate Tarjeta Modal
-                Monto_Orig: cleanN(getV('Monto Orig', h)),
-                Monto_Bruto: cleanN(getV('Monto Bruto', h) || r._bruto),
-                Monto_Comision_Total: cleanN(getV('Monto Comisión Total', h) || getV('Monto Comision Total', h) || r._comision),
-                Porc_Comision_Total: cleanN(getV('% Comisión Total', h) || getV('% Comision Total', h)),
-                Monto_Comision_Int: cleanN(getV('Comisión Int', h) || getV('Comision Int', h)),
-                Porc_Comision_Int: cleanN(getV('% Comisión Int', h) || getV('% Comision Int', h)),
-                Monto_Retencion_IVA: cleanN(getV('Retención IVA', h) || getV('Retencion IVA', h) || r._iva),
-                Porc_Retencion_IVA: cleanN(getV('% Retención IVA', h) || getV('% Retencion IVA', h)),
-                Monto_Retencion_ISR: cleanN(getV('Retención IS', h) || getV('Retencion IS', h) || r._isr),
-                Monto_Neto: cleanN(getV('Monto Neto', h) || r._neto),
+                Numero_Autorizacion: getV('Autoriza', h) || r._auth, 
+                Numero_Tarjeta: getV('Tarjeta', h) || r._tarjeta, 
+                Monto_Orig: vOrig,
+                Monto_Bruto: vBruto,
+                Monto_Comision_Total: vComTot,
+                Porc_Comision_Total: vPComTot,
+                Monto_Comision_Int: vComInt,
+                Porc_Comision_Int: vPComInt,
+                Monto_Retencion_IVA: vRetIva,
+                Porc_Retencion_IVA: vPRetIva,
+                Monto_Retencion_ISR: vRetIsr,
+                Monto_Neto: vNeto,
                 Estatus: getV('Estatus', h)
             };
         }
@@ -1616,22 +1655,27 @@ window.ConciliacionLogic = {
             if (!data.success) throw new Error(data.error || "Error desconocido");
 
             // 8. PURGA ABSOLUTA Y CREACIÓN DE BORRADOR LIMPIO (SI APLICA)
+            const purge = (arr) => { if (Array.isArray(arr)) arr.length = 0; };
+            
             if (saveBac && saveSco) {
+                // Doble golpe: Borrar llave y forzar null para matar IndexedDB
                 await window.LocalDB.delete('conciliacion_draft');
+                await window.LocalDB.save('conciliacion_draft', null);
             } 
             else {
-                // GUARDADO PARCIAL: Limpiar en la RAM SÓLO el banco guardado
+                // GUARDADO PARCIAL MUTANTE: Limpiar físicamente los arrays
                 if (saveBac) {
-                    this.data.detalle = []; this.data.pagado = [];
-                    this.data.files.bac_detalle = []; this.data.files.bac_pagado = [];
-                    this.manualMatches = [];
-                    this.deferredRows = { det: [], pag: [] };
+                    purge(this.data.detalle); purge(this.data.pagado);
+                    purge(this.data.files.bac_detalle); purge(this.data.files.bac_pagado);
+                    purge(this.manualMatches); purge(this.deferredRows.det); purge(this.deferredRows.pag);
+                    if (window.BACLogic) { purge(window.BACLogic.manualMatches); purge(window.BACLogic.deferredRows.det); purge(window.BACLogic.deferredRows.pag); }
                     delete this.data.processed.bac_matches;
                 }
                 if (saveSco) {
-                    this.data.scotia_detalle = []; this.data.scotia_pagado = [];
-                    this.data.files.scotia_detalle = []; this.data.files.scotia_pagado = [];
-                    this.manualMatchesScotia = [];
+                    purge(this.data.scotia_detalle); purge(this.data.scotia_pagado);
+                    purge(this.data.files.scotia_detalle); purge(this.data.files.scotia_pagado);
+                    purge(this.manualMatchesScotia);
+                    if (window.ScotiaLogic) purge(window.ScotiaLogic.manualMatchesScotia);
                     delete this.data.processed.scotia_matches;
                 }
                 await this.saveDraftToLocal(false);

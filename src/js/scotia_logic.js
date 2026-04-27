@@ -1,7 +1,5 @@
 window.ScotiaLogic = {
-    // Procesa el Excel de Detalle (Scotiabank)
-    // Procesa el Excel de Detalle (Scotiabank) - Multibloque LOTE/AJUSTE
-    // Procesa el Excel de Detalle (Scotiabank) - Multibloque LOTE/AJUSTE y Multi-Archivo Seguro
+
     processScotiabankDetalle: async function(buf, filename) {
         // 0. VALIDACIÓN DE DUPLICADOS
         this.data.files = this.data.files || {};
@@ -17,7 +15,7 @@ window.ScotiaLogic = {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json(ws, {header: 1});
 
-        // 1. Detectar la Fila de Encabezados de este archivo específico
+        // 1. Detectar la Fila de Encabezados
         let mainHeaderIdx = -1;
         for(let i=0; i<Math.min(rawRows.length, 30); i++) {
             const rowStr = JSON.stringify(rawRows[i] || []).toLowerCase();
@@ -32,53 +30,46 @@ window.ScotiaLogic = {
             return;
         }
 
-        // 2. NORMALIZACIÓN "MASTER HEADER" (Evita desalineación al subir múltiples archivos)
+        // 2. NORMALIZACIÓN "MASTER HEADER"
         const currentHeaders = rawRows[mainHeaderIdx].map(h => h ? String(h).trim() : `Col_${Math.random()}`);
         
         this.data.headers = this.data.headers || {};
-        // Si no hay master, el primer archivo dicta la estructura
         if (!this.data.headers.scotia_detalle || this.data.headers.scotia_detalle.length === 0) {
             this.data.headers.scotia_detalle = [...currentHeaders]; 
         }
         const masterHeaders = this.data.headers.scotia_detalle;
 
-        // Crear mapa de traducción: índiceDelArchivoActual -> índiceMaestro
         const indexMap = {};
         currentHeaders.forEach((currH, currIdx) => {
             const masterIdx = masterHeaders.findIndex(mh => mh.toLowerCase() === currH.toLowerCase());
             if (masterIdx !== -1) {
                 indexMap[currIdx] = masterIdx;
             } else {
-                // Si el archivo trae una columna nueva, la añadimos al final del Master
                 const newMasterIdx = masterHeaders.length;
                 masterHeaders.push(currH);
                 indexMap[currIdx] = newMasterIdx;
             }
         });
 
-        // 3. Índices de lectura para ESTE archivo
+        // 3. Índices de lectura
         const getCurrIdx = (name) => currentHeaders.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
+        
         const currCols = {
             merId: getCurrIdx('merid'),
             bruto: getCurrIdx('monto bruto'),
             neto: getCurrIdx('monto neto'),
-            com: getCurrIdx('monto comisión'),
-            iva: getCurrIdx('retención iva'),
-            isr: getCurrIdx('retención isr'),
+            com: getCurrIdx('monto comisión') !== -1 ? getCurrIdx('monto comisión') : getCurrIdx('monto comision'),
+            iva: getCurrIdx('retención iva') !== -1 ? getCurrIdx('retención iva') : getCurrIdx('retencion iva'),
+            isr: getCurrIdx('retención isr') !== -1 ? getCurrIdx('retención isr') : getCurrIdx('retencion is'),
             fecha: getCurrIdx('fecha'),
             moneda: getCurrIdx('moneda'),
-            transaccion: getCurrIdx('transacci') // <-- buscador de "Transacción"
+            transaccion: getCurrIdx('transacci'),
+            orig: getCurrIdx('monto orig'),
+            pCom: getCurrIdx('% comisión total') !== -1 ? getCurrIdx('% comisión total') : getCurrIdx('% comision total'),
+            pIva: getCurrIdx('% retención iva') !== -1 ? getCurrIdx('% retención iva') : getCurrIdx('% retencion iva')
         };
-        if(currCols.bruto === -1) currCols.bruto = getCurrIdx('monto orig');
-        if(currCols.isr === -1) currCols.isr = getCurrIdx('retención is');
-
-        // Índice para variable global interna
+        
         const masterFechaIdx = masterHeaders.findIndex(h => h && h.toLowerCase().includes('fecha'));
-
-        // 4. Procesar Filas
-        const newRows = [];
-        let currentMode = 'LOTE'; 
-        let multiplicador = 1;
 
         // PARSEADOR NUMÉRICO UNIVERSAL (Respeta Negativos Contables)
         const parseNum = (v) => {
@@ -100,33 +91,33 @@ window.ScotiaLogic = {
             return isNegative ? -Math.abs(num) : Math.abs(num);
         };
 
+        const newRows = [];
+        let currentMode = 'LOTE'; 
+
         for(let i = mainHeaderIdx + 1; i < rawRows.length; i++) {
             const row = rawRows[i];
             if(!row || row.length === 0) continue;
 
             const rowStr = JSON.stringify(row).toLowerCase();
 
-            // A. Detección de Cambio de Bloque (LOTE vs AJUSTE)
             if(rowStr.includes('agrupado por') && rowStr.includes('transacción')) {
                 currentMode = rowStr.includes('ajuste') ? 'AJUSTE' : 'LOTE';
                 continue; 
             }
-
             if(rowStr.includes('monto neto') || rowStr.includes('subtotales')) continue;
 
             let workingRow = [...row];
-    
             let rawMerId = String(workingRow[currCols.merId] || '').trim();
             if (rawMerId.startsWith("'")) rawMerId = rawMerId.substring(1);
             if(rawMerId === '') continue;
 
-            // D. Detección Inteligente de Ajustes (Leyendo la columna Transacción)
+            // Detección Inteligente de Ajustes
             let isAjusteRow = false;
             if (currCols.transaccion !== -1) {
                 const valTrans = String(workingRow[currCols.transaccion] || '').toLowerCase();
                 if (valTrans.includes('ajuste')) isAjusteRow = true;
             }
-            if (currentMode === 'AJUSTE') isAjusteRow = true; // Fallback del bloque
+            if (currentMode === 'AJUSTE') isAjusteRow = true;
 
             // Extracción Matemática
             let finalBruto = parseNum(workingRow[currCols.bruto]);
@@ -134,17 +125,22 @@ window.ScotiaLogic = {
             let vCom = parseNum(workingRow[currCols.com]);
             let vIva = parseNum(workingRow[currCols.iva]);
             let vIsr = parseNum(workingRow[currCols.isr]);
+            let vOrig = parseNum(workingRow[currCols.orig]);
+            let vPCom = parseNum(workingRow[currCols.pCom]);
+            let vPIva = parseNum(workingRow[currCols.pIva]);
             
-            // INVERSIÓN TOTAL DE SIGNOS: Si el Excel dice "Ajuste", TODO es negativo
+            // INVERSIÓN TOTAL DE SIGNOS (AJUSTES)
             if (isAjusteRow) {
                 if (finalBruto > 0) finalBruto = -finalBruto;
                 if (finalNeto > 0) finalNeto = -finalNeto;
                 if (vCom > 0) vCom = -vCom;
                 if (vIva > 0) vIva = -vIva;
                 if (vIsr > 0) vIsr = -vIsr;
+                if (vOrig > 0) vOrig = -vOrig;
+                if (vPCom > 0) vPCom = -vPCom;
+                if (vPIva > 0) vPIva = -vPIva;
             }
 
-            // E. Mapeo al Master Header
             const mappedData = {};
             currentHeaders.forEach((h, currIdx) => {
                 const mIdx = indexMap[currIdx];
@@ -153,28 +149,22 @@ window.ScotiaLogic = {
                 mappedData[String(mIdx)] = cellVal;
             });
 
-            // CRÍTICO: Inyectar los números ya en negativo al array de Base de Datos para que no guarde positivos
+            // Inyectar negativos al Array Crudo
             if (isAjusteRow) {
                 if (currCols.neto !== -1) mappedData[String(indexMap[currCols.neto])] = finalNeto;
                 if (currCols.bruto !== -1) mappedData[String(indexMap[currCols.bruto])] = finalBruto;
                 if (currCols.com !== -1) mappedData[String(indexMap[currCols.com])] = vCom;
                 if (currCols.iva !== -1) mappedData[String(indexMap[currCols.iva])] = vIva;
                 if (currCols.isr !== -1) mappedData[String(indexMap[currCols.isr])] = vIsr;
-            }
-
-            // Forzar montos negativos en el objeto para la tabla
-            if (multiplicador === -1) {
-                const mNetoIdx = indexMap[currCols.neto];
-                const mBrutoIdx = indexMap[currCols.bruto];
-                mappedData[String(mNetoIdx)] = finalNeto;
-                mappedData[String(mBrutoIdx)] = finalBruto;
+                if (currCols.orig !== -1) mappedData[String(indexMap[currCols.orig])] = vOrig;
+                if (currCols.pCom !== -1) mappedData[String(indexMap[currCols.pCom])] = vPCom;
+                if (currCols.pIva !== -1) mappedData[String(indexMap[currCols.pIva])] = vPIva;
             }
         
-            // F. Construir Objeto Final
             const rowObj = {
                 _uid: 'scodet_' + Math.random().toString(36).substr(2, 9), 
                 _enabled: true,
-                _extractedId: rawMerId, // <--- ¡LA PIEZA FALTANTE! Esto conecta las ventas con el banco
+                _extractedId: rawMerId, 
                 _neto: finalNeto,
                 _bruto: finalBruto,
                 _comision: vCom,
@@ -189,19 +179,15 @@ window.ScotiaLogic = {
             newRows.push(rowObj);
         }
     
-        // FILTRO ANTI-DUPLICADOS
         const filteredRows = await window.ConciliacionLogic.filterDuplicates(newRows, 'SCOTIA', 'DETALLADO');
         if(filteredRows.length === 0) return;
 
-        // 5. ACUMULAR DATOS
         this.data.scotia_detalle = (this.data.scotia_detalle || []).concat(filteredRows);
         
-        // 6. REGISTRAR ARCHIVO
         if(filename && !this.data.files.scotia_detalle.includes(filename)) {
             this.data.files.scotia_detalle.push(filename);
         }
         
-        // 7. ACTUALIZAR UI
         this.updateScotiaCard();
         this.updateScotiaFileList('scotia_detalle'); 
         
@@ -1316,11 +1302,14 @@ window.ScotiaLogic = {
                                 [idxMerId]: document.getElementById('fm-afil').value,
                                 [comercioIdx]: document.getElementById('fm-comercio').value,
                                 [idxAuth]: document.getElementById('fm-auth').value,
-                                _bruto: res.bruto,
-                                _neto: res.neto,
-                                "Monto Comisión": res.com,
-                                "Retención IVA": res.iva,
-                                "Retención ISR": res.isr
+                                
+                                // FORZAR NEGATIVOS AL CREAR EL AJUSTE
+                                _bruto: -Math.abs(res.bruto || 0),
+                                _neto: -Math.abs(res.neto || 0),
+                                "Monto Orig": -Math.abs(res.bruto || 0),
+                                "Monto Comisión": -Math.abs(res.com || 0),
+                                "Retención IVA": -Math.abs(res.iva || 0),
+                                "Retención ISR": -Math.abs(res.isr || 0)
                             };
 
                             // Inyección directa al grid del popup
