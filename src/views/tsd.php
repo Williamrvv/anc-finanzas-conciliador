@@ -1,4 +1,4 @@
-<div class="animate-fade-in-up flex flex-col h-[calc(100vh-100px)]">
+<div class="animate-fade-in-up flex flex-col min-h-screen pb-12">
     <!-- Encabezado y Filtros -->
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 shrink-0">
         <div>
@@ -85,22 +85,46 @@
         </div>
     </div>
 
-    <!-- Grid de Resultados (Ocupa el resto de la pantalla) -->
-    <div class="flex-grow bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col relative">
-        <!-- Buscador Integrado -->
-        <div class="absolute top-3 right-4 z-10">
-            <div class="relative">
-                <input type="text" id="search-tsd" placeholder="Buscar contrato, auth..." 
-                    class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 w-64 shadow-sm text-slate-700 dark:text-white">
-                <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            </div>
+    <!-- Área Superior: Buscador Global de este Módulo -->
+    <div class="flex justify-end mb-2 shrink-0">
+        <div class="relative">
+            <input type="text" id="search-tsd" placeholder="Filtrar resultados en ambas tablas..." 
+                class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 w-72 shadow-sm text-slate-700 dark:text-white">
+            <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
         </div>
+    </div>
+
+    <!-- Contenedor general sin restricciones de altura -->
+    <div class="flex flex-col gap-8 w-full mt-2">
         
-        <div id="table-result-tsd" class="w-full h-full">
-            <div class="flex flex-col items-center justify-center h-full text-slate-400 gap-2 opacity-50">
-                <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16l2.879-2.879m0 0a3 3 0 104.243-4.242 3 3 0 00-4.243 4.242zM21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                <span class="text-sm font-medium">Seleccione las fechas y presione "Ejecutar Cruce M3"</span>
+        <!-- TABLA 1: RESULTADOS CONCILIADOS (Éxitos) - Redimensionable -->
+        <div class="flex flex-col h-[600px] min-h-[300px] resize-y overflow-auto bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 pb-2">
+            <div class="bg-blue-50 dark:bg-blue-900/40 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2 shrink-0">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                <h3 class="text-xs font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Resultados Conciliados (Match Exitoso)</h3>
+            </div>
+            <!-- Contenedor interno que asegura que VanillaGrid tome el 100% de la altura de esta caja -->
+            <div id="table-matched-tsd" class="flex-grow w-full h-full relative">
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2 opacity-50 z-0">
+                    <span class="text-sm font-medium">Ejecute el cruce para ver resultados.</span>
+                </div>
             </div>
         </div>
+
+        <!-- TABLA 2: EXCEPCIONES Y PENDIENTES (Huérfanos) - Redimensionable -->
+        <div class="flex flex-col h-[450px] min-h-[250px] resize-y overflow-auto bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 pb-2">
+            <div class="bg-orange-50 dark:bg-orange-900/30 border-b border-orange-200 dark:border-orange-800 px-4 py-2 flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <h3 class="text-xs font-black text-orange-700 dark:text-orange-400 uppercase tracking-wider">Excepciones y Pendientes (No Conciliado)</h3>
+                </div>
+                <span class="text-[10px] text-orange-600 dark:text-orange-500 font-medium">Doble clic para analizar</span>
+            </div>
+            <!-- Contenedor interno -->
+            <div id="table-pending-tsd" class="flex-grow w-full h-full relative">
+                <!-- Se inyecta via JS -->
+            </div>
+        </div>
+
     </div>
 </div>
