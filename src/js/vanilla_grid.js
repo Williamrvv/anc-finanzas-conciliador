@@ -43,11 +43,11 @@ class VanillaGrid {
 
         this.container.innerHTML = '';
         // CHANGE: Agregamos 'select-none' aquí para bloquear selección de texto globalmente en la tabla
-        this.container.className = "flex flex-col h-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg shadow-sm overflow-hidden text-sm select-none";
+        this.container.className = "flex flex-col h-full min-h-0 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg shadow-sm overflow-hidden text-sm select-none";
         this.container.tabIndex = 0; 
 
         const scrollArea = document.createElement('div');
-        scrollArea.className = "overflow-auto flex-grow relative";
+        scrollArea.className = "overflow-auto flex-grow relative min-h-0";
         
         const table = document.createElement('table');
         table.className = "min-w-full border-collapse text-slate-700 dark:text-slate-300";
@@ -125,26 +125,33 @@ class VanillaGrid {
             th.className = `p-1 border-r border-b border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 ${stickyClass}`;
             const val = this.filters[col.field] || '';
             
-            // CHANGE: Si es la primera columna, incluimos el botón de "Limpiar Todo"
-            let cleanerBtn = '';
+            // CHANGE: Si es la primera columna, incluimos botones utilitarios (Limpiar y Fullscreen)
+            let actionBtns = '';
             let inputClass = "w-full";
             
             if(idx === 0) {
-                // Verificamos si hay filtros activos para mostrar el botón coloreado
                 const hasFilters = Object.values(this.filters).some(x => x);
-                const btnColor = hasFilters ? "text-red-500 hover:bg-red-100" : "text-slate-400 hover:text-slate-600";
+                const filterBtnColor = hasFilters ? "text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30" : "text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700";
                 
-                cleanerBtn = `
-                    <button id="btn-clear-filters" class="mr-1 p-1 rounded transition-colors ${btnColor}" title="Limpiar todos los filtros">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
+                actionBtns = `
+                    <div class="flex items-center mr-1 shrink-0 gap-0.5">
+                        <button id="btn-fullscreen-grid" class="p-1 rounded transition-colors text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700" title="Ver en pantalla completa">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                        </button>
+                        <button id="btn-export-excel" class="p-1 rounded transition-colors text-slate-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-slate-700" title="Exportar vista actual a Excel">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        </button>
+                        <button id="btn-clear-filters" class="p-1 rounded transition-colors ${filterBtnColor}" title="Limpiar todos los filtros">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
                 `;
-                inputClass = "w-[calc(100%-2rem)]"; // Ajustar ancho del input
+                inputClass = "w-[calc(100%-4rem)]"; // Ajustar ancho para los tres botones
             }
 
             th.innerHTML = `
                 <div class="flex items-center justify-center px-1">
-                    ${cleanerBtn}
+                    ${actionBtns}
                     <input type="text" data-filter="${col.field}" value="${val}" 
                         class="${inputClass} text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-normal text-slate-600 dark:text-slate-300 placeholder-slate-400" 
                         placeholder="Buscar..." autocomplete="off">
@@ -200,13 +207,24 @@ class VanillaGrid {
                     // Sumar columna actual (this.displayData respeta filtros)
                     const sum = this.displayData.reduce((acc, row) => {
                         let val = row[col.field];
+                        // Soporte para objetos matemáticos personalizados (Ej: Columna MontoTSD + Recibo)
+                        if (typeof val === 'object' && val !== null && 'valor' in val) {
+                            val = val.valor;
+                        }
                         // Limpieza agresiva de números
                         if(typeof val === 'string') val = parseFloat(val.replace(/[^0-9.-]/g,'')) || 0;
                         return acc + (parseFloat(val) || 0);
                     }, 0);
                     
-                    // Formato
-                    content = col.formatter === 'money' ? this.formatMoney(sum) : sum;
+                    // Formato Inteligente: Priorizar el bottomCalcFormatter
+                    if (typeof col.bottomCalcFormatter === 'function') {
+                        content = col.bottomCalcFormatter(sum);
+                    } else if (col.bottomCalcFormatter === 'money' || col.formatter === 'money') {
+                        content = this.formatMoney(sum);
+                    } else {
+                        // Fallback de seguridad (evita los chorros de decimales feos .69669999)
+                        content = Number(sum).toFixed(2);
+                    }
                 } else if (col.bottomCalc === 'count') {
                     content = this.displayData.length;
                 } else if (col.title === 'Afiliado' || col.field === 'id') {
@@ -245,20 +263,74 @@ class VanillaGrid {
 
         this.container.appendChild(scrollArea);
 
-        // --- FOOTER INFORMATIVO (Shift + Scroll) ---
+        // --- FOOTER INTEGRADO (Informativo + Autosuma) ---
         const footer = document.createElement('div');
-        footer.className = "bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-3 py-1.5 flex justify-between items-center text-[10px] text-slate-400 select-none z-20";
+        footer.className = "bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-4 py-2 flex justify-between items-center text-[10px] text-slate-500 select-none z-20 shrink-0 overflow-hidden";
         
-        // Icono de flechas horizontales + Texto
         footer.innerHTML = `
-            <span class="font-mono">Total: ${this.displayData.length} filas</span>
-            <div class="flex items-center gap-1.5 opacity-70 hover:opacity-100 transition-opacity">
+            <!-- Lado Izquierdo: Fijo -->
+            <div class="flex items-center gap-4">
+                <span class="font-mono font-bold whitespace-nowrap">Filas: <span class="text-slate-700 dark:text-slate-300">${this.displayData.length}</span></span>
+                
+                <!-- Autosuma (Oculto por defecto con animación de slide-in) -->
+                <div class="vg-autosum-container flex items-center gap-4 opacity-0 -translate-x-4 transition-all duration-300 pointer-events-none invisible">
+                    <div class="h-3 w-px bg-slate-300 dark:bg-slate-600"></div>
+                    <div class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                        <span class="font-bold uppercase tracking-wider">Selección</span>
+                    </div>
+                    <span class="font-mono font-bold">RECUENTO: <span class="vg-stat-count text-slate-800 dark:text-white">0</span></span>
+                    <span class="font-mono font-bold">SUMA: <span class="vg-stat-sum text-blue-600 dark:text-blue-400 text-xs">0</span></span>
+                </div>
+            </div>
+
+            <!-- Lado Derecho: Hint -->
+            <div class="flex items-center gap-1.5 opacity-70 hover:opacity-100 transition-opacity whitespace-nowrap">
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-                <span><kbd class="font-sans font-bold border border-slate-300 dark:border-slate-600 rounded px-1 bg-white dark:bg-slate-800">Shift</kbd> + Mouse scroll</span>
+                <span><kbd class="font-sans font-bold border border-slate-300 dark:border-slate-600 rounded px-1.5 bg-white dark:bg-slate-800 shadow-sm text-[9px]">Shift</kbd> + Scroll</span>
             </div>
         `;
         
         this.container.appendChild(footer);
+        this.autosumContainer = footer.querySelector('.vg-autosum-container'); 
+
+        // --- NATIVE ELEGANT RESIZE HANDLE ---
+        // Se inyecta solo si no fue explícitamente desactivado
+        if (this.options.resize !== false) {
+            const resizer = document.createElement('div');
+            resizer.className = "w-full h-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-ns-resize transition-colors opacity-50 hover:opacity-100 shrink-0";
+            this.container.appendChild(resizer);
+
+            resizer.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const startY = e.clientY;
+                const startHeight = this.container.getBoundingClientRect().height;
+                
+                this.container.style.flex = "none";
+                this.container.style.maxHeight = "none";
+
+                const onMouseMove = (ev) => {
+                    const newHeight = startHeight + (ev.clientY - startY);
+                    if (newHeight >= 200) { 
+                        this.container.style.height = newHeight + 'px';
+                    }
+                };
+
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    document.body.style.cursor = ''; 
+                    document.body.classList.remove('select-none');
+                };
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                
+                document.body.style.cursor = 'ns-resize'; 
+                document.body.classList.add('select-none');
+            });
+        }
+        // ------------------------------------
 
         this.attachEvents(table);
         // 2. Restaurar Scroll
@@ -272,8 +344,9 @@ class VanillaGrid {
 
     createRow(row, idx) {
         const tr = document.createElement('tr');
-        // Soporte para clases personalizadas inyectadas desde los datos (ej. fondos de color)
-        let rowBaseClass = "hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors border-b border-slate-100 dark:border-slate-700 group select-none";
+        
+        // Retiramos el color de fondo en hover y dejamos solo el marco delgado vía shadows en los TDs
+        let rowBaseClass = "transition-colors border-b border-slate-100 dark:border-slate-700 group select-none";
         if (row._rowClass) rowBaseClass += " " + row._rowClass;
         tr.className = rowBaseClass;
         
@@ -284,7 +357,19 @@ class VanillaGrid {
             td.dataset.val = row[col.field] || '';
 
             // Quitar overflow-hidden text-ellipsis para que el texto completo siempre se vea
-            let cls = "px-3 py-1.5 whitespace-nowrap border-r border-slate-100 dark:border-slate-700 cursor-default text-xs ";
+            let cls = "px-3 py-1.5 whitespace-nowrap border-r border-slate-100 dark:border-slate-700 cursor-default text-xs transition-shadow duration-75 ";
+            
+            // UX: Marco perimetral delgado de color #859aff en Hover (Usando inset shadows para evitar saltos de layout)
+            if (this.columns.length === 1) {
+                cls += "group-hover:shadow-[inset_0_0_0_1.5px_#859aff] "; // Si solo hay 1 columna, marco completo
+            } else if (colIdx === 0) {
+                cls += "group-hover:shadow-[inset_1.5px_1.5px_0_#859aff,inset_0_-1.5px_0_#859aff] "; // Primera celda (Izquierda, Arriba, Abajo)
+            } else if (colIdx === this.columns.length - 1) {
+                cls += "group-hover:shadow-[inset_0_1.5px_0_#859aff,inset_-1.5px_-1.5px_0_#859aff] "; // Última celda (Derecha, Arriba, Abajo)
+            } else {
+                cls += "group-hover:shadow-[inset_0_1.5px_0_#859aff,inset_0_-1.5px_0_#859aff] "; // Celdas del medio (Solo Arriba y Abajo)
+            }
+
             if(col.hozAlign === 'right') cls += "text-right font-mono "; else cls += "text-left ";
 
             // UX STICKY: Fijar celda a la izquierda
@@ -343,10 +428,22 @@ class VanillaGrid {
                 }
             }
             
-            // CHANGE: Listener para el botón Limpiar
+            // Listener para el botón Limpiar
             const clearBtn = e.target.closest('#btn-clear-filters');
             if(clearBtn) {
                 this.clearAllFilters();
+            }
+
+            // Listener para el botón Fullscreen
+            const fsBtn = e.target.closest('#btn-fullscreen-grid');
+            if(fsBtn) {
+                this.toggleFullscreen();
+            }
+
+            // Listener para Exportar a Excel
+            const exportBtn = e.target.closest('#btn-export-excel');
+            if(exportBtn) {
+                this.exportToExcel();
             }
         });
 
@@ -528,9 +625,17 @@ class VanillaGrid {
 
                 let rawVal = row[key];
                 
+                // EXTRA UX FIX: Si rawVal es un objeto estructurado (Ej: {nombre: "X", recibo: "Y"}), extraemos todo su texto
+                let strVal = '';
+                if (typeof rawVal === 'object' && rawVal !== null) {
+                    strVal = Object.values(rawVal).join(' ');
+                } else {
+                    strVal = String(rawVal || '');
+                }
+                
                 // Estrategia Doble: Buscar en el valor Crudo Y en el Formateado
                 // Esto permite encontrar "2000" (raw) y "2.000" (formatted)
-                let matchTargets = [String(rawVal || '').toLowerCase()];
+                let matchTargets = [strVal.toLowerCase()];
 
                 // Si la columna tiene formato moneda, agregamos la versión visual a la búsqueda
                 const colDef = this.columns.find(c => c.field === key);
@@ -664,9 +769,37 @@ class VanillaGrid {
         this.focusedRow = r; this.focusedCol = c;
         const cell = this.getCell(r, c);
         if(cell) {
+            // 1. Scroll nativo del navegador
             cell.scrollIntoView({block:'nearest', inline:'nearest'});
+            
+            // 2. UX FIX (Sticky Header & Footer Override): Evitar que la celda quede oculta bajo paneles fijos
+            const scrollArea = this.container.querySelector('.overflow-auto');
+            const thead = this.container.querySelector('thead');
+            const tfoot = this.container.querySelector('tfoot'); // Buscar el footer de sumas
+            
+            if (scrollArea && thead) {
+                const cellRect = cell.getBoundingClientRect();
+                const scrollRect = scrollArea.getBoundingClientRect();
+                const theadHeight = thead.offsetHeight;
+                const tfootHeight = tfoot ? tfoot.offsetHeight : 0; // Altura del footer si existe
+                
+                // Limites de la zona "segura" visible
+                const safeTop = scrollRect.top + theadHeight;
+                const safeBottom = scrollRect.bottom - tfootHeight;
+                
+                // Corrección al subir (Quedó detrás del thead)
+                if (cellRect.top < safeTop) {
+                    scrollArea.scrollTop -= (safeTop - cellRect.top + 4);
+                } 
+                // Corrección al bajar (Quedó detrás del tfoot)
+                else if (cellRect.bottom > safeBottom) {
+                    scrollArea.scrollTop += (cellRect.bottom - safeBottom + 4);
+                }
+            }
+
+            // 3. Resaltado Visual (Focus)
             this.container.querySelectorAll('.outline-2').forEach(e => e.classList.remove('outline-2', 'outline-blue-600', 'outline'));
-            cell.classList.add('outline', 'outline-2', 'outline-blue-600', '-outline-offset-2'); // Outline nativo para mejor performance
+            cell.classList.add('outline', 'outline-2', 'outline-blue-600', '-outline-offset-2');
         }
     }
 
@@ -729,17 +862,16 @@ class VanillaGrid {
             }
         });
         
-        // Actualizar UI (Soporte Multi-Ventana)
-        // Busca la barra dentro del documento donde vive la tabla (Main o PopUp)
-        const doc = this.container.ownerDocument; 
-        const bar = doc.getElementById('global-table-stats');
-        if(bar) {
+        // Actualizar UI INTEGRADA con Animación
+        if(this.autosumContainer) {
             if(this.selection.size < 2) {
-                bar.classList.add('hidden');
+                // Ocultar suavemente
+                this.autosumContainer.classList.add('opacity-0', '-translate-x-4', 'invisible', 'pointer-events-none');
             } else {
-                doc.getElementById('gst-count').innerText = this.selection.size;
-                doc.getElementById('gst-sum').innerHTML = this.formatMoney(sum);
-                bar.classList.remove('hidden');
+                // Mostrar y actualizar datos
+                this.autosumContainer.querySelector('.vg-stat-count').innerText = this.selection.size;
+                this.autosumContainer.querySelector('.vg-stat-sum').innerHTML = this.formatMoney(sum);
+                this.autosumContainer.classList.remove('opacity-0', '-translate-x-4', 'invisible', 'pointer-events-none');
             }
         }
     }
@@ -845,6 +977,98 @@ class VanillaGrid {
         
         // 2. Re-aplicar filtros y ordenamiento actuales
         this.applyFilters(); 
+    }
+
+    // UX: Pantalla Completa Nativa
+    toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            // Entrar a pantalla completa con un pequeño fondo oscuro para no encandilar
+            this.container.classList.add('bg-white', 'dark:bg-slate-900');
+            if (this.container.requestFullscreen) {
+                this.container.requestFullscreen();
+            } else if (this.container.webkitRequestFullscreen) { /* Safari */
+                this.container.webkitRequestFullscreen();
+            } else if (this.container.msRequestFullscreen) { /* IE11 */
+                this.container.msRequestFullscreen();
+            }
+        } else {
+            // Salir de pantalla completa
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE11 */
+                document.msExitFullscreen();
+            }
+        }
+    }
+
+    // Exportación Inteligente a Excel
+    exportToExcel() {
+        if (typeof XLSX === 'undefined') {
+            if(window.SysUI) window.SysUI.alert("La librería de Excel no está disponible.", "Error", "error");
+            else alert("Librería de Excel no encontrada.");
+            return;
+        }
+
+        // 1. Obtener cabeceras válidas base
+        const exportCols = this.columns.filter(c => c.field && c.formatter !== 'checkbox');
+        let headers = [];
+        
+        // 2. Mapeo inteligente de columnas (Por si hay columnas dobles como "Monto/Detalle")
+        const colMapping = [];
+        exportCols.forEach(c => {
+            headers.push(c.title);
+            colMapping.push({ field: c.field, type: 'primary' });
+            
+            // Si la columna es nuestro Objeto Matemático del TSD, inyectamos una cabecera extra al vuelo
+            if (this.displayData.length > 0 && typeof this.displayData[0][c.field] === 'object' && this.displayData[0][c.field] !== null && 'valor' in this.displayData[0][c.field] && 'recibo' in this.displayData[0][c.field]) {
+                headers.push("Detalle / Recibo");
+                colMapping.push({ field: c.field, type: 'secondary' }); // Fila extra para el recibo
+            }
+        });
+
+        // 3. Formatear datos de la tabla VISIBLE respetando el nuevo mapeo
+        const rows = this.displayData.map(row => {
+            return colMapping.map(mapDef => {
+                let val = row[mapDef.field];
+
+                // Caso 1: Es nuestro Objeto Matemático (MontoTSD)
+                if (typeof val === 'object' && val !== null && 'valor' in val && 'recibo' in val) {
+                    if (mapDef.type === 'primary') return val.valor; // Columna base = El Número
+                    if (mapDef.type === 'secondary') return val.recibo; // Columna extra = El Texto
+                }
+
+                // Caso 2: Es un Objeto Simple de UX (Ej: Cliente)
+                if (typeof val === 'object' && val !== null && val.nombre) {
+                    return val.recibo ? `${val.nombre} - ${val.recibo}` : val.nombre;
+                }
+
+                // Caso 3: Arrays u otros objetos no mapeados (Previene el error de funciones toString)
+                if (typeof val === 'object' && val !== null) {
+                    return JSON.stringify(val);
+                }
+
+                // Caso 4: Números o Textos limpios
+                if (typeof val === 'number') return val;
+                return val !== undefined && val !== null ? String(val) : '';
+            });
+        });
+
+        // 4. Crear Libro y Hoja
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        
+        // Ajustar ancho básico de columnas para que no se vea aplastado
+        const wscols = headers.map(h => ({wch: Math.max(15, h.length + 5)}));
+        ws['!cols'] = wscols;
+
+        XLSX.utils.book_append_sheet(wb, ws, "Datos Extraídos");
+
+        // 4. Disparar Descarga
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const timeStr = new Date().toTimeString().slice(0, 5).replace(/:/g, '');
+        XLSX.writeFile(wb, `Reporte_Tabla_${dateStr}_${timeStr}.xlsx`);
     }
 
 }

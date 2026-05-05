@@ -958,23 +958,23 @@ window.ScotiaLogic = {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden h-full">
+                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden h-full min-h-0">
                     <!-- DERECHA: BANCO -->
-                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden">
-                        <div class="${isDark ? 'bg-green-900/20 text-green-300 border-slate-700' : 'bg-green-50 text-green-700 border-green-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden min-h-0">
+                        <div class="${isDark ? 'bg-green-900/20 text-green-300 border-slate-700' : 'bg-green-50 text-green-700 border-green-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center shrink-0">
                             <span>Pagado Scotia (Recibido)</span>
                             <span class="bg-white dark:bg-slate-800 px-2 rounded text-[10px] shadow-sm">Total: ₡ <span id="lbl-tot-pag">${data.pagado.toLocaleString('en-US', {minimumFractionDigits:2})}</span></span>
                         </div>
-                        <div id="grid-banco" class="flex-grow relative bg-white dark:bg-slate-800"></div>
+                        <div id="grid-banco" class="flex-grow relative min-h-0 bg-white dark:bg-slate-800"></div>
                     </div>
                     
                      <!-- IZQUIERDA: VENTAS SCOTIA -->
-                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative">
-                        <div class="${isDark ? 'bg-red-900/20 text-red-300 border-slate-700' : 'bg-red-50 text-red-700 border-red-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative min-h-0">
+                        <div class="${isDark ? 'bg-red-900/20 text-red-300 border-slate-700' : 'bg-red-50 text-red-700 border-red-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center shrink-0">
                             <span>Detalle Scotia (Esperado)</span>
                             <span class="bg-white dark:bg-slate-800 px-2 rounded text-[10px] shadow-sm">Total: ₡ <span id="lbl-tot-det">${data.neto.toLocaleString('en-US', {minimumFractionDigits:2})}</span></span>
                         </div>
-                        <div id="grid-ventas" class="flex-grow relative bg-white dark:bg-slate-800"></div>
+                        <div id="grid-ventas" class="flex-grow relative min-h-0 bg-white dark:bg-slate-800"></div>
                     </div>
                 </div>
 
@@ -1303,13 +1303,13 @@ window.ScotiaLogic = {
                                 [comercioIdx]: document.getElementById('fm-comercio').value,
                                 [idxAuth]: document.getElementById('fm-auth').value,
                                 
-                                // FORZAR NEGATIVOS AL CREAR EL AJUSTE
-                                _bruto: -Math.abs(res.bruto || 0),
-                                _neto: -Math.abs(res.neto || 0),
-                                "Monto Orig": -Math.abs(res.bruto || 0),
-                                "Monto Comisión": -Math.abs(res.com || 0),
-                                "Retención IVA": -Math.abs(res.iva || 0),
-                                "Retención ISR": -Math.abs(res.isr || 0)
+                                // MATEMÁTICA PURA: Respetar el signo exacto del Auto-Calculador
+                                _bruto: res.bruto || 0,
+                                _neto: res.neto || 0,
+                                "Monto Orig": res.bruto || 0,
+                                "Monto Comisión": res.com || 0,
+                                "Retención IVA": res.iva || 0,
+                                "Retención ISR": res.isr || 0
                             };
 
                             // Inyección directa al grid del popup
@@ -1555,10 +1555,11 @@ window.ScotiaLogic = {
                     // INICIALIZACIÓN
                     let gVentas, gBanco;
                     window.onload = function() {
-                        const optsVentas = { onCheckboxChange: () => updateCalc() };
+                        const optsVentas = { resize: false, onCheckboxChange: () => updateCalc() };
                         
                         // Opciones especiales para el Banco (Con Smart Check para Scotiabank)
                         const optsBanco = { 
+                            resize: false,
                             onCheckboxChange: (row, field, isChecked) => {
                                 // En Scotia, la referencia del banco ("_extractedId") cruza con el "MerID"
                                 if (isChecked && row._extractedId && row._extractedId.trim() !== '' && row._extractedId !== 'SIN_ID') {

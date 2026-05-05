@@ -104,8 +104,16 @@ window.CierreCajasLogic = {
                     ? `<span class="text-[9px] font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded shadow-sm border border-red-200 dark:border-red-800">${c.DiasAtraso}d ATRASO</span>` 
                     : '';
 
-                // Input Reactivo para reportar
-                let motivoHtml = `<textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Escriba aquí para justificar y reportar a Jefatura y SC..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>`;
+                // Select de Acción e Input Reactivo
+                let motivoHtml = `
+                    <select id="accion-home-${c.IdCaso}" class="cc-accion-select-home w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors">
+                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente (Error TSD)</option>
+                        <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
+                        <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
+                        <option value="OTRO_CONTRATO">✅ Cerrar: Va para otro contrato</option>
+                    </select>
+                    <textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Justifique detalladamente el motivo..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>
+                `;
 
                 return `
                 <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all flex flex-col justify-between group h-full relative overflow-hidden">
@@ -190,7 +198,13 @@ window.CierreCajasLogic = {
                         <span>ICD: <span class="font-mono text-slate-700 dark:text-slate-300">${c.ICD_Relacionado}</span></span>
                         <span class="text-amber-700 dark:text-amber-500">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                     </div>
-                    <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-white rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Escriba aquí para ayudar a reportar..." value="${c.MotivoAgente || ''}">
+                    <select id="accion-suc-${c.IdCaso}" class="cc-accion-select-suc w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 font-bold transition-colors">
+                        <option value="ESCALAR">⚠️ Escalar a SC (Error)</option>
+                        <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
+                        <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
+                        <option value="OTRO_CONTRATO">✅ Cerrar: Otro contrato</option>
+                    </select>
+                    <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-white rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Justifique el motivo..." value="${c.MotivoAgente || ''}">
                 </div>
             `).join('');
             
@@ -212,7 +226,12 @@ window.CierreCajasLogic = {
             if (motivo !== '') {
                 const parts = input.id.split('-');
                 const idCaso = parts[parts.length - 1];
-                casosData.push({ id_caso: idCaso, motivo: motivo });
+                
+                // Capturar la acción seleccionada
+                const selectId = origen === 'home' ? `accion-home-${idCaso}` : `accion-suc-${idCaso}`;
+                const accionValue = document.getElementById(selectId).value;
+                
+                casosData.push({ id_caso: idCaso, motivo: motivo, accion: accionValue });
 
                 // Extraemos el jefe desde la memoria que guardamos
                 const casoBd = this.pendientesData.find(c => c.IdCaso == idCaso);
@@ -651,7 +670,7 @@ window.CierreCajasLogic = {
                 monto_crc: parseFloat(t.Conversion || 0),
                 match_exitoso: t._selected ? 1 : 0,
                 fecha_pago: t.Pay_Date,
-                id_caso_cerrar: t._matchedTicket || null // <-- Avisamos al backend
+                id_caso_cerrar: t._matchedTicket || null 
             }))
         };
 
@@ -1011,15 +1030,21 @@ window.CierreCajasLogic = {
 
             if (c.Estado === 'NO_REPORTADO' && (role === 'agente' || role === 'jefe' || role === 'admin')) {
                 actionHtml = `
-                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Justificar Inconsistencia (Reportar)</label>
-                    <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 resize-none mb-3" placeholder="Explique el error para enviarlo a TSD..."></textarea>
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Acción sobre la Inconsistencia</label>
+                    <select id="tl-select-accion" class="w-full text-sm px-3 py-2 mb-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors">
+                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente (Error TSD)</option>
+                        <option value="CONTRACARGO">✅ Cerrar Directamente: Contracargo</option>
+                        <option value="DEVOLUCION">✅ Cerrar Directamente: Devolución</option>
+                        <option value="OTRO_CONTRATO">✅ Cerrar Directamente: Va para otro contrato</option>
+                    </select>
+                    <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 resize-none mb-3" placeholder="Justifique el motivo..."></textarea>
                     <div class="flex justify-end">
-                        <button onclick="window.CierreCajasLogic.executeTimelineAction('REPORTAR')" class="bg-amber-500 hover:bg-amber-600 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors flex items-center gap-2">
-                            Enviar Reporte a SC
+                        <button onclick="window.CierreCajasLogic.executeTimelineAction('REPORTAR_DINAMICO')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors flex items-center gap-2">
+                            Procesar Caso
                         </button>
                     </div>
                 `;
-            } 
+            }
             else if (c.Estado === 'PENDIENTE_CORRECCION_TSD' && (role === 'jefe' || role === 'servicio_cliente' || role === 'admin')) {
                 actionHtml = `
                     <div class="flex flex-col gap-3">
@@ -1051,17 +1076,28 @@ window.CierreCajasLogic = {
         const inputEl = document.getElementById('tl-input-action');
         const comentario = inputEl ? inputEl.value.trim() : '';
         
-        if ((actionType === 'REPORTAR' || actionType === 'RESOLVER') && !comentario) {
+        // Si viene del Modal, leemos el Select
+        let accionFinal = actionType;
+        if (actionType === 'REPORTAR_DINAMICO') {
+            const selectEl = document.getElementById('tl-select-accion');
+            accionFinal = selectEl ? selectEl.value : 'ESCALAR';
+        }
+        
+        if ((accionFinal === 'ESCALAR' || accionFinal === 'RESOLVER' || accionFinal !== 'REVERTIR') && !comentario) {
             return SysUI.alert("Debe escribir un comentario para proceder.", "Campo requerido", "warning");
         }
 
         const msgs = {
-            'REPORTAR': "¿Enviar este caso a Servicio al Cliente para su corrección en TSD?",
+            'ESCALAR': "¿Enviar este caso a Servicio al Cliente para su corrección en TSD?",
+            'CONTRACARGO': "¿Confirmar el cierre directo del caso por motivo de Contracargo?",
+            'DEVOLUCION': "¿Confirmar el cierre directo del caso por motivo de Devolución?",
+            'OTRO_CONTRATO': "¿Confirmar el cierre directo indicando que pertenece a otro contrato?",
             'RESOLVER': "¿Confirmar que el caso ha sido corregido en TSD y marcar como resuelto?",
             'REVERTIR': "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado."
         };
 
-        const confirm = await SysUI.confirm(msgs[actionType], "Confirmar Acción", "info");
+        const confirmMsg = msgs[accionFinal] || "¿Está seguro de continuar con esta acción?";
+        const confirm = await SysUI.confirm(confirmMsg, "Confirmar Acción", "info");
         if (!confirm) return;
 
         try {
@@ -1070,16 +1106,17 @@ window.CierreCajasLogic = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     idCaso: this.activeTimelineId,
-                    accion: actionType,
+                    accion: accionFinal,
                     comentario: comentario
                 })
             });
+            
             const data = await res.json();
 
             if (data.success) {
                 document.getElementById('modal-timeline').classList.add('hidden');
                 SysUI.alert("Acción ejecutada correctamente.", "Éxito", "success");
-                this.loadHistoryData(); // Recarga las tarjetas
+                this.loadHistoryData(true); // Recarga las tarjetas
                 this.loadBandejaPendientes(); // Recarga insignias
             } else {
                 throw new Error(data.error);

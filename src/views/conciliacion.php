@@ -91,20 +91,15 @@
                 </div>
             </div>
 
-            <!-- Tabla Central BAC -->
-            <!-- ÁREA CENTRAL (Scroll Page) -->
-            <div class="flex flex-col gap-6">
-                
-                <!-- TABLA CENTRAL BAC (Altura Mínima 600px) -->
-                <div class="flex flex-col border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm overflow-hidden h-[600px] shrink-0">
-                    <!-- Toolbar -->
-                    <div class="px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+           <!-- TABLA CENTRAL BAC (Altura Dinámica y Liberada) -->
+                <div class="flex flex-col gap-2">
+                    <!-- Toolbar Separado -->
+                    <div class="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex justify-between items-center">
                         <span class="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full bg-blue-500"></span> Resultados BAC
                         </span>
                         
                         <div class="flex items-center gap-3">
-                            <!-- Buscador BAC -->
                             <div class="relative w-64">
                                 <input type="text" id="search-bac" class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all dark:bg-slate-900 dark:border-slate-600" placeholder="Filtrar resultados...">
                                 <div class="absolute inset-y-0 left-0 flex items-center justify-center w-8 pointer-events-none text-slate-400">
@@ -114,8 +109,9 @@
                         </div>
                     </div>
                     
-                    <!-- Grid -->
-                    <div id="table-result-bac" class="flex-grow overflow-hidden relative">
+                    <!-- Grid 100% Nativo y Ajustable -->
+                    <!-- Nace en 500px, pero puede crecer infinitamente si el usuario lo estira -->
+                    <div id="table-result-bac" style="height: 500px;" class="w-full min-h-[300px] h-auto resize-y overflow-hidden border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm relative z-10">
                         <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-300">
                             <span class="text-xs">Esperando archivos BAC...</span>
                         </div>
@@ -196,25 +192,15 @@
             <!-- ÁREA CENTRAL SCOTIA -->
             <div class="flex flex-col gap-6 pb-10">
                 
-                <!-- TABLA CENTRAL SCOTIA (Altura Fija + Scroll Interno) -->
-                <div class="flex flex-col border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm overflow-hidden h-[600px] shrink-0">
-                    <!-- Toolbar -->
-                    <div class="px-4 py-2 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 shrink-0">
+                <<!-- TABLA CENTRAL SCOTIA (Altura Dinámica y Liberada) -->
+                <div class="flex flex-col gap-2">
+                    <!-- Toolbar Separado -->
+                    <div class="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex justify-between items-center">
                         <span class="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
                             <span class="w-2 h-2 rounded-full bg-red-600"></span> Resultados Scotia
                         </span>
                         
                         <div class="flex items-center gap-3">
-                            <!-- Umbral Scotia
-                            <div class="flex items-center bg-white dark:bg-slate-700 rounded border border-slate-200 dark:border-slate-600 px-2 py-1">
-                                <span class="text-[10px] font-bold text-slate-400 mr-2 uppercase">Diff Max:</span>
-                                <span class="text-slate-400 font-bold text-xs mr-1">₡</span>
-                                <input type="number" id="threshold-scotia" value="2000" step="500" 
-                                       oninput="window.ConciliacionFunctions.updateThreshold(this.value, 'scotia')" 
-                                       class="w-16 bg-transparent border-none text-xs font-bold text-right outline-none p-0 text-slate-700 dark:text-white">
-                            </div> -->
-
-                            <!-- Buscador Scotia -->
                             <div class="relative w-64">
                                 <input type="text" id="search-scotia" class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all dark:bg-slate-900 dark:border-slate-600" placeholder="Filtrar resultados...">
                                 <div class="absolute inset-y-0 left-0 flex items-center justify-center w-8 pointer-events-none text-slate-400">
@@ -224,8 +210,8 @@
                         </div>
                     </div>
                     
-                    <!-- Contenedor Grid (Scroll Aquí) -->
-                    <div id="table-result-scotia" class="flex-grow overflow-hidden relative">
+                    <!-- Grid 100% Nativo y Ajustable -->
+                    <div id="table-result-scotia" style="height: 500px;" class="w-full min-h-[300px] h-auto resize-y overflow-hidden border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm relative z-10">
                         <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-300">
                             <span class="text-xs">Esperando archivos Scotia...</span>
                         </div>

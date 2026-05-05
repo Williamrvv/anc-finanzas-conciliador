@@ -1102,25 +1102,24 @@ window.BACLogic = {
                 </div>
 
                 <!-- CONTENIDO (GRID 2 COLUMNAS) -->
-                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden h-full">
+                <div class="grid grid-cols-2 gap-4 flex-grow overflow-hidden h-full min-h-0">
 
                     <!-- DERECHA: BANCO -->
-                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden">
-                        <!-- ... (mismo header banco) ... -->
-                        <div class="${isDark ? 'bg-green-900/20 text-green-300 border-slate-700' : 'bg-green-50 text-green-700 border-green-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden min-h-0">
+                        <div class="${isDark ? 'bg-green-900/20 text-green-300 border-slate-700' : 'bg-green-50 text-green-700 border-green-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center shrink-0">
                             <span>Pagado Bac (Recibido)</span>
                             <span class="bg-white dark:bg-slate-800 px-2 rounded text-[10px] shadow-sm">Total: ${this.formatMoney(data.pagado)}</span>
                         </div>
-                        <div id="grid-banco" class="flex-grow relative bg-white dark:bg-slate-800"></div>
+                        <div id="grid-banco" class="flex-grow relative min-h-0 bg-white dark:bg-slate-800"></div>
                     </div>
                     
                      <!-- IZQUIERDA: VENTAS -->
-                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative">
-                        <div class="${isDark ? 'bg-blue-900/20 text-blue-300 border-slate-700' : 'bg-blue-50 text-blue-700 border-blue-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center">
+                    <div class="flex flex-col h-full border border-slate-300 dark:border-slate-700 rounded-lg overflow-hidden relative min-h-0">
+                        <div class="${isDark ? 'bg-blue-900/20 text-blue-300 border-slate-700' : 'bg-blue-50 text-blue-700 border-blue-100'} p-2 text-xs font-bold uppercase border-b flex justify-between items-center shrink-0">
                             <span>Detallado Bac (Esperado)</span>
                             <span class="bg-white dark:bg-slate-800 px-2 rounded text-[10px] shadow-sm">Total: ${this.formatMoney(data.neto)}</span>
                         </div>
-                        <div id="grid-ventas" class="flex-grow relative bg-white dark:bg-slate-800"></div>
+                        <div id="grid-ventas" class="flex-grow relative min-h-0 bg-white dark:bg-slate-800"></div>
                     </div>
                 </div>
 
@@ -1583,10 +1582,11 @@ window.BACLogic = {
 
                     // 2. Inicialización
                     window.onload = function() {
-                        const opts = { onCheckboxChange: () => updateCalc() };
+                        const opts = { resize: false, onCheckboxChange: () => updateCalc() };
                         
                         // Opciones especiales para el Banco (Con Smart Check)
                         const optsBanco = { 
+                            resize: false,
                             onCheckboxChange: (row, field, isChecked) => {
                                 // Si se marcó un check y tiene un número de liquidación válido
                                 if (isChecked && row._liqRef && row._liqRef.trim() !== '') {

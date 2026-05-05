@@ -113,45 +113,72 @@ window.TSDLogic = {
     },
 
     openCardModal: function() {
+        const modal = document.getElementById('modal-cards-tsd');
+        
+        // Mover el modal al root del body para escapar del stacking context (blur oscuro completo)
+        if (modal.parentNode !== document.body) {
+            document.body.appendChild(modal);
+        }
+
+        document.getElementById('single-contrato').value = '';
+        document.getElementById('single-tarjeta').value = '';
         document.getElementById('paste-zone-cards').value = '';
-        document.getElementById('status-cards-paste').classList.add('hidden');
-        document.getElementById('modal-cards-tsd').classList.remove('hidden');
+        
+        modal.classList.remove('hidden');
     },
 
     processCardPaste: async function() {
+        const sContrato = document.getElementById('single-contrato').value.trim();
+        const sTarjeta = document.getElementById('single-tarjeta').value.trim().replace(/[^a-zA-Z0-9]/g, '');
         const text = document.getElementById('paste-zone-cards').value;
-        if (!text.trim()) return window.SysUI.alert("El área de texto está vacía.");
-
-        const rows = text.split('\n');
+        
         const tarjetas = [];
 
-        rows.forEach(r => {
-            const cols = r.split('\t'); 
-            if (cols.length >= 2) {
-                const contrato = String(cols[0]).trim();
-                const tarjetaCruda = String(cols[1]).trim().replace(/[^a-zA-Z0-9]/g, '');
-                
-                if (contrato !== '' && tarjetaCruda !== '') {
-                    const tarjeta4 = tarjetaCruda.slice(-4);
-                    tarjetas.push({ contrato: contrato, tarjeta: tarjeta4 });
+        // 1. Procesar Individual
+        if (sContrato !== '' && sTarjeta !== '') {
+            tarjetas.push({ contrato: sContrato, tarjeta: sTarjeta.slice(-4) });
+        }
+
+        // 2. Procesar Masivo
+        if (text.trim() !== '') {
+            const rows = text.split('\n');
+            rows.forEach(r => {
+                const cols = r.split('\t'); 
+                if (cols.length >= 2) {
+                    const contrato = String(cols[0]).trim();
+                    const tarjetaCruda = String(cols[1]).trim().replace(/[^a-zA-Z0-9]/g, '');
+                    if (contrato !== '' && tarjetaCruda !== '') {
+                        tarjetas.push({ contrato: contrato, tarjeta: tarjetaCruda.slice(-4) });
+                    }
                 }
+            });
+        }
+
+        if (tarjetas.length === 0) return window.SysUI.alert("Ingrese al menos un contrato y tarjeta para continuar.", "Campos Vacíos", "warning");
+
+        // 3. Cerrar el Modal de inmediato para que el usuario no se sienta bloqueado
+        document.getElementById('modal-cards-tsd').classList.add('hidden');
+
+        // --- ACTUALIZACIÓN INMEDIATA EN RAM Y UI ---
+        tarjetas.forEach(t => {
+            const row = this.lastTSD.find(r => String(r.Contrato).trim() === String(t.contrato));
+            if (row) {
+                row.Tarjeta_Ultimos4 = t.tarjeta;
             }
         });
 
-        if (tarjetas.length === 0) return window.SysUI.alert("No se detectó un formato válido (Contrato \t Tarjeta).");
-
-        const btn = document.querySelector('#modal-cards-tsd button[onclick="window.TSDLogic.processCardPaste()"]');
-        const statusEl = document.getElementById('status-cards-paste');
-        const originalText = btn ? btn.innerHTML : 'Guardar en Base de Datos';
+        // Recalcular la tabla entera al vuelo 
+        this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
         
-        if (btn) {
-            btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Guardando...';
-            btn.disabled = true;
-            btn.classList.add('opacity-75', 'cursor-not-allowed');
+        // --- GUARDADO EN BD (Segundo Plano No Bloqueante) ---
+        const btnHeader = document.getElementById('btn-ingestar-tarjetas');
+        const originalText = btnHeader.innerHTML;
+        
+        if (btnHeader) {
+            btnHeader.innerHTML = '<svg class="animate-spin h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span class="text-blue-500 font-black animate-pulse">Sincronizando Historial BD...</span>';
+            btnHeader.disabled = true;
+            btnHeader.classList.add('cursor-not-allowed', 'ring-2', 'ring-blue-400');
         }
-        
-        statusEl.innerHTML = `<span class="animate-pulse">Procesando ${tarjetas.length} registros. Por favor, espere...</span>`;
-        statusEl.classList.remove('hidden');
 
         try {
             const res = await fetch('api/save_tarjetas_m3.php', {
@@ -161,54 +188,61 @@ window.TSDLogic = {
             });
             const data = await res.json();
             
-            if(data.success) {
-                document.getElementById('modal-cards-tsd').classList.add('hidden');
-                await window.SysUI.alert(`Se guardaron ${data.filas} tarjetas en el Historial con éxito.\n\nPor favor, presione "Ejecutar Cruce" nuevamente para aplicar los cambios a la tabla.`, "Ingesta Exitosa", "success");
-            } else {
-                throw new Error(data.error);
+            if(!data.success) throw new Error(data.error);
+
+            // Toast Sutil (No bloquea la pantalla con botón "Aceptar")
+            if (btnHeader) {
+                btnHeader.innerHTML = '<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> <span class="text-green-600 font-bold">¡Guardado con éxito!</span>';
+                setTimeout(() => {
+                    btnHeader.innerHTML = originalText;
+                    btnHeader.classList.remove('ring-2', 'ring-blue-400');
+                }, 3000);
             }
+            
         } catch (error) {
-            window.SysUI.alert("Error: " + error.message, "Fallo al Guardar", "error");
+            window.SysUI.alert("Las tarjetas se aplicaron en pantalla, pero hubo un error guardándolas en BD: " + error.message, "Fallo al Guardar BD", "error");
+            if (btnHeader) btnHeader.innerHTML = originalText;
         } finally {
-            if (btn) {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-                btn.classList.remove('opacity-75', 'cursor-not-allowed');
-            }
-            statusEl.classList.add('hidden');
+            if (btnHeader) btnHeader.disabled = false;
         }
     },
 
     runMatchingAlgorithm: function(tsdData, bancosData) {
-        console.log(`🧠 Ejecutando Algoritmo Multi-Match: ${tsdData.length} TSD vs ${bancosData.length} Bancos`);
+        console.log(`🧠 Ejecutando Algoritmo Multi-Match (9 Fases): ${tsdData.length} TSD vs ${bancosData.length} Bancos`);
 
         const gridData = [];
         let bancosDisponibles = [...bancosData]; 
         let pendientesTSD = [...tsdData]; 
 
-        // Arreglos de blindaje: Aquí guardaremos la cédula (_id) de cada registro que logre hacer match
         const procesadosTSDIds = [];
         const procesadosBancosIds = [];
 
+        // LIMPIEZA INTELIGENTE: cleanAuth destruye los ceros a la izquierda (ej: "00123" se convierte en "123")
         const cleanStr = (str) => String(str || '').trim().replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        const cleanAuth = (str) => { const a = cleanStr(str).replace(/^0+/, ''); return a === '' ? null : a; };
+        const getCard = (str) => { const c = cleanStr(str).slice(-4); return c.length === 4 ? c : null; };
+        
         const isBlacklisted = (knum, idTrans) => this.blacklist.includes(String(knum).trim() + '|' + String(idTrans).trim());
         const isSameMonto = (m1, m2) => Math.abs(parseFloat(m1) - parseFloat(m2)) < 2; 
 
-        const processMatch = (tsdRow, bancoRow, matchType) => {
+        // MOTOR DE DIBUJO DE FILAS
+        const processMatch = (tsdRow, bancoRow, matchType, justificacion = '') => {
             const tsdArr = Array.isArray(tsdRow) ? tsdRow : [tsdRow];
             const bancoArr = Array.isArray(bancoRow) ? bancoRow : [bancoRow];
             
-            // TRACKING ABSOLUTO: Anotamos los IDs procesados para el Rescate Final de Huérfanos
             tsdArr.forEach(t => procesadosTSDIds.push(t._id));
             bancoArr.forEach(b => procesadosBancosIds.push(b._id));
 
-            // VALIDACIÓN ESTRICTA: Solo es "Múltiple" si de verdad hay más de 1 registro de algún lado
             const isMulti = tsdArr.length > 1 || bancoArr.length > 1;
 
             let finalMatchType = matchType;
             if (!isMulti) {
                 if (matchType.includes('Auth Grupal')) finalMatchType = matchType.includes('Monto') ? 'Auth + Monto' : 'Auth Solo';
                 if (matchType.includes('Tarjeta Grupal')) finalMatchType = matchType.includes('Monto') ? 'Tarjeta + Monto' : 'Tarjeta Solo';
+            }
+
+            if (finalMatchType === 'Manual' && justificacion) {
+                finalMatchType = `Manual|${justificacion}`;
             }
 
             const montoTSD = tsdArr.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
@@ -218,11 +252,11 @@ window.TSDLogic = {
             let bgColorClass = 'bg-[#fce4d6] dark:bg-[#7c6f69] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
             if (finalMatchType.includes('Tarjeta')) bgColorClass = 'bg-[#ddebf7] dark:bg-[#1e3a8a] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
             if (finalMatchType.includes('Sugerencia')) bgColorClass = 'bg-[#fef08a] dark:bg-[#854d0e] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
-            if (finalMatchType === 'Manual') bgColorClass = 'bg-[#ffe699] dark:bg-[#b2a06b] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800 font-bold'; 
+            if (finalMatchType.startsWith('Manual')) bgColorClass = 'bg-[#ffe699] dark:bg-[#b2a06b] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800 font-bold'; 
             if (isNegative) bgColorClass = 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold';
 
             const contratoRep = isMulti ? `Varios (${tsdArr.length} registros)` : tsdArr[0].Contrato;
-            const clienteRep = isMulti ? `Agrupación Múltiple (Doble clic para ver)` : tsdArr[0].Cliente;
+            const clienteRep = isMulti ? `Agrupación Múltiple (Doble clic para ver)` : tsdArr[0].Cliente; // Cliente vuelve a ser texto puro
             const authTSDRep = isMulti ? tsdArr[0].Autorizacion : tsdArr[0].Autorizacion;
             
             const tarjetaLimpia = cleanStr(tsdArr[0].Tarjeta_Ultimos4);
@@ -241,7 +275,13 @@ window.TSDLogic = {
                 Cliente: clienteRep,
                 TarjetaTSD: tarjetaRep,
                 Autorizacion: authTSDRep,
-                MontoTSD: montoTSD, 
+                // Objeto Matemático: VanillaGrid lo suma como número, pero el buscador lo lee como texto
+                MontoTSD: { 
+                    valor: montoTSD, 
+                    recibo: isMulti ? '' : (tsdArr[0].Recibo_Detalle || ''),
+                    valueOf: function() { return this.valor; },
+                    toString: function() { return this.valor.toString(); }
+                }, 
                 EstadoMatch: finalMatchType, 
                 Banco_Nombre: bancoRep,
                 Banco_Auth: authBancoRep,
@@ -250,105 +290,81 @@ window.TSDLogic = {
             });
         };
 
-        // --- FASE 0: CONCILIACIONES MANUALES DEL USUARIO ---
+        // --- FASE 0: MANUALES DEL USUARIO ---
         this.manualMatches.forEach(mMatch => {
             const arrT = pendientesTSD.filter(t => mMatch.tsdArr.some(x => x._id === t._id));
             const arrB = bancosDisponibles.filter(b => mMatch.bancoArr.some(x => x._id === b._id));
-            
-            if (arrT.length > 0 || arrB.length > 0) {
-                processMatch(arrT, arrB, 'Manual');
-            }
-            
+            if (arrT.length > 0 || arrB.length > 0) processMatch(arrT, arrB, 'Manual', mMatch.justificacion);
             pendientesTSD = pendientesTSD.filter(t => !mMatch.tsdArr.some(x => x._id === t._id));
             bancosDisponibles = bancosDisponibles.filter(b => !mMatch.bancoArr.some(x => x._id === b._id));
         });
 
-        // Guardamos la foto inicial limpia de lo extraído de la BD
         const blindajeTSD = [...tsdData]; 
         const blindajeBancos = [...bancosData];
 
-        // --- FASE 1: 1 a 1 AUTH + MONTO (Confianza Máxima) ---
+        // --- HELPERS DE BUSQUEDA PARA FASES 1 A 8 ---
+        const run1to1Phase = (keyGetterT, keyGetterB, matchLabel, requireSameMonto) => {
+            let nextTSD = [];
+            pendientesTSD.forEach(tsdRow => {
+                const kT = keyGetterT(tsdRow);
+                const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+                let matchIdx = -1;
+                if (kT) {
+                    matchIdx = bancosDisponibles.findIndex(b => {
+                        const kB = keyGetterB(b);
+                        const sameMonto = isSameMonto(b.Monto_Venta_Original, montoTSD);
+                        return kB === kT && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion) && (!requireSameMonto || sameMonto);
+                    });
+                }
+                if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], matchLabel);
+                else nextTSD.push(tsdRow);
+            });
+            pendientesTSD = nextTSD;
+        };
+
+        const runGroupPhase = (keyGetterT, keyGetterB, matchLabelExact, matchLabelSolo, strictMonto) => {
+            const groupT = {}, groupB = {};
+            pendientesTSD.forEach(r => { const k = keyGetterT(r); if(k) { groupT[k] = groupT[k]||[]; groupT[k].push(r); } });
+            bancosDisponibles.forEach(r => { const k = keyGetterB(r); if(k) { groupB[k] = groupB[k]||[]; groupB[k].push(r); } });
+
+            for (const k in groupT) {
+                if (groupB[k]) {
+                    const arrT = groupT[k], arrB = groupB[k];
+                    if (!arrT.some(t => arrB.some(b => isBlacklisted(t.Contrato, b.IdTransaccion)))) {
+                        const sumT = arrT.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
+                        const sumB = arrB.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
+                        if (isSameMonto(sumT, sumB)) {
+                            processMatch(arrT, arrB, matchLabelExact);
+                            pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
+                            bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+                        } else if (!strictMonto) {
+                            processMatch(arrT, arrB, matchLabelSolo);
+                            pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
+                            bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+                        }
+                    }
+                }
+            }
+        };
+
+        const getAuthT = r => cleanAuth(r.Autorizacion);
+        const getAuthB = r => cleanAuth(r.Numero_Autorizacion);
+        const getCardT = r => getCard(r.Tarjeta_Ultimos4);
+        const getCardB = r => getCard(r.Tarjeta_Ultimos4);
+
+        // EJECUCIÓN DE LAS 8 FASES (Cascada Implacable)
+        run1to1Phase(getAuthT, getAuthB, 'Auth + Monto', true);          // Fase 1
+        runGroupPhase(getAuthT, getAuthB, 'Auth Grupal + Monto', '', true); // Fase 2
+        run1to1Phase(getAuthT, getAuthB, 'Auth Solo', false);            // Fase 3
+        runGroupPhase(getAuthT, getAuthB, '', 'Auth Grupal Solo', false);   // Fase 4
+        
+        run1to1Phase(getCardT, getCardB, 'Tarjeta + Monto', true);       // Fase 5
+        runGroupPhase(getCardT, getCardB, 'Tarjeta Grupal + Monto', '', true); // Fase 6
+        run1to1Phase(getCardT, getCardB, 'Tarjeta Solo', false);         // Fase 7
+        runGroupPhase(getCardT, getCardB, '', 'Tarjeta Grupal Solo', false);   // Fase 8
+
+        // --- FASE 9: SUGERENCIA (MONTO SOLO) ---
         let nextTSD = [];
-        pendientesTSD.forEach(tsdRow => {
-            const authTSD = cleanStr(tsdRow.Autorizacion);
-            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
-            let matchIdx = -1;
-            if (authTSD !== '' && authTSD !== '0' && authTSD !== '000000') {
-                matchIdx = bancosDisponibles.findIndex(b => cleanStr(b.Numero_Autorizacion) === authTSD && isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
-            }
-            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Auth + Monto');
-            else nextTSD.push(tsdRow);
-        });
-        pendientesTSD = nextTSD;
-
-        const groupByAuthTSD = {};
-        pendientesTSD.forEach(r => {
-            const a = cleanStr(r.Autorizacion);
-            if(a && a!=='0' && a!=='000000') { groupByAuthTSD[a] = groupByAuthTSD[a] || []; groupByAuthTSD[a].push(r); }
-        });
-        const groupByAuthBanco = {};
-        bancosDisponibles.forEach(r => {
-            const a = cleanStr(r.Numero_Autorizacion);
-            if(a && a!=='0' && a!=='000000') { groupByAuthBanco[a] = groupByAuthBanco[a] || []; groupByAuthBanco[a].push(r); }
-        });
-
-        for (const auth in groupByAuthTSD) {
-            if (groupByAuthBanco[auth]) {
-                const arrT = groupByAuthTSD[auth];
-                const arrB = groupByAuthBanco[auth];
-                let hasBlacklist = arrT.some(t => arrB.some(b => isBlacklisted(t.Contrato, b.IdTransaccion)));
-                if (!hasBlacklist) {
-                    const sumT = arrT.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
-                    const sumB = arrB.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
-                    const mType = isSameMonto(sumT, sumB) ? 'Auth Grupal + Monto' : 'Auth Grupal Solo';
-                    processMatch(arrT, arrB, mType);
-                    pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
-                    bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
-                }
-            }
-        }
-
-        nextTSD = [];
-        pendientesTSD.forEach(tsdRow => {
-            const tSegura = cleanStr(tsdRow.Tarjeta_Ultimos4).slice(-4);
-            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
-            let matchIdx = -1;
-            if (tSegura !== '' && tSegura.length === 4) {
-                matchIdx = bancosDisponibles.findIndex(b => cleanStr(b.Tarjeta_Ultimos4).slice(-4) === tSegura && isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
-            }
-            if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Tarjeta + Monto');
-            else nextTSD.push(tsdRow);
-        });
-        pendientesTSD = nextTSD;
-
-        const groupByCardTSD = {};
-        pendientesTSD.forEach(r => {
-            const c = cleanStr(r.Tarjeta_Ultimos4).slice(-4);
-            if(c && c.length === 4) { groupByCardTSD[c] = groupByCardTSD[c] || []; groupByCardTSD[c].push(r); }
-        });
-        const groupByCardBanco = {};
-        bancosDisponibles.forEach(r => {
-            const c = cleanStr(r.Tarjeta_Ultimos4).slice(-4);
-            if(c && c.length === 4) { groupByCardBanco[c] = groupByCardBanco[c] || []; groupByCardBanco[c].push(r); }
-        });
-
-        for (const card in groupByCardTSD) {
-            if (groupByCardBanco[card]) {
-                const arrT = groupByCardTSD[card];
-                const arrB = groupByCardBanco[card];
-                let hasBlacklist = arrT.some(t => arrB.some(b => isBlacklisted(t.Contrato, b.IdTransaccion)));
-                if (!hasBlacklist) {
-                    const sumT = arrT.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
-                    const sumB = arrB.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
-                    const mType = isSameMonto(sumT, sumB) ? 'Tarjeta Grupal + Monto' : 'Tarjeta Grupal Solo';
-                    processMatch(arrT, arrB, mType);
-                    pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
-                    bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
-                }
-            }
-        }
-
-        nextTSD = [];
         pendientesTSD.forEach(tsdRow => {
             const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
             let matchIdx = -1;
@@ -360,18 +376,23 @@ window.TSDLogic = {
         });
         pendientesTSD = nextTSD;
 
-        // --- FASE FINAL: RESCATE ABSOLUTO DE HUÉRFANOS ---
-        // Todo lo que estaba en el blindaje inicial y NO fue anotado en `procesadosTSDIds` es huérfano.
+        // --- FASE FINAL: RESCATE DE HUÉRFANOS ---
         blindajeTSD.forEach(tsdRow => {
             if (!procesadosTSDIds.includes(tsdRow._id)) {
                 const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
-                const tSegura = cleanStr(tsdRow.Tarjeta_Ultimos4).slice(-4);
+                const tSegura = getCard(tsdRow.Tarjeta_Ultimos4);
                 gridData.push({
                     _uid: 'row_' + Math.random().toString(36).substr(2, 9),
                     _tsdRaw: tsdRow, _bancoRaw: null, _rowClass: '', _isMulti: false,
-                    Contrato: tsdRow.Contrato, Cliente: tsdRow.Cliente,
-                    TarjetaTSD: tSegura !== '' ? `****${tSegura}` : 'S/D',
-                    Autorizacion: tsdRow.Autorizacion, MontoTSD: montoTSD,
+                    Contrato: tsdRow.Contrato, Cliente: tsdRow.Cliente, // Cliente vuelve a ser texto puro
+                    TarjetaTSD: tSegura ? `****${tSegura}` : 'S/D',
+                    Autorizacion: tsdRow.Autorizacion, 
+                    MontoTSD: { 
+                        valor: montoTSD, 
+                        recibo: tsdRow.Recibo_Detalle || '',
+                        valueOf: function() { return this.valor; },
+                        toString: function() { return this.valor.toString(); }
+                    },
                     EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
                 });
             }
@@ -386,15 +407,16 @@ window.TSDLogic = {
                     _rowClass: 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800',
                     Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
                     TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D',
-                    Autorizacion: '-', MontoTSD: 0,
+                    Autorizacion: '-', MontoTSD: 0, // A los bancos no les inyectamos recibo
                     EstadoMatch: 'Sobrante', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
                 });
             }
         });
 
+        // --- ORDENAMIENTO ESTÉTICO ---
         gridData.sort((a, b) => {
             const getWeight = (row) => {
-                if (row.EstadoMatch === 'Manual') return 0; // Manuales SIEMPRE arriba
+                if (String(row.EstadoMatch).startsWith('Manual')) return 0; // Manuales SIEMPRE arriba
                 const isNegative = row.MontoTSD < 0 || row.Banco_Monto < 0;
                 if (isNegative && row.EstadoMatch !== 'Pendiente' && row.EstadoMatch !== 'Sobrante') return 6; 
                 if (row.EstadoMatch.includes('Auth')) return 1;
@@ -407,13 +429,49 @@ window.TSDLogic = {
             return String(a.Contrato).localeCompare(String(b.Contrato));
         });
 
+        // --- ACTUALIZAR CONTADORES DE SIMBOLOGÍA ---
+        let cAuth = 0, cTarjeta = 0, cSug = 0, cNeg = 0, cMan = 0;
+        
+        gridData.forEach(r => {
+            const isNegative = r.MontoTSD < 0 || r.Banco_Monto < 0;
+            const status = String(r.EstadoMatch);
+            if (status.startsWith('Manual')) { cMan++; }
+            else if (isNegative && status !== 'Pendiente' && status !== 'Sobrante') { cNeg++; }
+            else if (status.includes('Auth')) { cAuth++; }
+            else if (status.includes('Tarjeta')) { cTarjeta++; }
+            else if (status.includes('Sugerencia')) { cSug++; }
+        });
+
+        const elAuth = document.getElementById('count-auth');
+        const elTarjeta = document.getElementById('count-tarjeta');
+        const elSug = document.getElementById('count-sugerencia');
+        const elNeg = document.getElementById('count-negativos');
+        const elMan = document.getElementById('count-manual');
+
+        if(elAuth) elAuth.innerText = cAuth;
+        if(elTarjeta) elTarjeta.innerText = cTarjeta;
+        if(elSug) elSug.innerText = cSug;
+        if(elNeg) elNeg.innerText = cNeg;
+        if(elMan) elMan.innerText = cMan;
+
         this.currentGridData = gridData;
         this.renderGrid(gridData);
     },
 
+
     renderGrid: function(data) {
-        const matchedData = data.filter(r => r.EstadoMatch !== 'Pendiente' && r.EstadoMatch !== 'Sobrante');
-        const pendingData = data.filter(r => r.EstadoMatch === 'Pendiente' || r.EstadoMatch === 'Sobrante');
+        // Regla de Negocio: Las "Sugerencias" se consideran Excepciones hasta que un humano las valide manualmente
+        const matchedData = data.filter(r => 
+            r.EstadoMatch !== 'Pendiente' && 
+            r.EstadoMatch !== 'Sobrante' && 
+            r.EstadoMatch !== 'Sugerencia (Monto)'
+        );
+        
+        const pendingData = data.filter(r => 
+            r.EstadoMatch === 'Pendiente' || 
+            r.EstadoMatch === 'Sobrante' || 
+            r.EstadoMatch === 'Sugerencia (Monto)'
+        );
         
         const fmtMoney = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v || 0).replace(/\./g, ' ');
 
@@ -426,17 +484,38 @@ window.TSDLogic = {
                     return val.includes('Varios') ? `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">🔗 ${val}</span>` : val;
                 }
             },
-            { title: "Cliente", field: "Cliente", headerFilter: true, width: 220, cssClass: "truncate text-[10px]" },
+            { title: "Cliente", field: "Cliente", headerFilter: true, width: 160, cssClass: "truncate text-[10px]" },
             { title: "Tarjeta", field: "TarjetaTSD", width: 80, cssClass: "font-mono text-slate-500", hozAlign: "center" },
             { title: "Auth (TSD)", field: "Autorizacion", headerFilter: true, width: 90, cssClass: "font-mono", hozAlign: "center" },
-            { title: "Monto", field: "MontoTSD", hozAlign: "right", formatter: "money", bottomCalc: "sum", bottomCalcFormatter: "money", cssClass: "font-bold" },
+            { 
+                title: "Monto TSD / Detalle", field: "MontoTSD", headerFilter: true, width: 150, hozAlign: "right", bottomCalc: "sum", 
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    const valor = typeof val === 'object' && val !== null && 'valor' in val ? val.valor : val;
+                    const recibo = typeof val === 'object' && val !== null && 'recibo' in val ? val.recibo : '';
+                    
+                    // Se cambia el color del recibo a tonos rojizos/naranjas
+                    const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
+                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
+                },
+                // Filtro personalizado: Busca tanto por número como por el texto del recibo
+                headerFilterFunc: (term, val) => {
+                    const strVal = typeof val === 'object' && val !== null ? `${val.valor} ${val.recibo}` : String(val);
+                    return String(strVal).toLowerCase().includes(String(term).toLowerCase());
+                }
+            },
             
             { 
                 title: "STATUS CRUCE", field: "EstadoMatch", headerFilter: true, width: 160, hozAlign: "center",
                 cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold shadow-inner cursor-pointer",
                 formatter: (cell) => {
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    if(val === 'Manual') return '<span class="text-amber-900 dark:text-amber-100 uppercase tracking-widest text-[10px]">🛠️ Manual</span>';
+                    if(String(val).startsWith('Manual')) {
+                        const parts = val.split('|');
+                        const justHtml = parts[1] ? `<div class="text-[9px] text-amber-700 dark:text-amber-400 font-normal mt-0.5 truncate max-w-[130px] mx-auto italic" title="${parts[1]}">"${parts[1]}"</div>` : '';
+                        return `<div class="flex flex-col items-center"><span class="text-amber-900 dark:text-amber-100 uppercase tracking-widest text-[10px]">🛠️ Manual</span>${justHtml}</div>`;
+                    }
                     if(val === 'Auth + Monto') return '✔️ Auth+Monto';
                     if(val === 'Auth Grupal + Monto' || val === 'Auth Grupal Solo') return '<span class="text-blue-600 dark:text-blue-400">🔗 Auth Grupal</span>';
                     if(val === 'Auth Solo') return '✔️ Auth Solo';
@@ -451,9 +530,13 @@ window.TSDLogic = {
             
             { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", headerFilter: true, cssClass: "text-blue-700 dark:text-blue-400 font-bold" },
             { title: "Auth (Banco)", field: "Banco_Auth", headerFilter: true, width: 100, cssClass: "font-mono", hozAlign: "center" },
-            { title: "Monto", field: "Banco_Monto", hozAlign: "right", formatter: "money", bottomCalc: "sum", bottomCalcFormatter: "money", cssClass: "font-bold" },
             { 
-                title: "Diferencia", field: "Diferencia", hozAlign: "right", bottomCalc: "sum", bottomCalcFormatter: "money",
+                title: "Monto", field: "Banco_Monto", hozAlign: "right", formatter: "money", bottomCalc: "sum", 
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`, cssClass: "font-bold" 
+            },
+            { 
+                title: "Diferencia", field: "Diferencia", hozAlign: "right", bottomCalc: "sum", 
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
                 formatter: (cell) => {
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     const thresholdInput = document.getElementById('tsd-threshold');
@@ -481,11 +564,18 @@ window.TSDLogic = {
         const tRaw = row._tsdRaw ? (Array.isArray(row._tsdRaw) ? [...row._tsdRaw] : [row._tsdRaw]) : [];
         const bRaw = row._bancoRaw ? (Array.isArray(row._bancoRaw) ? [...row._bancoRaw] : [row._bancoRaw]) : [];
         
+        // Recuperar justificación desde el string particionado (ej: "Manual|Mi Justificación")
+        let justTexto = '';
+        if (String(row.EstadoMatch).startsWith('Manual|')) {
+            justTexto = row.EstadoMatch.split('|')[1] || '';
+        }
+        
         this.ws = {
             tsd: [...tRaw], bancos: [...bRaw],
             originalTsd: [...tRaw], originalBancos: [...bRaw],
             rowUid: row._uid,
-            isAutoMatch: row.EstadoMatch !== 'Pendiente' && row.EstadoMatch !== 'Sobrante' && row.EstadoMatch !== 'Manual'
+            justificacion: justTexto,
+            isAutoMatch: row.EstadoMatch !== 'Pendiente' && row.EstadoMatch !== 'Sobrante' && !String(row.EstadoMatch).startsWith('Manual')
         };
 
         // 2. Preparar los CSS de Tailwind (Usamos el script de CDN para el popup hijo)
@@ -566,14 +656,112 @@ window.TSDLogic = {
                 </div>
             </main>
 
+            <!-- FOOTER: Justificación Opcional -->
+            <footer id="ws-footer" class="bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-3 shrink-0 hidden">
+                <div class="flex flex-col max-w-4xl mx-auto">
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Justificación del Ajuste (Opcional)</span>
+                    <input type="text" id="ws-just" placeholder="Escriba aquí el motivo del cruce manual o diferencia..." class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-500 text-slate-700 dark:text-slate-200 transition-shadow">
+                </div>
+            </footer>
+
             <script>
                 const parentLogic = window.opener.TSDLogic;
                 const fmt = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v).replace(/\\./g, ' ');
                 const clean = (s) => String(s||'').toLowerCase().trim();
 
-                // Inicializar datos estáticos desde el padre
                 const allPendientesT = parentLogic.currentGridData.filter(r => r.EstadoMatch === 'Pendiente').flatMap(r => Array.isArray(r._tsdRaw) ? r._tsdRaw : [r._tsdRaw]);
                 const allPendientesB = parentLogic.currentGridData.filter(r => r.EstadoMatch === 'Sobrante').flatMap(r => Array.isArray(r._bancoRaw) ? r._bancoRaw : [r._bancoRaw]);
+
+                // --- GENERADOR DE TARJETAS TSD (Con Acordeón y Recibo) ---
+                function buildTsdCard(t, isSelected) {
+                    const actionBtn = isSelected 
+                        ? \`<button onclick="parentLogic.wsRemove('tsd', '\${t._id}'); renderUI();" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-0.5 rounded font-black text-lg transition-colors" title="Quitar">&times;</button>\`
+                        : \`<button onclick="parentLogic.wsAdd('tsd', '\${t._id}'); renderUI();" class="bg-purple-100 text-purple-700 rounded px-2 font-bold shadow-sm text-sm hover:bg-purple-200 transition-colors" title="Añadir">+</button>\`;
+                        
+                    const wrapperClass = isSelected 
+                        ? "flex flex-col p-2 bg-white dark:bg-slate-700 border-l-4 border-purple-500 border-y border-r border-slate-200 dark:border-slate-600 rounded-lg shadow-sm" 
+                        : "flex flex-col p-2 border-b border-slate-200 dark:border-slate-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors cursor-pointer";
+
+                    return \`
+                    <div class="\${wrapperClass}">
+                        <div class="flex justify-between items-start" \${!isSelected ? \`onclick="parentLogic.wsAdd('tsd', '\${t._id}'); renderUI();"\` : ''}>
+                            <div class="flex flex-col w-full pr-2">
+                                <span class="font-bold text-[11px] font-mono text-slate-800 dark:text-white">\${t.Contrato}</span>
+                                <span class="text-[10px] text-slate-600 dark:text-slate-300 truncate" title="\${t.Cliente}">\${t.Cliente}</span>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="font-mono font-bold text-sm \${t.MontoCRC < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">\${fmt(t.MontoCRC)}</span>
+                                \${actionBtn}
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-1 mt-1.5" \${!isSelected ? \`onclick="parentLogic.wsAdd('tsd', '\${t._id}'); renderUI();"\` : ''}>
+                            <span class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-mono">Auth: <b class="text-slate-800 dark:text-white">\${t.Autorizacion||'-'}</b></span>
+                            <span class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-mono">Tarj: ****\${t.Tarjeta_Ultimos4||'S/D'}</span>
+                        </div>
+                        
+                        <!-- ACORDEÓN TSD -->
+                        <details class="mt-1.5 group">
+                            <summary class="text-[9px] text-purple-600 dark:text-purple-400 cursor-pointer hover:underline list-none font-medium flex items-center gap-1 select-none [&::-webkit-details-marker]:hidden">
+                                <svg class="w-3 h-3 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg> 
+                                Más información TSD
+                            </summary>
+                            <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-2 text-[9px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 p-2 rounded border border-slate-100 dark:border-slate-700">
+                                <div class="col-span-2 text-slate-600 dark:text-slate-300"><b>Recibo/Detalle:</b> \${t.Recibo_Detalle || '<i>Sin descripción</i>'}</div>
+                                <div><b>Fecha Pago:</b> \${t.Fecha || '-'}</div>
+                                <div><b>Tipo Tarjeta:</b> \${t.Tipo || '-'}</div>
+                                <div><b>ICD:</b> \${t.ICD || '-'}</div>
+                                <div><b>Sucursal:</b> \${t.Sucursal || '-'} (\${t.SucursalCod || '-'})</div>
+                                <div class="col-span-2 truncate" title="\${t.RecibidoPor}"><b>Agente:</b> \${t.RecibidoPor || '-'}</div>
+                                <div class="col-span-2 border-t border-slate-200 dark:border-slate-700 mt-1 pt-1">
+                                    <b class="text-green-600 dark:text-green-400">Monto Origen USD:</b> $\${t.MontoUSD || 0} <span class="text-slate-400 ml-2">(T.C. Aplicado: ₡\${t.TC || 1})</span>
+                                </div>
+                            </div>
+                        </details>
+                    </div>\`;
+                }
+
+                // --- GENERADOR DE TARJETAS BANCOS (Con Acordeón) ---
+                function buildBancoCard(b, isSelected) {
+                    const actionBtn = isSelected 
+                        ? \`<button onclick="parentLogic.wsRemove('bancos', '\${b._id}'); renderUI();" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-0.5 rounded font-black text-lg transition-colors" title="Quitar">&times;</button>\`
+                        : \`<button onclick="parentLogic.wsAdd('bancos', '\${b._id}'); renderUI();" class="bg-blue-100 text-blue-700 rounded px-2 font-bold shadow-sm text-sm hover:bg-blue-200 transition-colors" title="Añadir">+</button>\`;
+                        
+                    const wrapperClass = isSelected 
+                        ? "flex flex-col p-2 bg-white dark:bg-slate-700 border-l-4 border-blue-500 border-y border-r border-slate-200 dark:border-slate-600 rounded-lg shadow-sm" 
+                        : "flex flex-col p-2 border-b border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer";
+
+                    return \`
+                    <div class="\${wrapperClass}">
+                        <div class="flex justify-between items-start" \${!isSelected ? \`onclick="parentLogic.wsAdd('bancos', '\${b._id}'); renderUI();"\` : ''}>
+                            <div class="flex flex-col w-full pr-2">
+                                <span class="font-bold text-[11px] text-blue-600 dark:text-blue-400 font-mono">\${b.Banco}</span>
+                                <span class="text-[10px] text-slate-600 dark:text-slate-300 truncate" title="\${b.Nombre_Sucursal_Comercio}">\${b.Nombre_Sucursal_Comercio || '-'}</span>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="font-mono font-bold text-sm \${b.Monto_Venta_Original < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">\${fmt(b.Monto_Venta_Original)}</span>
+                                \${actionBtn}
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-1 mt-1.5" \${!isSelected ? \`onclick="parentLogic.wsAdd('bancos', '\${b._id}'); renderUI();"\` : ''}>
+                            <span class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-mono">Auth: <b class="text-slate-800 dark:text-white">\${b.Numero_Autorizacion||'-'}</b></span>
+                            <span class="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded text-[9px] font-mono">Tarj: ****\${b.Tarjeta_Ultimos4||'S/D'}</span>
+                        </div>
+                        
+                        <!-- ACORDEÓN BANCOS -->
+                        <details class="mt-1.5 group">
+                            <summary class="text-[9px] text-blue-600 dark:text-blue-400 cursor-pointer hover:underline list-none font-medium flex items-center gap-1 select-none [&::-webkit-details-marker]:hidden">
+                                <svg class="w-3 h-3 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg> 
+                                Más información Banco
+                            </summary>
+                            <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-2 text-[9px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 p-2 rounded border border-slate-100 dark:border-slate-700">
+                                <div><b>Fecha Pago (Excel):</b> \${b.Fecha_Pago_Excel || '-'}</div>
+                                <div><b>Fecha Trans.:</b> \${b.FechaTransaccion || '-'}</div>
+                                <div class="col-span-2"><b>Afiliado/MerID:</b> \${b.Afiliado_MerID || '-'}</div>
+                                <div class="col-span-2"><b>Terminal:</b> \${b.Codigo_Sucursal_Terminal || '-'}</div>
+                            </div>
+                        </details>
+                    </div>\`;
+                }
 
                 function renderUI() {
                     const ws = parentLogic.ws;
@@ -588,20 +776,11 @@ window.TSDLogic = {
                     document.getElementById('ws-count-tsd').innerText = \`\${ws.tsd.length} Registros\`;
                     document.getElementById('ws-count-bancos').innerText = \`\${ws.bancos.length} Registros\`;
 
-                    // 1. DIBUJAR SELECCIONADOS (ARRIBA)
-                    document.getElementById('ws-sel-tsd').innerHTML = ws.tsd.map(t => \`
-                        <div class="flex justify-between items-center p-2 bg-white dark:bg-slate-700 border-l-4 border-purple-500 border-y border-r border-slate-200 dark:border-slate-600 rounded-lg shadow-sm">
-                            <div class="flex flex-col"><span class="font-bold text-[11px] font-mono text-slate-800 dark:text-white">\${t.Contrato}</span><span class="text-[10px] text-slate-500">Auth: <b class="text-slate-700 dark:text-slate-300">\${t.Autorizacion||'-'}</b> | ****\${t.Tarjeta_Ultimos4||'S/D'}</span></div>
-                            <div class="flex items-center gap-3"><span class="font-mono font-bold text-sm \${t.MontoCRC < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">\${fmt(t.MontoCRC)}</span><button onclick="parentLogic.wsRemove('tsd', '\${t._id}'); renderUI();" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-0.5 rounded font-black text-lg transition-colors" title="Quitar">&times;</button></div>
-                        </div>\`).join('') || '<div class="text-center text-slate-400 text-xs mt-10 italic">Vacío</div>';
+                    // 1. DIBUJAR SELECCIONADOS (Usando los constructores con Acordeón)
+                    document.getElementById('ws-sel-tsd').innerHTML = ws.tsd.map(t => buildTsdCard(t, true)).join('') || '<div class="text-center text-slate-400 text-xs mt-10 italic">Vacío</div>';
+                    document.getElementById('ws-sel-bancos').innerHTML = ws.bancos.map(b => buildBancoCard(b, true)).join('') || '<div class="text-center text-slate-400 text-xs mt-10 italic">Vacío</div>';
 
-                    document.getElementById('ws-sel-bancos').innerHTML = ws.bancos.map(b => \`
-                        <div class="flex justify-between items-center p-2 bg-white dark:bg-slate-700 border-l-4 border-blue-500 border-y border-r border-slate-200 dark:border-slate-600 rounded-lg shadow-sm">
-                            <div class="flex flex-col"><span class="font-bold text-[11px] text-blue-600 font-mono">\${b.Banco}</span><span class="text-[10px] text-slate-500">Auth: <b class="text-slate-700 dark:text-slate-300">\${b.Numero_Autorizacion||'-'}</b> | ****\${b.Tarjeta_Ultimos4||'S/D'}</span></div>
-                            <div class="flex items-center gap-3"><span class="font-mono font-bold text-sm \${b.Monto_Venta_Original < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">\${fmt(b.Monto_Venta_Original)}</span><button onclick="parentLogic.wsRemove('bancos', '\${b._id}'); renderUI();" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-0.5 rounded font-black text-lg transition-colors" title="Quitar">&times;</button></div>
-                        </div>\`).join('') || '<div class="text-center text-slate-400 text-xs mt-10 italic">Vacío</div>';
-
-                    // 2. DIBUJAR SUGERENCIAS (ABAJO)
+                    // 2. DIBUJAR SUGERENCIAS
                     let availableT = allPendientesT.filter(t => !ws.tsd.some(w => w._id === t._id));
                     let availableB = allPendientesB.filter(b => !ws.bancos.some(w => w._id === b._id));
 
@@ -617,11 +796,7 @@ window.TSDLogic = {
                         });
                     }
 
-                    document.getElementById('ws-sug-tsd').innerHTML = availableT.slice(0, 50).map(t => \`
-                        <div class="flex justify-between items-center p-2 border-b border-slate-200 dark:border-slate-700 hover:bg-purple-50 dark:hover:bg-purple-900/30 cursor-pointer transition-colors" onclick="parentLogic.wsAdd('tsd', '\${t._id}'); renderUI();">
-                            <div class="flex flex-col"><span class="font-bold text-[10px] text-slate-700 dark:text-slate-200">\${t.Contrato} <span class="text-slate-400 font-normal">(\${t.Cliente})</span></span><span class="text-[9px] text-slate-400 font-mono">Auth: \${t.Autorizacion||'-'} | ****\${t.Tarjeta_Ultimos4||'S/D'}</span></div>
-                            <div class="flex items-center gap-2"><span class="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300">\${fmt(t.MontoCRC)}</span><span class="bg-purple-100 text-purple-700 rounded px-2 font-bold shadow-sm text-sm">+</span></div>
-                        </div>\`).join('') || '<div class="text-center text-slate-400 text-xs mt-4">Sin sugerencias</div>';
+                    document.getElementById('ws-sug-tsd').innerHTML = availableT.slice(0, 50).map(t => buildTsdCard(t, false)).join('') || '<div class="text-center text-slate-400 text-xs mt-4">Sin sugerencias</div>';
 
                     const termB = clean(document.getElementById('ws-search-banco')?.value || '');
                     if (termB) availableB = availableB.filter(b => clean(b.Numero_Autorizacion).includes(termB) || clean(b.Tarjeta_Ultimos4).includes(termB) || clean(b.Monto_Venta_Original).includes(termB));
@@ -635,19 +810,31 @@ window.TSDLogic = {
                         });
                     }
 
-                    document.getElementById('ws-sug-bancos').innerHTML = availableB.slice(0, 50).map(b => \`
-                        <div class="flex justify-between items-center p-2 border-b border-slate-200 dark:border-slate-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 cursor-pointer transition-colors" onclick="parentLogic.wsAdd('bancos', '\${b._id}'); renderUI();">
-                            <div class="flex flex-col"><span class="font-bold text-[10px] text-blue-600">\${b.Banco} <span class="text-slate-400 font-normal">(\${b.Nombre_Sucursal_Comercio})</span></span><span class="text-[9px] text-slate-400 font-mono">Auth: \${b.Numero_Autorizacion||'-'} | ****\${b.Tarjeta_Ultimos4||'S/D'}</span></div>
-                            <div class="flex items-center gap-2"><span class="font-mono text-[11px] font-bold text-slate-600 dark:text-slate-300">\${fmt(b.Monto_Venta_Original)}</span><span class="bg-blue-100 text-blue-700 rounded px-2 font-bold shadow-sm text-sm">+</span></div>
-                        </div>\`).join('') || '<div class="text-center text-slate-400 text-xs mt-4">Sin sugerencias</div>';
+                    document.getElementById('ws-sug-bancos').innerHTML = availableB.slice(0, 50).map(b => buildBancoCard(b, false)).join('') || '<div class="text-center text-slate-400 text-xs mt-4">Sin sugerencias</div>';
+
+                    // 3. LOGICA DEL FOOTER DE JUSTIFICACIÓN
+                    const footer = document.getElementById('ws-footer');
+                    if (ws.tsd.length > 0 && ws.bancos.length > 0) {
+                        footer.classList.remove('hidden');
+                    } else {
+                        footer.classList.add('hidden');
+                    }
                 }
 
                 function saveAndClose() {
-                    parentLogic.wsSave();
+                    const justInput = document.getElementById('ws-just');
+                    const justificacion = justInput ? justInput.value.trim() : '';
+                    parentLogic.wsSave(justificacion);
                     window.close();
                 }
 
-                document.addEventListener('DOMContentLoaded', renderUI);
+                document.addEventListener('DOMContentLoaded', () => {
+                    const justInput = document.getElementById('ws-just');
+                    if (justInput) {
+                        justInput.value = parentLogic.ws.justificacion || '';
+                    }
+                    renderUI();
+                });
             </script>
         </body>
         </html>`;
@@ -667,7 +854,7 @@ window.TSDLogic = {
         else this.ws.bancos = this.ws.bancos.filter(b => b._id !== id);
     },
 
-    wsSave: function() {
+    wsSave: function(justificacion = '') {
         // Regla 1: Blindaje contra Auto-Unión.
         this.ws.originalTsd.forEach(t => {
             this.ws.originalBancos.forEach(b => {
@@ -677,13 +864,10 @@ window.TSDLogic = {
         });
         
         // Regla 2: Destrucción por Contenido (En lugar de por UID).
-        // Sin importar si el rowUid cambió, buscaremos en la RAM si alguno de los registros originales de este match 
-        // ya estaba metido en una combinación manual anterior, y la destruimos entera.
         const originTsdIds = this.ws.originalTsd.map(t => t._id);
         const originBancoIds = this.ws.originalBancos.map(b => b._id);
         
         this.manualMatches = this.manualMatches.filter(m => {
-            // Conservar el match SOLO SI no contiene ninguno de los registros que estamos editando ahorita
             const hasTsdCollision = m.tsdArr.some(t => originTsdIds.includes(t._id));
             const hasBancoCollision = m.bancoArr.some(b => originBancoIds.includes(b._id));
             return !hasTsdCollision && !hasBancoCollision;
@@ -691,15 +875,13 @@ window.TSDLogic = {
 
         // Regla 3: Evaluación Final del Workspace.
         if (this.ws.tsd.length > 0 && this.ws.bancos.length > 0) {
-            // Guardamos el nuevo grupo humano
             this.manualMatches.push({ 
                 tsdArr: [...this.ws.tsd], 
-                bancoArr: [...this.ws.bancos] 
+                bancoArr: [...this.ws.bancos],
+                justificacion: justificacion
             });
             if(window.SysUI) window.SysUI.alert("Conciliación manual aplicada. Se fijará al inicio de la tabla en amarillo.", "Éxito", "success");
         } else {
-            // Si vació un lado, simplemente no lo agregamos a manualMatches. 
-            // Como ya limpiamos los viejos en la Regla 2, la máquina los arrojará a Huérfanos obligatoriamente.
             if(window.SysUI) window.SysUI.alert("Datos desvinculados permanentemente. Reubicados en tabla inferior.", "Separados", "warning");
         }
 

@@ -919,10 +919,11 @@ window.ConciliacionLogic = {
                     body { font-family: ui-sans-serif, system-ui, sans-serif; }
                 </style>
             </head>
-            <body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 h-screen flex flex-col overflow-hidden p-4 select-none animate-fade-in-up">
+            <!-- Se quitó el p-4 del body. Ahora el body es un contenedor 100% puro -->
+            <body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 h-screen overflow-hidden flex flex-col m-0 p-0 select-none animate-fade-in-up">
                 
-                <!-- HEADER CON BUSCADOR -->
-                <div class="flex justify-between items-center mb-4 gap-4">
+                <!-- HEADER (Tamaño Fijo) -->
+                <div class="flex justify-between items-center px-4 pt-4 pb-2 gap-4 shrink-0">
                     <div class="flex items-center gap-4">
                         <div>
                             <h1 class="text-xl font-bold flex items-center gap-2">
@@ -931,7 +932,6 @@ window.ConciliacionLogic = {
                         </div>
                     </div>
 
-                    <!-- BUSCADOR GLOBAL INYECTADO -->
                     <div class="flex-grow max-w-md relative">
                         <div class="absolute inset-y-0 left-0 flex items-center justify-center w-10 pointer-events-none">
                             <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -941,14 +941,18 @@ window.ConciliacionLogic = {
                             placeholder="Buscar en esta tabla">
                     </div>
 
-                    <button onclick="window.close()" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-bold transition-colors whitespace-nowrap">
+                    <button onclick="window.close()" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded text-sm font-bold transition-colors whitespace-nowrap shadow-sm">
                         Cerrar Ventana
                     </button>
                 </div>
 
-                <div id="popup-grid" class="flex-grow overflow-hidden relative shadow-lg rounded-lg border border-slate-300 dark:border-slate-700"></div>
+                <!-- CONTENEDOR GRID (El Truco: flex-grow + relative + min-h-0) -->
+                <div class="flex-grow relative min-h-0">
+                    <div id="popup-grid" class="absolute top-0 left-4 right-4 bottom-4 shadow-lg rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-800 flex flex-col"></div>
+                </div>
 
-                <div id="global-table-stats" class="fixed bottom-0 left-0 w-full bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-700 py-1 px-4 flex justify-end items-center gap-6 text-xs font-mono hidden z-50">
+                <!-- BARRA ESTADÍSTICAS (Tamaño Fijo Inferior) -->
+                <div id="global-table-stats" class="shrink-0 w-full bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-700 py-1.5 px-4 flex justify-end items-center gap-6 text-xs font-mono hidden z-50">
                     <div class="text-slate-500">SELECCIÓN:</div>
                     <div class="flex gap-2"><span class="text-slate-500">CNT:</span><span id="gst-count" class="font-bold">0</span></div>
                     <div class="flex gap-2"><span class="text-slate-500">SUM:</span><span id="gst-sum" class="font-bold">0</span></div>
@@ -961,23 +965,20 @@ window.ConciliacionLogic = {
                             const columns = ${JSON.stringify(columns)};
                             
                             setTimeout(() => {
-                                // Instanciamos el Grid pasando solo el ID del buscador y las opciones
                                 new VanillaGrid("#popup-grid", data, columns, { 
                                     threshold: 0,
+                                    resize: false, // <-- Tabla nativa auto-ajustable a la ventana
                                     searchInputId: "popup-search", 
                                     autoFocusSearch: true,         
-                                    // Callback REACTIVO en tiempo real
                                     onCheckboxChange: (row, field, val) => {
                                         if(window.opener && window.opener.ConciliacionLogic) {
-                                            // Llamamos al orquestador para que todo el sistema se sincronice
-                                            // (BAC afecta a TSD, Scotia afecta a TSD, etc.)
                                             window.opener.ConciliacionLogic.updateAll();
                                         }
                                     }
                                 });
-                            }, 50);
+                            }, 50); // Le da 50ms al DOM para que termine de pintar el position absolute
                         } else {
-                            document.body.innerHTML = '<div class="p-10 text-red-500">Error: Conexión perdida.</div>';
+                            document.body.innerHTML = '<div class="p-10 text-red-500 font-bold">Error: Conexión perdida con la ventana principal.</div>';
                         }
                     };
                 </script>

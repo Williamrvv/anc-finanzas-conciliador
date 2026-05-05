@@ -55,6 +55,7 @@ try {
                 (ISNULL(E.sell, C.USDRate) * P.AMOUNT) AS [MontoCRC],
                 P.CARD_TYPE AS [Tipo],
                 P.Ref AS [Autorizacion],
+                P.RECEIPT AS [Recibo_Detalle],
                 CAST(P.Pay_Date AS DATE) AS [Fecha],
                 ISNULL(U.FirstName + ' ' + U.LastName, P.TAKEN_BY) AS [RecibidoPor], 
                 P.DBR AS [ICD],

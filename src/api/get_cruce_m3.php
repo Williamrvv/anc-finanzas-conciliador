@@ -35,6 +35,7 @@ try {
             (ISNULL(E.sell, C.USDRate) * P.AMOUNT) AS [MontoCRC],
             P.CARD_TYPE AS [Tipo],
             P.Ref AS [Autorizacion],
+            P.RECEIPT AS [Recibo_Detalle],
             CAST(P.Pay_Date AS DATE) AS [Fecha],
             ISNULL(U.FirstName + ' ' + U.LastName, P.TAKEN_BY) AS [RecibidoPor], 
             P.DBR AS [ICD],
@@ -87,51 +88,72 @@ try {
     // ==========================================
     $sqlBancos = "
         WITH FoliosNuevos AS (
-            -- 1. EXTRACCIÓN DIRECTA: BAC CREDOMATIC
-            SELECT 
-                b.IdTransaccion, -- Requerido para la Lista Negra (Blacklist) en el JS
-                c.IdCierre AS Folio_Cierre,
-                c.FechaCierre AS Fecha_Del_Folio,
-                'BAC' AS Banco,
-                b.NUMERO_AFILIADO AS Afiliado_MerID,
-                b.TERMINAL AS Codigo_Sucursal_Terminal,
-                b.NOMBRECOMERCIO AS Nombre_Sucursal_Comercio,
-                RIGHT(RTRIM(LTRIM(b.NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
-                b.AUTORIZACION AS Numero_Autorizacion,
-                b.MONTO_VENTA AS Monto_Venta_Original,
-                b.FECHA_PAGO AS Fecha_Pago_Excel
-            FROM Tbl_Detalle_BAC b
-            INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
-            WHERE c.ConsolidadoTSD IS NULL
-              AND b.AUTORIZACION IS NOT NULL 
-              AND RTRIM(LTRIM(b.AUTORIZACION)) <> ''
+    -- ==========================================
+    -- 1. EXTRACCIÓN DIRECTA: BAC CREDOMATIC
+    -- ==========================================
+    SELECT 
+        b.IdTransaccion, -- Requerido para la Lista Negra (Blacklist) en el JS
+        c.IdCierre AS Folio_Cierre,
+        c.FechaCierre AS Fecha_Del_Folio,
+        'BAC' AS Banco,
+        b.NUMERO_AFILIADO AS Afiliado_MerID,
+        b.TERMINAL AS Codigo_Sucursal_Terminal,
+        b.NOMBRECOMERCIO AS Nombre_Sucursal_Comercio,
+        RIGHT(RTRIM(LTRIM(b.NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
+        b.AUTORIZACION AS Numero_Autorizacion,
+        b.MONTO_VENTA AS Monto_Venta_Original,
+        b.FECHA_PAGO AS Fecha_Pago_Excel,
+        
+        -- Datos Exclusivos de los Ajustes Manuales
+        a.TipoAjuste,
+        a.Justificacion
+    FROM 
+        Tbl_Detalle_BAC b
+    INNER JOIN 
+        Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
+    LEFT JOIN 
+        Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
+    WHERE 
+        c.ConsolidadoTSD IS NULL
+        -- (Se eliminaron las restricciones de Autorización)
 
-            UNION ALL
+    UNION ALL
 
-            -- 2. EXTRACCIÓN DIRECTA: SCOTIABANK (DAVIBANK)
-            SELECT 
-                s.IdTransaccion,
-                c.IdCierre AS Folio_Cierre,
-                c.FechaCierre AS Fecha_Del_Folio,
-                'SCOTIA' AS Banco,
-                s.MerID AS Afiliado_MerID,
-                s.Terminal AS Codigo_Sucursal_Terminal,
-                s.Nombre AS Nombre_Sucursal_Comercio,
-                RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
-                s.Numero_Autorizacion AS Numero_Autorizacion,
-                s.Monto_Orig AS Monto_Venta_Original,
-                s.Fecha_Pago AS Fecha_Pago_Excel
-            FROM Tbl_Detalle_Scotia s
-            INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
-            WHERE c.ConsolidadoTSD IS NULL
-              AND s.Numero_Autorizacion IS NOT NULL 
-              AND RTRIM(LTRIM(s.Numero_Autorizacion)) <> ''
-              AND s.Numero_Tarjeta IS NOT NULL 
-              AND RTRIM(LTRIM(s.Numero_Tarjeta)) <> ''
-        )
-        SELECT * 
-        FROM FoliosNuevos
-        ORDER BY Folio_Cierre ASC, Banco ASC, TRY_CONVERT(date, Fecha_Pago_Excel, 103) ASC;
+    -- ==========================================
+    -- 2. EXTRACCIÓN DIRECTA: SCOTIABANK (DAVIBANK)
+    -- ==========================================
+    SELECT 
+        s.IdTransaccion,
+        c.IdCierre AS Folio_Cierre,
+        c.FechaCierre AS Fecha_Del_Folio,
+        'Davibank' AS Banco,
+        s.MerID AS Afiliado_MerID,
+        s.Terminal AS Codigo_Sucursal_Terminal,
+        s.Nombre AS Nombre_Sucursal_Comercio,
+        RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
+        s.Numero_Autorizacion AS Numero_Autorizacion,
+        s.Monto_Orig AS Monto_Venta_Original,
+        s.Fecha_Pago AS Fecha_Pago_Excel,
+
+        -- Datos Exclusivos de los Ajustes Manuales
+        a.TipoAjuste,
+        a.Justificacion
+    FROM 
+        Tbl_Detalle_Scotia s
+    INNER JOIN 
+        Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
+    LEFT JOIN 
+        Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
+    WHERE 
+        c.ConsolidadoTSD IS NULL
+        -- (Se eliminaron las restricciones de Autorización y Tarjeta)
+)
+SELECT * 
+FROM FoliosNuevos
+ORDER BY 
+    Folio_Cierre ASC, 
+    Banco ASC, 
+    TRY_CONVERT(date, Fecha_Pago_Excel, 103) ASC;
     ";
 
     $stmtBancos = $pdoBancos->prepare($sqlBancos);

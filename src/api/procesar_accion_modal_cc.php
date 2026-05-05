@@ -40,16 +40,25 @@ try {
     $notaHistorial = '';
 
     // 2. Máquina de Estados Estricta
-    if ($accion === 'REPORTAR') {
+    if ($accion === 'ESCALAR') {
         if ($estadoActual !== 'NO_REPORTADO') throw new Exception("El caso ya fue reportado anteriormente.");
-        $nuevoEstado = 'PENDIENTE_CORRECCION_TSD';
-        $notaHistorial = "Reportado vía Dashboard: $comentario";
+        $nuevoEstado = 'PENDIENTE_RESOLUCION';
+        $notaHistorial = "Reportado vía Dashboard a SC: $comentario";
         
-        // Actualizamos también el MotivoAgente original
         $stmtMotivo = $pdo->prepare("UPDATE Tbl_Casos_TSD SET MotivoAgente = ? WHERE IdCaso = ?");
         $stmtMotivo->execute([$comentario, $idCaso]);
 
     } 
+    elseif (in_array($accion, ['CONTRACARGO', 'DEVOLUCION', 'OTRO_CONTRATO'])) {
+        if ($estadoActual !== 'NO_REPORTADO') throw new Exception("El caso ya fue procesado.");
+        $nuevoEstado = 'CERRADO';
+        $notaHistorial = "Cerrado directamente por el Agente ($accion). Nota: $comentario";
+        
+        $motivoCompleto = "[$accion] " . $comentario;
+        $stmtMotivo = $pdo->prepare("UPDATE Tbl_Casos_TSD SET MotivoAgente = ? WHERE IdCaso = ?");
+        $stmtMotivo->execute([$motivoCompleto, $idCaso]);
+        
+    }
     elseif ($accion === 'RESOLVER') {
         if ($estadoActual !== 'PENDIENTE_CORRECCION_TSD') throw new Exception("El caso no se encuentra en estado pendiente de corrección.");
         $nuevoEstado = 'RESUELTO';

@@ -104,14 +104,7 @@ try {
             }
             
             foreach ($sucursales as $suc) {
-                try {
-                    $stmtIns->execute([$suc['id'], $suc['nombre'], $nombre, $email]);
-                } catch (PDOException $ex) {
-                    if ($ex->getCode() == 23000 && $roleName === 'jefe') {
-                        throw new Exception("La sucursal {$suc['id']} ya está asignada a otro jefe en el sistema. Debe retirarla del otro usuario primero.");
-                    }
-                    throw $ex;
-                }
+                $stmtIns->execute([$suc['id'], $suc['nombre'], $nombre, $email]);
             }
         }
 
