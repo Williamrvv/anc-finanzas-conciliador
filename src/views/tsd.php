@@ -13,11 +13,15 @@
 
         <div class="flex items-center gap-3 bg-white dark:bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
             <!-- Selector de Rango Moderno -->
-            <div class="flex flex-col px-3 relative">
+            <div class="flex flex-col px-3 relative group">
                 <span class="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Rango de Fechas</span>
-                <div class="flex items-center gap-2 border-b border-slate-300 dark:border-slate-600 pb-1">
-                    <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    <input type="text" id="tsd-date-picker" class="bg-transparent text-sm font-bold text-slate-700 dark:text-white outline-none cursor-pointer w-48 text-center" placeholder="Seleccione fechas...">
+                <!-- Contenedor con Gradiente Animado Oculto -->
+                <div id="tsd-date-wrapper" class="relative flex items-center gap-2 pb-1 transition-all overflow-hidden">
+                    <div id="tsd-date-loader" class="absolute bottom-0 left-0 h-[2px] w-full bg-gradient-to-r from-transparent via-purple-500 to-transparent opacity-0 translate-x-[-100%] transition-opacity duration-300"></div>
+                    <div class="absolute bottom-0 left-0 h-[1px] w-full bg-slate-300 dark:bg-slate-600"></div>
+                    
+                    <svg class="w-4 h-4 text-purple-500 z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <input type="text" id="tsd-date-picker" class="bg-transparent text-sm font-bold text-slate-700 dark:text-white outline-none cursor-pointer w-48 text-center z-10" placeholder="Seleccione fechas...">
                 </div>
             </div>
             
@@ -37,49 +41,142 @@
             <!-- Botón Visor PopUp -->
             <button type="button" onclick="window.TSDLogic.openRawViewer()" class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm flex items-center gap-2 border border-slate-200 dark:border-slate-600">
                 <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                Visor datos crudos
-            </button>
-            
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-            
-            <button id="btn-run-match" onclick="window.TSDLogic.fetchAndMatch()" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition-all shadow-md shadow-purple-500/20 flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                Ejecutar Cruce
+                Visor de Datos Crudos
             </button>
         </div>
     </div>
 
-    <div class="flex justify-between items-center mb-3 shrink-0">
-        <!-- Leyenda de Colores con Contadores -->
-        <div class="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
-            <span class="text-slate-500 dark:text-slate-400 ml-2">Simbología:</span>
-            
-            <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                <span class="w-3 h-3 rounded-full bg-[#fce4d6] dark:bg-[#7c6f69] border border-slate-300 dark:border-slate-600"></span> 
-                Auth <span id="count-auth" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5">0</span>
+    <!-- Estilos en línea para la animación del borde infinito -->
+    <style>
+        @keyframes slide-infinite {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .animate-slide-infinite { animation: slide-infinite 1.5s infinite linear; }
+    </style>
+
+    <div class="flex flex-col gap-3 mb-3 shrink-0 w-full">
+        
+        <!-- FILA 1: Métrica Superior y Botón de Acción -->
+        <div class="flex justify-between items-end w-full">
+            <!-- Panel de Métricas y Micro-Gráficos -->
+            <div class="inline-flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors w-fit shrink-0">
+                <div class="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider mb-2">
+                    <span class="text-slate-500 dark:text-slate-400 ml-1">Métricas de Cruce:</span>
+                    
+                    <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <span class="w-2.5 h-2.5 rounded-sm bg-[#fce4d6] dark:bg-[#7c6f69] border border-slate-300 dark:border-slate-600"></span> 
+                        Auth: <span id="count-auth" class="text-slate-800 dark:text-white ml-0.5">0</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <span class="w-2.5 h-2.5 rounded-sm bg-[#ddebf7] dark:bg-[#1e3a8a] border border-slate-300 dark:border-slate-600"></span> 
+                        Tarj: <span id="count-tarjeta" class="text-slate-800 dark:text-white ml-0.5">0</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <span class="w-2.5 h-2.5 rounded-sm bg-[#ffe699] dark:bg-[#b2a06b] border border-slate-300 dark:border-slate-600"></span> 
+                        Man: <span id="count-manual" class="text-slate-800 dark:text-white ml-0.5">0</span>
+                    </div>
+                    <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
+                    <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <span class="w-2.5 h-2.5 rounded-sm bg-[#fef08a] dark:bg-[#854d0e] border border-slate-300 dark:border-slate-600"></span> 
+                        Sug: <span id="count-sugerencia" class="text-slate-800 dark:text-white ml-0.5">0</span>
+                    </div>
+                    <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
+                    <div class="flex items-center gap-1 text-red-600 dark:text-red-400">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        No Concil: <span id="count-noc" class="font-black ml-0.5">0</span>
+                    </div>
+                </div>
+                <!-- Barra de Progreso Stacked (Micro-Chart) con Tooltips CSS -->
+                <div class="w-full h-2.5 bg-slate-100 dark:bg-slate-900 rounded-full flex overflow-visible shadow-inner relative">
+                    <div id="bar-auth" class="h-full bg-[#fce4d6] dark:bg-[#7c6f69] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                        <span id="tt-auth" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                    <div id="bar-tarj" class="h-full bg-[#ddebf7] dark:bg-[#1e3a8a] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                        <span id="tt-tarj" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                    <div id="bar-man" class="h-full bg-[#ffe699] dark:bg-[#b2a06b] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                        <span id="tt-man" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                    <div id="bar-sug" class="h-full bg-[#fef08a] dark:bg-[#854d0e] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                        <span id="tt-sug" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                    <div id="bar-noc" class="h-full bg-red-400 dark:bg-red-600 transition-all duration-500 group relative cursor-pointer rounded-r-full" style="width: 0%">
+                        <span id="tt-noc" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                </div>
             </div>
-            <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                <span class="w-3 h-3 rounded-full bg-[#ddebf7] dark:bg-[#1e3a8a] border border-slate-300 dark:border-slate-600"></span> 
-                Tarjeta <span id="count-tarjeta" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5">0</span>
-            </div>
-            <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                <span class="w-3 h-3 rounded-full bg-[#ffe699] dark:bg-[#655b3d] border border-slate-300 dark:border-slate-600"></span> 
-                Sugerencia <span id="count-sugerencia" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5">0</span>
-            </div>
-            <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                <span class="w-3 h-3 rounded-full bg-[#d9d9d9] dark:bg-[#262626] border border-slate-300 dark:border-slate-600"></span> 
-                Negativos <span id="count-negativos" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5">0</span>
-            </div>
-            <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                <span class="w-3 h-3 rounded-full bg-[#ffe699] dark:bg-[#b2a06b] border border-slate-300 dark:border-slate-600"></span> 
-                Manual <span id="count-manual" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5">0</span>
-            </div>
+
+            <button id="btn-ingestar-tarjetas" onclick="window.TSDLogic.openCardModal()" class="bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg font-bold text-xs transition-colors border border-blue-200 dark:border-slate-600 shadow-sm flex items-center gap-2 shrink-0 h-fit mb-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                Ingestar Histórico Tarjetas
+            </button>
         </div>
 
-        <button id="btn-ingestar-tarjetas" onclick="window.TSDLogic.openCardModal()" class="bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg font-bold text-xs transition-colors border border-blue-200 dark:border-slate-600 shadow-sm flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-            Ingestar Histórico Tarjetas
-        </button>
+        <!-- FILA 2: PANEL DE RESUMEN FINANCIERO -->
+        <div class="w-full bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-wrap lg:flex-nowrap gap-6 overflow-x-auto items-center">
+            
+            <!-- Bloque TSD -->
+            <div class="flex flex-col min-w-[180px] border-r border-slate-200 dark:border-slate-700 pr-6 shrink-0">
+                <span class="text-xs font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <span class="w-2 h-2 bg-purple-500 rounded-full shadow-sm"></span> Sist. TSD
+                </span>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-bold text-slate-400">Total USD:</span>
+                    <span id="dash-tsd-usd" class="font-mono text-sm font-black text-slate-800 dark:text-white ml-auto">$0.00</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-400">Total CRC:</span>
+                    <span id="dash-tsd-crc" class="font-mono text-sm font-black text-slate-800 dark:text-white ml-auto">₡0.00</span>
+                </div>
+            </div>
+
+            <!-- Bloque BAC -->
+            <div class="flex flex-col flex-1 border-r border-slate-200 dark:border-slate-700 pr-6 shrink-0 min-w-[340px]">
+                <span class="text-xs font-black text-red-600 dark:text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <span class="w-2 h-2 bg-red-500 rounded-full shadow-sm"></span> BAC Credomatic
+                </span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5">
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Bruto:</span> <span id="dash-bac-bruto" class="font-mono text-xs font-bold text-slate-800 dark:text-white ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Comisión:</span> <span id="dash-bac-com" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Ret. Venta:</span> <span id="dash-bac-retv" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Neto:</span> <span id="dash-bac-neto" class="font-mono text-sm font-black text-green-600 dark:text-green-500 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Ret. Renta:</span> <span id="dash-bac-retr" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">ACI:</span> <span id="dash-bac-aci" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                </div>
+            </div>
+
+            <!-- Bloque Davibank -->
+            <div class="flex flex-col flex-1 border-r border-slate-200 dark:border-slate-700 pr-6 shrink-0 min-w-[340px]">
+                <span class="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <span class="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></span> Davibank
+                </span>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5">
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Bruto:</span> <span id="dash-davi-bruto" class="font-mono text-xs font-bold text-slate-800 dark:text-white ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Comisión:</span> <span id="dash-davi-com" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Ret. IVA:</span> <span id="dash-davi-retv" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Neto:</span> <span id="dash-davi-neto" class="font-mono text-sm font-black text-green-600 dark:text-green-500 ml-auto">₡0.00</span></div>
+                    <div class="flex items-center gap-2"><span class="text-[11px] font-bold text-slate-400">Ret. ISR:</span> <span id="dash-davi-retr" class="font-mono text-xs font-bold text-red-500 dark:text-red-400 ml-auto">₡0.00</span></div>
+                </div>
+            </div>
+
+            <!-- Gran Total Bancos -->
+            <div class="flex flex-col min-w-[180px] shrink-0 pl-2">
+                <span class="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg> 
+                    Total Bancos
+                </span>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-xs font-bold text-slate-400">Bruto:</span> 
+                    <span id="dash-tot-bruto" class="font-mono text-[15px] font-black text-slate-800 dark:text-white ml-auto">₡0.00</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-400">Neto:</span> 
+                    <span id="dash-tot-neto" class="font-mono text-[15px] font-black text-green-600 dark:text-green-500 ml-auto">₡0.00</span>
+                </div>
+            </div>
+
+        </div>
     </div>
 
     <!-- Modal de Carga de Tarjetas -->

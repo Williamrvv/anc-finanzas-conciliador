@@ -188,11 +188,10 @@
                 </div>
             </div>
 
-            <!-- Tabla Central Scotia -->
             <!-- ÁREA CENTRAL SCOTIA -->
             <div class="flex flex-col gap-6 pb-10">
                 
-                <<!-- TABLA CENTRAL SCOTIA (Altura Dinámica y Liberada) -->
+                <!-- TABLA CENTRAL SCOTIA (Altura Dinámica y Liberada) -->
                 <div class="flex flex-col gap-2">
                     <!-- Toolbar Separado -->
                     <div class="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm flex justify-between items-center">

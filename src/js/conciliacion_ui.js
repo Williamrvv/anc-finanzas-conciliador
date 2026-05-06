@@ -1625,13 +1625,14 @@ window.ConciliacionLogic = {
         const elTxt = document.getElementById('loader-text');
         
         const progressInterval = setInterval(() => {
-            if(pct < 85) {
-                pct += Math.floor(Math.random() * 15) + 5;
-                if(pct > 85) pct = 85;
+            if(pct < 95) {
+                pct += Math.floor(Math.random() * 10) + 2;
+                if(pct > 95) pct = 95; // Se frena en 95% esperando la respuesta final de la BD
                 elBar.style.width = pct + '%'; elPct.innerText = pct + '%';
-                if(pct > 20) elTxt.innerText = "Transfiriendo paquete de datos...";
-                if(pct > 40) elTxt.innerText = "Verificando saldos y previniendo duplicados...";
-                if(pct > 65) elTxt.innerText = "Registrando datos por paquetes en la base de datos...";
+                if(pct > 15) elTxt.innerText = "Transfiriendo paquete de datos seguro...";
+                if(pct > 35) elTxt.innerText = "Consolidando registros y evaluando idempotencia...";
+                if(pct > 60) elTxt.innerText = "Escribiendo tablas relacionales en Base de datos...";
+                if(pct > 80) elTxt.innerText = "Verificando integridad de los datos...";
             }
         }, 300);
 
@@ -1647,7 +1648,7 @@ window.ConciliacionLogic = {
             elBar.classList.replace('bg-blue-500', 'bg-green-500');
             document.querySelector('#loader-card svg').classList.replace('text-blue-500', 'text-green-500');
             document.querySelector('#loader-card svg').classList.remove('animate-spin');
-            elTxt.innerText = "¡Sincronización Completada!";
+            elTxt.innerText = "¡Integridad verificada! Guardado exitoso.";
             elTxt.classList.replace('text-slate-400', 'text-green-400');
             
             await new Promise(r => setTimeout(r, 600));

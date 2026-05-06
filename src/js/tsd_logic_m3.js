@@ -16,11 +16,17 @@ window.TSDLogic = {
         this.blacklist = []; // Reiniciar blacklist al entrar
         
         if (window.flatpickr) {
-            flatpickr("#tsd-date-picker", {
+            this.datePicker = flatpickr("#tsd-date-picker", {
                 mode: "range",
                 dateFormat: "Y-m-d",
                 locale: "es", 
-                defaultDate: [new Date(), new Date()]
+                defaultDate: [new Date(), new Date()],
+                onClose: (selectedDates, dateStr, instance) => {
+                    // Si seleccionó un rango válido o un solo día, arrancamos el cruce automáticamente
+                    if (selectedDates.length > 0) {
+                        window.TSDLogic.fetchAndMatch(dateStr);
+                    }
+                }
             });
         }
     },
@@ -28,6 +34,46 @@ window.TSDLogic = {
     updateThreshold: function() {
         if (this.gridMatched && typeof this.gridMatched.render === 'function') this.gridMatched.render();
         if (this.gridPending && typeof this.gridPending.render === 'function') this.gridPending.render();
+    },
+
+    updateFinancialDashboard: function(tsd, bancos) {
+        let tUsd = 0, tCrc = 0;
+        let bBruto = 0, bNeto = 0, bCom = 0, bRetV = 0, bRetR = 0, bAci = 0;
+        let dBruto = 0, dNeto = 0, dCom = 0, dRetV = 0, dRetR = 0;
+
+        tsd.forEach(t => {
+            tUsd += parseFloat(t.MontoUSD) || 0;
+            tCrc += parseFloat(t.MontoCRC) || 0;
+        });
+
+        bancos.forEach(b => {
+            const isBac = b.Banco === 'BAC';
+            const bruto = parseFloat(b.Monto_Venta_Original) || 0;
+            const neto = parseFloat(b.Monto_Neto) || 0;
+            const com = parseFloat(b.Comision) || 0;
+            const retv = parseFloat(b.Retencion_Ventas) || 0;
+            const retr = parseFloat(b.Retencion_Renta) || 0;
+            const aci = parseFloat(b.ACI) || 0;
+
+            if (isBac) {
+                bBruto += bruto; bNeto += neto; bCom += com; bRetV += retv; bRetR += retr; bAci += aci;
+            } else {
+                dBruto += bruto; dNeto += neto; dCom += com; dRetV += retv; dRetR += retr;
+            }
+        });
+
+        const fmt = (v, curr='CRC') => new Intl.NumberFormat('es-CR', {style:'currency', currency: curr}).format(v).replace(/\./g, ' ');
+
+        const s = (id, val, curr) => { const el = document.getElementById(id); if(el) el.innerText = fmt(val, curr); };
+
+        s('dash-tsd-usd', tUsd, 'USD'); s('dash-tsd-crc', tCrc, 'CRC');
+        s('dash-bac-bruto', bBruto, 'CRC'); s('dash-bac-neto', bNeto, 'CRC'); s('dash-bac-com', bCom, 'CRC');
+        s('dash-bac-retv', bRetV, 'CRC'); s('dash-bac-retr', bRetR, 'CRC'); s('dash-bac-aci', bAci, 'CRC');
+        
+        s('dash-davi-bruto', dBruto, 'CRC'); s('dash-davi-neto', dNeto, 'CRC'); s('dash-davi-com', dCom, 'CRC');
+        s('dash-davi-retv', dRetV, 'CRC'); s('dash-davi-retr', dRetR, 'CRC');
+        
+        s('dash-tot-bruto', bBruto + dBruto, 'CRC'); s('dash-tot-neto', bNeto + dNeto, 'CRC');
     },
 
     openRawViewer: function() {
@@ -47,8 +93,8 @@ window.TSDLogic = {
         window.open(`visor_crudos.php?start=${start}&end=${end}`, 'VisorCrudosIRI', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
     },
 
-    fetchAndMatch: async function() {
-        const dateVal = document.getElementById('tsd-date-picker').value;
+    fetchAndMatch: async function(dateValParam = null) {
+        const dateVal = dateValParam || document.getElementById('tsd-date-picker').value;
         if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas válido.");
 
         let start = dateVal, end = dateVal;
@@ -56,13 +102,16 @@ window.TSDLogic = {
             [start, end] = dateVal.split(' a ');
         }
 
-        const btn = document.getElementById('btn-run-match');
-        const gridContainer = document.getElementById('table-result-tsd');
-        const originalText = btn.innerHTML;
+        const inputEl = document.getElementById('tsd-date-picker');
+        const loaderEl = document.getElementById('tsd-date-loader');
         
-        btn.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Consultando BD...';
-        btn.disabled = true;
-        btn.classList.add('opacity-75', 'cursor-not-allowed');
+        // Bloquear input y activar animación minimalista (Barra inferior deslizante)
+        inputEl.disabled = true;
+        inputEl.classList.add('cursor-wait', 'opacity-80');
+        if (loaderEl) {
+            loaderEl.classList.remove('opacity-0');
+            loaderEl.classList.add('animate-slide-infinite');
+        }
 
         const containerMatched = document.getElementById('table-matched-tsd');
         const containerPending = document.getElementById('table-pending-tsd');
@@ -90,6 +139,9 @@ window.TSDLogic = {
             this.lastTSD = json.tsd.map((t, i) => { t._id = 't_' + i; return t; });
             this.lastBancos = json.bancos.map((b, i) => { b._id = 'b_' + i; return b; });
 
+            // Actualizar Dashboard Financiero
+            this.updateFinancialDashboard(this.lastTSD, this.lastBancos);
+
             // Limpiamos los manual matches de sesiones anteriores
             this.manualMatches = [];
             this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
@@ -106,9 +158,13 @@ window.TSDLogic = {
                 `;
             }
         } finally {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-            btn.classList.remove('opacity-75', 'cursor-not-allowed');
+            // Desbloquear input y quitar animación minimalista
+            inputEl.disabled = false;
+            inputEl.classList.remove('cursor-wait', 'opacity-80');
+            if (loaderEl) {
+                loaderEl.classList.add('opacity-0');
+                loaderEl.classList.remove('animate-slide-infinite');
+            }
         }
     },
 
@@ -429,30 +485,53 @@ window.TSDLogic = {
             return String(a.Contrato).localeCompare(String(b.Contrato));
         });
 
-        // --- ACTUALIZAR CONTADORES DE SIMBOLOGÍA ---
-        let cAuth = 0, cTarjeta = 0, cSug = 0, cNeg = 0, cMan = 0;
+        // --- ACTUALIZAR CONTADORES DE SIMBOLOGÍA Y MICRO-CHART ---
+        let cAuth = 0, cTarjeta = 0, cSug = 0, cMan = 0, cNoC = 0;
         
         gridData.forEach(r => {
-            const isNegative = r.MontoTSD < 0 || r.Banco_Monto < 0;
             const status = String(r.EstadoMatch);
             if (status.startsWith('Manual')) { cMan++; }
-            else if (isNegative && status !== 'Pendiente' && status !== 'Sobrante') { cNeg++; }
+            else if (status === 'Pendiente' || status === 'Sobrante') { cNoC++; }
             else if (status.includes('Auth')) { cAuth++; }
             else if (status.includes('Tarjeta')) { cTarjeta++; }
             else if (status.includes('Sugerencia')) { cSug++; }
         });
 
-        const elAuth = document.getElementById('count-auth');
-        const elTarjeta = document.getElementById('count-tarjeta');
-        const elSug = document.getElementById('count-sugerencia');
-        const elNeg = document.getElementById('count-negativos');
-        const elMan = document.getElementById('count-manual');
+        const total = gridData.length || 1; // Prevenir división por cero
 
-        if(elAuth) elAuth.innerText = cAuth;
-        if(elTarjeta) elTarjeta.innerText = cTarjeta;
-        if(elSug) elSug.innerText = cSug;
-        if(elNeg) elNeg.innerText = cNeg;
-        if(elMan) elMan.innerText = cMan;
+        document.getElementById('count-auth').innerText = cAuth;
+        document.getElementById('count-tarjeta').innerText = cTarjeta;
+        document.getElementById('count-sugerencia').innerText = cSug;
+        document.getElementById('count-manual').innerText = cMan;
+        document.getElementById('count-noc').innerText = cNoC;
+
+        // Calcular Porcentajes
+        const pAuth = ((cAuth / total) * 100).toFixed(1);
+        const pTarj = ((cTarjeta / total) * 100).toFixed(1);
+        const pMan = ((cMan / total) * 100).toFixed(1);
+        const pSug = ((cSug / total) * 100).toFixed(1);
+        const pNoC = ((cNoC / total) * 100).toFixed(1);
+
+        // Actualizar Anchos del Gráfico
+        document.getElementById('bar-auth').style.width = `${pAuth}%`;
+        document.getElementById('bar-tarj').style.width = `${pTarj}%`;
+        document.getElementById('bar-man').style.width = `${pMan}%`;
+        document.getElementById('bar-sug').style.width = `${pSug}%`;
+        document.getElementById('bar-noc').style.width = `${pNoC}%`;
+
+        // Actualizar Tooltips
+        document.getElementById('tt-auth').innerText = `Auth: ${pAuth}%`;
+        document.getElementById('tt-tarj').innerText = `Tarjeta: ${pTarj}%`;
+        document.getElementById('tt-man').innerText = `Manual: ${pMan}%`;
+        document.getElementById('tt-sug').innerText = `Sugerencia: ${pSug}%`;
+        document.getElementById('tt-noc').innerText = `No Concil: ${pNoC}%`;
+
+        // Ocultar Tooltips de valores en 0% para no amontonar
+        document.getElementById('tt-auth').style.display = cAuth > 0 ? 'block' : 'none';
+        document.getElementById('tt-tarj').style.display = cTarjeta > 0 ? 'block' : 'none';
+        document.getElementById('tt-man').style.display = cMan > 0 ? 'block' : 'none';
+        document.getElementById('tt-sug').style.display = cSug > 0 ? 'block' : 'none';
+        document.getElementById('tt-noc').style.display = cNoC > 0 ? 'block' : 'none';
 
         this.currentGridData = gridData;
         this.renderGrid(gridData);

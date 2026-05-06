@@ -70,6 +70,7 @@ try {
     $stmtAjuste = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion, EvidenciaB64) VALUES (?, ?, ?, ?)");
 
     $filasAfectadas = 0;
+    $hashesProcesados = []; // NUEVO: Rastreador de auditoría 
 
     foreach ($transacciones as $t) {
         $idTrans = $t['IdTransaccion'] ?? 'SIN_ID';
@@ -82,6 +83,8 @@ try {
 
         $hashStr = $t['HashString'] ?? "FALLBACK|" . uniqid();
         $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
+        
+        $hashesProcesados[] = $hashUnico; // Guardamos la huella para la auditoría final
 
         // Si JS nos dice que esto es un saldo que ya sacó de la BD, lo forzamos a UPDATE directo
         if (!empty($t['IsFromDB'])) {
@@ -144,7 +147,31 @@ try {
         $filasAfectadas++;
     }
 
-    $pdo->commit();
+    // =========================================================================
+    // AUDITORÍA DE INTEGRIDAD POST-INSERCIÓN (Double-Check)
+    // =========================================================================
+    // Eliminamos duplicados teóricos del payload para saber cuántos hashes únicos DEBEN existir
+    $hashesUnicosPayload = array_unique($hashesProcesados);
+    $totalEsperado = count($hashesUnicosPayload);
+    $totalVerificados = 0;
+
+    // Dividimos en bloques de 1000 para no reventar el límite de parámetros de SQL Server (2100)
+    $chunks = array_chunk($hashesUnicosPayload, 1000);
+    foreach ($chunks as $chunk) {
+        $inQuery = implode(',', array_fill(0, count($chunk), '?'));
+        $stmtVerify = $pdo->prepare("SELECT COUNT(DISTINCT HashUnico) FROM Tbl_Transacciones_Maestra WHERE HashUnico IN ($inQuery)");
+        $stmtVerify->execute($chunk);
+        $totalVerificados += (int)$stmtVerify->fetchColumn();
+    }
+
+    if ($totalVerificados < $totalEsperado) {
+        // Si falta un solo registro en el disco duro, abortamos TODO.
+        throw new \Exception("Auditoría de Integridad Fallida: Se procesaron {$totalEsperado} transacciones únicas, pero solo se verificaron {$totalVerificados} en la Base de Datos. Se aplicó ROLLBACK de seguridad.");
+    }
+    // =========================================================================
+
+    $pdo->commit(); // Si llega aquí, es 100% seguro guardarlo en disco
+    
     // Convertimos los cierres generados en un string visual (Ej: "BAC: 15, SCOTIA: 16")
     $stringCierres = [];
     foreach ($cierresIds as $b => $id) { $stringCierres[] = "$b: #$id"; }

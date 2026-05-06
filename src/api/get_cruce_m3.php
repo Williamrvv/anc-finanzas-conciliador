@@ -84,76 +84,55 @@ try {
     unset($row); // Romper la referencia
 
     // ==========================================
-    // 2. QUERY BANCOS (Extracción por Marca de Agua - ConsolidadoTSD)
+    // 2. QUERY BANCOS (Extracción por Marca de Agua y Datos Financieros)
     // ==========================================
     $sqlBancos = "
         WITH FoliosNuevos AS (
-    -- ==========================================
     -- 1. EXTRACCIÓN DIRECTA: BAC CREDOMATIC
-    -- ==========================================
     SELECT 
-        b.IdTransaccion, -- Requerido para la Lista Negra (Blacklist) en el JS
-        c.IdCierre AS Folio_Cierre,
-        c.FechaCierre AS Fecha_Del_Folio,
-        'BAC' AS Banco,
-        b.NUMERO_AFILIADO AS Afiliado_MerID,
-        b.TERMINAL AS Codigo_Sucursal_Terminal,
-        b.NOMBRECOMERCIO AS Nombre_Sucursal_Comercio,
-        RIGHT(RTRIM(LTRIM(b.NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
-        b.AUTORIZACION AS Numero_Autorizacion,
-        b.MONTO_VENTA AS Monto_Venta_Original,
-        b.FECHA_PAGO AS Fecha_Pago_Excel,
+        b.IdTransaccion, c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio,
+        'BAC' AS Banco, b.NUMERO_AFILIADO AS Afiliado_MerID, b.TERMINAL AS Codigo_Sucursal_Terminal,
+        b.NOMBRECOMERCIO AS Nombre_Sucursal_Comercio, RIGHT(RTRIM(LTRIM(b.NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
+        b.AUTORIZACION AS Numero_Autorizacion, b.MONTO_VENTA AS Monto_Venta_Original, b.FECHA_PAGO AS Fecha_Pago_Excel,
         
-        -- Datos Exclusivos de los Ajustes Manuales
-        a.TipoAjuste,
-        a.Justificacion
-    FROM 
-        Tbl_Detalle_BAC b
-    INNER JOIN 
-        Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
-    LEFT JOIN 
-        Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
-    WHERE 
-        c.ConsolidadoTSD IS NULL
-        -- (Se eliminaron las restricciones de Autorización)
+        -- Datos Financieros Homologados
+        b.MONTONETO AS Monto_Neto,
+        b.COMISION AS Comision,
+        b.RETENCION_VENTAS AS Retencion_Ventas,
+        b.RETENCION_RENTA AS Retencion_Renta,
+        b.AJUSTE_COMISION_INTERNACIONAL AS ACI,
+        
+        a.TipoAjuste, a.Justificacion
+    FROM Tbl_Detalle_BAC b
+    INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
+    LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
+    WHERE c.ConsolidadoTSD IS NULL
 
     UNION ALL
 
-    -- ==========================================
     -- 2. EXTRACCIÓN DIRECTA: SCOTIABANK (DAVIBANK)
-    -- ==========================================
     SELECT 
-        s.IdTransaccion,
-        c.IdCierre AS Folio_Cierre,
-        c.FechaCierre AS Fecha_Del_Folio,
-        'Davibank' AS Banco,
-        s.MerID AS Afiliado_MerID,
-        s.Terminal AS Codigo_Sucursal_Terminal,
-        s.Nombre AS Nombre_Sucursal_Comercio,
-        RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
-        s.Numero_Autorizacion AS Numero_Autorizacion,
-        s.Monto_Orig AS Monto_Venta_Original,
-        s.Fecha_Pago AS Fecha_Pago_Excel,
+        s.IdTransaccion, c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio,
+        'Davibank' AS Banco, s.MerID AS Afiliado_MerID, s.Terminal AS Codigo_Sucursal_Terminal,
+        s.Nombre AS Nombre_Sucursal_Comercio, RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
+        s.Numero_Autorizacion AS Numero_Autorizacion, s.Monto_Orig AS Monto_Venta_Original, s.Fecha_Pago AS Fecha_Pago_Excel,
 
-        -- Datos Exclusivos de los Ajustes Manuales
-        a.TipoAjuste,
-        a.Justificacion
-    FROM 
-        Tbl_Detalle_Scotia s
-    INNER JOIN 
-        Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
-    LEFT JOIN 
-        Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
-    WHERE 
-        c.ConsolidadoTSD IS NULL
-        -- (Se eliminaron las restricciones de Autorización y Tarjeta)
+        -- Datos Financieros Homologados (Davibank no usa ACI, inyectamos 0)
+        s.Monto_Neto AS Monto_Neto,
+        s.Monto_Comision_Total AS Comision,
+        s.Monto_Retencion_IVA AS Retencion_Ventas,
+        s.Monto_Retencion_ISR AS Retencion_Renta,
+        0 AS ACI,
+
+        a.TipoAjuste, a.Justificacion
+    FROM Tbl_Detalle_Scotia s
+    INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
+    LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
+    WHERE c.ConsolidadoTSD IS NULL
 )
 SELECT * 
 FROM FoliosNuevos
-ORDER BY 
-    Folio_Cierre ASC, 
-    Banco ASC, 
-    TRY_CONVERT(date, Fecha_Pago_Excel, 103) ASC;
+ORDER BY Folio_Cierre ASC, Banco ASC, TRY_CONVERT(date, Fecha_Pago_Excel, 103) ASC;
     ";
 
     $stmtBancos = $pdoBancos->prepare($sqlBancos);
