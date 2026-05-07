@@ -200,11 +200,18 @@ window.ScotiaLogic = {
             dropzone.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
         }
     },
-
+    
     // Genera la tarjeta HTML de resumen Scotia
     updateScotiaCard: function() {
         const data = this.data.scotia_detalle || [];
-        if (data.length === 0) return;
+        
+        // Si no hay datos, ocultar la tarjeta y limpiar el contenedor
+        if (data.length === 0) {
+            const card = document.getElementById('card-scotia-detalle');
+            if (card) card.classList.add('hidden');
+            document.getElementById('scotia-summary-container').innerHTML = '';
+            return;
+        }
 
         const sums = {
             pos: { bruto:0, com:0, iva:0, isr:0, neto:0 },
@@ -295,6 +302,75 @@ window.ScotiaLogic = {
         
         document.getElementById('scotia-summary-container').innerHTML = htmlTable;
         document.getElementById('card-scotia-detalle').classList.remove('hidden');
+    },
+
+    // FUNCIÓN:Cambia un negativo a positivo (Contracargos/Devoluciones)
+    flipScotiaSign: function(uid, reason) {
+        const row = this.data.scotia_detalle.find(r => r._uid === uid);
+        if (!row) return false;
+
+        // 1. Validar Inteligencia: "Mantener siempre y cuando no afecten el balance"
+        if (row._manualMatch) {
+            const group = this.manualMatchesScotia.find(g => g.id === row._manualMatch);
+            if (group) {
+                // Simulamos el impacto matemático de invertir el signo
+                const newNeto = Math.abs(row._neto);
+                const sumDet = group.rows.filter(r => r._type === 'Venta').reduce((s, r) => s + (r._uid === uid ? newNeto : (r._neto || 0)), 0);
+                const sumPag = group.rows.filter(r => r._type === 'Banco').reduce((s, r) => s + (r._monto || 0), 0);
+                const newDiff = sumDet - sumPag;
+
+                // Si la diferencia se rompe, abortamos para proteger el balance
+                if (Math.abs(newDiff) >= 1) {
+                    alert("⛔ Acción Denegada:\n\nEsta fila pertenece a una conciliación manual. Si cambia el signo a positivo, el balance dejará de ser 0.00.\n\nPor favor, deshaga la conciliación manual primero para poder editar el signo.");
+                    return false;
+                }
+            }
+        }
+
+        // 2. Invertir valores principales en memoria RAM
+        row._neto = Math.abs(row._neto);
+        row._bruto = Math.abs(row._bruto);
+        row._comision = Math.abs(row._comision);
+        row._iva = Math.abs(row._iva);
+        row._isr = Math.abs(row._isr);
+
+        // 3. Invertir variables crudas mapeadas (Esto garantiza que SQL Server reciba positivos)
+        const h = this.data.headers.scotia_detalle;
+        const getIdx = (name) => h.findIndex(x => x && x.toLowerCase().includes(name.toLowerCase()));
+        
+        const idxs = {
+            bruto: getIdx('monto bruto'),
+            neto: getIdx('monto neto'),
+            com: getIdx('monto comisión') !== -1 ? getIdx('monto comisión') : getIdx('monto comision'),
+            iva: getIdx('retención iva') !== -1 ? getIdx('retención iva') : getIdx('retencion iva'),
+            isr: getIdx('retención isr') !== -1 ? getIdx('retención isr') : getIdx('retencion is'),
+            orig: getIdx('monto orig')
+        };
+
+        const toPositive = (val) => Math.abs(parseFloat(String(val).replace(/,/g,'')) || 0);
+
+        Object.values(idxs).forEach(idx => {
+            if(idx !== -1 && row[String(idx)]) {
+                row[String(idx)] = toPositive(row[String(idx)]);
+            }
+        });
+
+        // 4. Guardar Estado de Auditoría Visual
+        row._signFlipped = true;
+        row._flipReason = reason;
+
+        // 5. Actualizar la clonación dentro del grupo manual (Si pasó la validación de balance)
+        if (row._manualMatch) {
+            const group = this.manualMatchesScotia.find(g => g.id === row._manualMatch);
+            if (group) {
+                const clone = group.rows.find(r => r._uid === uid);
+                if (clone) { clone._neto = row._neto; clone._bruto = row._bruto; }
+            }
+        }
+
+        // 6. Disparar Recálculo Completo de Scotia
+        this.updateAll();
+        return true;
     },
 
     // Procesa el Excel de Pagado (Scotiabank)
@@ -806,11 +882,30 @@ window.ScotiaLogic = {
     // --- FASE 2: POPUP INTERACTIVO SCOTIABANK ---
 
     removeFileScotiaDetalle: async function(filename) {
+        // 1. Filtrar Array Principal
         this.data.scotia_detalle = this.data.scotia_detalle.filter(row => row._sourceFile !== filename);
         this.data.files.scotia_detalle = this.data.files.scotia_detalle.filter(f => f !== filename);
 
+        // 2. Destruir Grupos Manuales que contenían elementos de este archivo
+        if (this.manualMatchesScotia) {
+            this.manualMatchesScotia = this.manualMatchesScotia.filter(group => {
+                const hasDeletedRow = group.rows.some(r => r._type === 'Venta' && r._sourceFile === filename);
+                if (hasDeletedRow) {
+                    const pagadosAfectados = group.rows.filter(r => r._type === 'Banco');
+                    pagadosAfectados.forEach(p => {
+                        const original = this.data.scotia_pagado.find(o => o._uid === p._uid);
+                        if (original) { original._enabled = true; delete original._manualMatch; }
+                    });
+                    return false; 
+                }
+                return true; 
+            });
+        }
+
+        // 3. Recalcular cascada completa
         this.updateScotiaCard();
         this.updateScotiaFileList('scotia_detalle'); 
+        this.recalculateScotiaPagado(); // Fuerza a que los Pagados liberados regresen al pool de cruce
         this.runMatchScotiabank();
         
         if(this.data.files.scotia_detalle.length === 0) {
@@ -1243,14 +1338,39 @@ window.ScotiaLogic = {
                     const btnAddAdj = document.getElementById('btn-add-adj');
                     if (btnAddAdj) {
                         btnAddAdj.onclick = function() {
-                            // Ignoramos filas de ajuste previas para no copiar datos en blanco
-                            const seleccionados = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
-                            const filaBase = seleccionados.length > 0 ? seleccionados[seleccionados.length - 1] : null;
-
-                            document.getElementById('fm-afil').value = filaBase ? filaBase[idxMerId] : '';
+                            const selVentas = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
+                            const selBanco = gBanco.displayData.filter(r => r._selected && !r._isAdjustment);
                             
-                            // USAR EL ÍNDICE GLOBAL DECLARADO PREVIAMENTE
-                            let comValue = filaBase ? filaBase[idxComercio] : '';
+                            let filaBase = null;
+                            let fromBanco = false;
+
+                            // JERARQUÍA: 1. Ventas | 2. Banco
+                            if (selVentas.length > 0) {
+                                filaBase = selVentas[selVentas.length - 1];
+                            } else if (selBanco.length > 0) {
+                                filaBase = selBanco[selBanco.length - 1];
+                                fromBanco = true;
+                            }
+
+                            // Extraer Afiliado
+                            const extractedAfil = filaBase ? (fromBanco ? filaBase._extractedId : filaBase[idxMerId]) : '';
+                            document.getElementById('fm-afil').value = extractedAfil || '';
+                            
+                            // Extraer Comercio (Búsqueda Cruzada Inteligente)
+                            let comValue = '';
+                            if (filaBase) {
+                                if (!fromBanco) {
+                                    comValue = filaBase[idxComercio] || '';
+                                } else {
+                                    // Buscar el MerID en la tabla de Ventas
+                                    if (extractedAfil) {
+                                        const filaVentaEncontrada = gVentas.displayData.find(v => v[idxMerId] === extractedAfil || v._extractedId === extractedAfil);
+                                        if (filaVentaEncontrada) {
+                                            comValue = filaVentaEncontrada[idxComercio] || '';
+                                        }
+                                    }
+                                }
+                            }
                             if (String(comValue).toLowerCase() === 'crc' || !isNaN(comValue)) comValue = ''; 
                             
                             document.getElementById('fm-comercio').value = comValue;

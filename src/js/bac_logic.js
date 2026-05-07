@@ -320,8 +320,14 @@ window.BACLogic = {
     },
 
     recalculateDetalle: function() {
-        if(!this.data.detalle || !this.data.detalle.length) return;
-        let s = { v:0, c:0, rv:0, rr:0, n_aci:0 }; 
+        if(!this.data.detalle || !this.data.detalle.length) {
+            document.getElementById('card-bac-detalle').classList.add('hidden');
+            document.getElementById('bac-summary-container').innerHTML = '';
+            this.runMatch();
+            return;
+        }
+        
+        let s = { v:0, c:0, rv:0, rr:0, n_aci:0 };
         this.data.detalle.forEach(r => {
             if(r._enabled) { s.v+=r._venta; s.c+=r._comision; s.rv+=r._retV; s.rr+=r._retR; s.n_aci+=r._netoACI; }
         });
@@ -371,12 +377,27 @@ window.BACLogic = {
     },
 
     runMatch: function() {
-        const hasDetalle = this.data.detalle && this.data.detalle.length > 0;
-        const hasPagado = this.data.pagado && this.data.pagado.length > 0;
+        // Filtrar activos (ignorar eliminados)
+        const activeDet = (this.data.detalle || []).filter(r => r._enabled);
+        const activePag = (this.data.pagado || []).filter(r => r._enabled);
+        
+        // Exigir que al menos haya 1 archivo real (ignorar si solo hay históricos huérfanos sin contrapartes reales)
+        const hasRealFiles = (this.data.files.bac_detalle.length > 0 && this.data.files.bac_detalle[0] !== 'Saldos Históricos') || 
+                             (this.data.files.bac_pagado.length > 0 && this.data.files.bac_pagado[0] !== 'Saldos Históricos');
 
-        if (!hasDetalle && !hasPagado) {
+        if (!hasRealFiles && activeDet.length === 0 && activePag.length === 0) {
+            // LIMPIEZA NUCLEAR DE UI
             const container = document.getElementById('table-result-bac');
             if(container) container.innerHTML = '<div class="text-center text-slate-400 p-10 font-bold">Esperando archivos...</div>';
+            
+            // Ocultar Excepciones
+            const auditContainer = document.getElementById('audit-bac');
+            if(auditContainer) auditContainer.classList.add('hidden');
+            
+            // Ocultar Manuales
+            const manualContainer = document.getElementById('audit-manual-bac');
+            if(manualContainer) manualContainer.classList.add('hidden');
+
             return;
         }
    
@@ -673,11 +694,38 @@ window.BACLogic = {
         }
     },
 
-    // Eliminar archivo Detalle y recalcular
+    // Eliminar archivo Detalle y recalcular (Con Purgado Profundo)
     removeFileDetalle: async function(filename) {
+        // 1. Filtrar Array Principal
         this.data.detalle = this.data.detalle.filter(row => row._sourceFile !== filename);
         this.data.files.bac_detalle = this.data.files.bac_detalle.filter(f => f !== filename);
         
+        // 2. Destruir Grupos Manuales que contenían elementos de este archivo
+        if (this.manualMatches) {
+            this.manualMatches = this.manualMatches.filter(group => {
+                // Si el grupo contiene al menos una venta de este archivo, destruimos el grupo completo
+                const hasDeletedRow = group.rows.some(r => r._type === 'Venta' && r._sourceFile === filename);
+                if (hasDeletedRow) {
+                    // Reactivar los pagados (bancos) que habían sido atrapados por este grupo manual
+                    const pagadosAfectados = group.rows.filter(r => r._type === 'Banco');
+                    pagadosAfectados.forEach(p => {
+                        const original = this.data.pagado.find(o => o._uid === p._uid);
+                        if (original) { original._enabled = true; delete original._manualMatch; }
+                    });
+                    return false; // Eliminar el grupo
+                }
+                return true; // Conservar el grupo
+            });
+            if (typeof this.renderManualMatchesTable === 'function') this.renderManualMatchesTable();
+        }
+
+        // 3. Destruir Diferidos (Saldos para mañana) de este archivo
+        if (this.deferredRows && this.deferredRows.det) {
+            this.deferredRows.det = this.deferredRows.det.filter(row => row._sourceFile !== filename);
+            if (typeof this.renderDeferredTable === 'function') this.renderDeferredTable();
+        }
+
+        // 4. Recalcular cascada completa
         this.recalculateDetalle();
         this.updateFileList('bac_detalle');
         
@@ -1023,10 +1071,19 @@ window.BACLogic = {
 
     // Recalcula los totales de la tarjeta verde (BAC Pagado)
     recalculateBACPagado: function() {
+        if(!this.data.pagado || !this.data.pagado.length) {
+            const el = document.getElementById('sum-depositos');
+            if(el) el.innerText = this.formatMoney(0);
+            this.runMatch();
+            return;
+        }
+
         let total = 0;
         this.data.pagado.forEach(r => {
-            if(r._enabled) total += r._monto;
+            // Solo sumamos si está habilitado Y NO es histórico (los históricos no suman al depósito del día)
+            if(r._enabled && !r._isHistorical) total += r._monto;
         });
+        
         const el = document.getElementById('sum-depositos');
         if(el) el.innerText = this.formatMoney(total);
         
@@ -1738,27 +1795,53 @@ window.BACLogic = {
                         };
                         // ------------------------------------------------------------------------
 
-                        // 5. Abrir Modal y Autocompletar
+                        // 5. Abrir Modal y Autocompletar (Jerarquía Inteligente)
                         document.getElementById('btn-add-adj').onclick = function() {
-                            // Filtrar las filas seleccionadas ignorando los ajustes manuales previos
-                            const seleccionados = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
+                            const selVentas = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
+                            const selBanco = gBanco.displayData.filter(r => r._selected && !r._isAdjustment);
+                            
                             let filaBase = null;
+                            let fromBanco = false;
 
-                            if (seleccionados.length > 0) {
-                                // Tomar el último seleccionado válido como referencia
-                                filaBase = seleccionados[seleccionados.length - 1];
+                            // JERARQUÍA: 1. Ventas | 2. Banco
+                            if (selVentas.length > 0) {
+                                filaBase = selVentas[selVentas.length - 1];
+                            } else if (selBanco.length > 0) {
+                                filaBase = selBanco[selBanco.length - 1];
+                                fromBanco = true;
                             }
 
-                            // Autocompletar con la fila base
-                            document.getElementById('fm-afil').value = filaBase ? (filaBase._id || '') : '';
-                            document.getElementById('fm-liq').value = filaBase ? (filaBase._liq || '') : '';
+                            // 1. Limpieza absoluta del AFI para el Afiliado
+                            let rawAfil = filaBase ? (filaBase._id || filaBase._extractedId || '') : '';
+                            let cleanAfil = String(rawAfil).replace(/^AFI\s*/i, '').trim();
                             
-                            // Buscar "Comercio" en el mapeo inteligente
+                            document.getElementById('fm-afil').value = cleanAfil;
+                            document.getElementById('fm-liq').value = filaBase ? (filaBase._liq || filaBase._liqRef || '') : '';
+                            
+                            // 2. Búsqueda "Global" de Comercio
                             let comercioStr = '';
                             if (filaBase) {
                                 let idxComercio = Object.keys(headersDet).find(k => headersDet[k] && headersDet[k].toLowerCase().includes('comercio'));
-                                comercioStr = idxComercio ? filaBase[idxComercio] : (filaBase["3"] || '');
-                                if (String(comercioStr).includes('/')) comercioStr = ''; // Evitar fechas accidentales
+                                
+                                if (!fromBanco) {
+                                    // Si seleccionó Detallado, lo sacamos directo de ahí
+                                    comercioStr = idxComercio ? filaBase[idxComercio] : (filaBase["3"] || '');
+                                } else {
+                                    // Si seleccionó Banco, buscamos en el UNIVERSO GLOBAL de la ventana principal
+                                    if (cleanAfil && window.opener && window.opener.ConciliacionLogic) {
+                                        const universoVentas = window.opener.ConciliacionLogic.data.detalle || [];
+                                        const filaVentaEncontrada = universoVentas.find(v => {
+                                            const vId = String(v._id || '').replace(/^AFI\s*/i, '').trim();
+                                            const vExtId = String(v._extractedId || '').replace(/^AFI\s*/i, '').trim();
+                                            return vId === cleanAfil || vExtId === cleanAfil;
+                                        });
+                                        
+                                        if (filaVentaEncontrada) {
+                                            comercioStr = idxComercio ? filaVentaEncontrada[idxComercio] : (filaVentaEncontrada["3"] || '');
+                                        }
+                                    }
+                                }
+                                if (String(comercioStr).includes('/')) comercioStr = ''; 
                             }
                             document.getElementById('fm-comercio').value = comercioStr;
                             

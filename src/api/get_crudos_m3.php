@@ -22,9 +22,23 @@ try {
     // =====================================
     if ($source === 'bac' || $source === 'all') {
         $sqlBAC = "
-            SELECT c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio, 'BAC' AS Banco, b.IdTransaccion, b.NUMERO_AFILIADO AS Afiliado_MerID, b.NOMBRECOMERCIO AS Nombre_Comercio, b.NUMERO_DE_TARJETA AS Numero_Tarjeta, b.AUTORIZACION AS Numero_Autorizacion, b.TERMINAL AS Terminal, b.MONTO_VENTA AS Monto_Original, b.MONTONETO AS Monto_Neto, b.FECHA_PAGO AS Fecha_Pago_Excel, b.FECHA_TRANSACCION, b.FECHA_CIERRE_DATAFONO, b.COMISION, b.RETENCION_VENTAS, b.RETENCION_RENTA, b.NUMERO_LIQUIDACION, b.NUMERO_CUENTA, b.TIPO_CAMBIO, b.AJUSTE_COMISION_INTERNACIONAL, b.TIPO_TARJETA 
-            FROM Tbl_Detalle_BAC b INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
-            WHERE c.ConsolidadoTSD IS NULL AND b.AUTORIZACION IS NOT NULL AND RTRIM(LTRIM(b.AUTORIZACION)) <> '' ORDER BY c.IdCierre ASC;
+            SELECT 
+                c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio, 'BAC' AS Banco, 
+                b.IdTransaccion, b.NUMERO_AFILIADO AS Afiliado_MerID, b.NOMBRECOMERCIO AS Nombre_Comercio, 
+                b.NUMERO_DE_TARJETA AS Numero_Tarjeta, b.AUTORIZACION AS Numero_Autorizacion, 
+                b.TERMINAL AS Terminal, b.MONTO_VENTA AS Monto_Original, b.MONTONETO AS Monto_Neto, 
+                b.FECHA_PAGO AS Fecha_Pago_Excel, b.FECHA_TRANSACCION, b.FECHA_CIERRE_DATAFONO, 
+                b.COMISION, b.RETENCION_VENTAS, b.RETENCION_RENTA, b.NUMERO_LIQUIDACION, 
+                b.NUMERO_CUENTA, b.TIPO_CAMBIO, b.AJUSTE_COMISION_INTERNACIONAL, b.TIPO_TARJETA,
+                a.TipoAjuste, a.Justificacion
+            FROM Tbl_Detalle_BAC b 
+            INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
+            LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
+            WHERE c.ConsolidadoTSD IS NULL 
+            AND (
+                (b.AUTORIZACION IS NOT NULL AND RTRIM(LTRIM(b.AUTORIZACION)) <> '')
+                OR a.IdTransaccion IS NOT NULL
+            ) ORDER BY c.IdCierre ASC;
         ";
         $data = $pdoBancos->query($sqlBAC)->fetchAll();
     }
@@ -34,9 +48,24 @@ try {
     // =====================================
     else if ($source === 'scotia') {
         $sqlSCOTIA = "
-            SELECT c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio, 'SCOTIA' AS Banco, s.IdTransaccion, s.MerID AS Afiliado_MerID, s.Nombre AS Nombre_Comercio, s.Numero_Tarjeta AS Numero_Tarjeta, s.Numero_Autorizacion AS Numero_Autorizacion, s.Terminal AS Terminal, s.Monto_Orig AS Monto_Original, s.Monto_Neto AS Monto_Neto, s.Fecha_Pago AS Fecha_Pago_Excel, s.Fuente, s.Moneda, s.Transaccion, s.Razon_Social, s.Fecha_Lote_Ajuste, s.Numero_Lote_Ajuste, s.Numero_Pago, s.Monto_Bruto, s.Monto_Comision_Total, s.Porc_Comision_Total, s.Monto_Comision_Int, s.Porc_Comision_Int, s.Monto_Retencion_IVA, s.Porc_Retencion_IVA, s.Monto_Retencion_ISR, s.Estatus 
-            FROM Tbl_Detalle_Scotia s INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
-            WHERE c.ConsolidadoTSD IS NULL AND s.Numero_Autorizacion IS NOT NULL AND RTRIM(LTRIM(s.Numero_Autorizacion)) <> '' AND s.Numero_Tarjeta IS NOT NULL AND RTRIM(LTRIM(s.Numero_Tarjeta)) <> '' ORDER BY c.IdCierre ASC;
+            SELECT 
+                c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio, 'SCOTIA' AS Banco, 
+                s.IdTransaccion, s.MerID AS Afiliado_MerID, s.Nombre AS Nombre_Comercio, 
+                s.Numero_Tarjeta AS Numero_Tarjeta, s.Numero_Autorizacion AS Numero_Autorizacion, 
+                s.Terminal AS Terminal, s.Monto_Orig AS Monto_Original, s.Monto_Neto AS Monto_Neto, 
+                s.Fecha_Pago AS Fecha_Pago_Excel, s.Fuente, s.Moneda, s.Transaccion, s.Razon_Social, 
+                s.Fecha_Lote_Ajuste, s.Numero_Lote_Ajuste, s.Numero_Pago, s.Monto_Bruto, 
+                s.Monto_Comision_Total, s.Porc_Comision_Total, s.Monto_Comision_Int, s.Porc_Comision_Int, 
+                s.Monto_Retencion_IVA, s.Porc_Retencion_IVA, s.Monto_Retencion_ISR, s.Estatus,
+                a.TipoAjuste, a.Justificacion
+            FROM Tbl_Detalle_Scotia s 
+            INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
+            LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
+            WHERE c.ConsolidadoTSD IS NULL 
+            AND (
+                (s.Numero_Autorizacion IS NOT NULL AND RTRIM(LTRIM(s.Numero_Autorizacion)) <> '' AND s.Numero_Tarjeta IS NOT NULL AND RTRIM(LTRIM(s.Numero_Tarjeta)) <> '')
+                OR a.IdTransaccion IS NOT NULL
+            ) ORDER BY c.IdCierre ASC;
         ";
         $data = $pdoBancos->query($sqlSCOTIA)->fetchAll();
     }

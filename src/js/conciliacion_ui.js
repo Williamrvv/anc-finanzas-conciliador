@@ -747,10 +747,25 @@ window.ConciliacionLogic = {
 
         // 2. DECLARACIÓN (Aquí debe nacer la variable)
         let columns = []; 
-        // BANDERILLA VISUAL REUTILIZABLE
+        // BANDERILLA VISUAL REUTILIZABLE (Con botón inteligente de Acción para Scotia)
         const colEstado = { 
-            title: "TIPO DATO", field: "_isHistorical", width: 100, hozAlign: "center", headerFilter: false, 
-            formatter: (cell) => cell.getValue() ? '<span class="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[9px] font-bold shadow-sm" title="Recuperado de la Base de Datos">⏳ HISTÓRICO</span>' : '<span class="bg-green-100 text-green-800 border border-green-300 px-2 py-0.5 rounded text-[9px] font-bold shadow-sm" title="Recién subido">🆕 NUEVO</span>' 
+            title: isScotia ? "ESTADO / ACCIÓN" : "TIPO DATO", 
+            field: "_isHistorical", 
+            width: isScotia ? 130 : 100, 
+            hozAlign: "center", 
+            headerFilter: false, 
+            formatter: (cell) => {
+                const r = cell.getRow();
+                let badge = r._isHistorical ? '<span class="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[9px] font-bold shadow-sm" title="Recuperado de la Base de Datos">⏳ HIST</span>' : '<span class="bg-green-100 text-green-800 border border-green-300 px-2 py-0.5 rounded text-[9px] font-bold shadow-sm" title="Recién subido">🆕 NUEVO</span>';
+                
+                // INYECCIÓN DE ACCIÓN DISCRETA: Convertir a Positivo (Solo Scotia Detalle)
+                if (isScotia && r._neto < 0 && !r._signFlipped && !r._isHistorical) {
+                    badge += ` <button onclick="event.stopPropagation(); window.flipSign('${r._uid}')" class="ml-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-[10px] shadow-sm transition-colors" title="Convertir a Positivo">🔄</button>`;
+                } else if (isScotia && r._signFlipped) {
+                    badge += ` <span class="ml-1 bg-purple-100 text-purple-700 border border-purple-300 px-1.5 py-0.5 rounded text-[8px] font-bold shadow-sm" title="${r._flipReason}">🔄 POS</span>`;
+                }
+                return badge;
+            }
         };
 
         if (isDet) {
@@ -965,9 +980,9 @@ window.ConciliacionLogic = {
                             const columns = ${JSON.stringify(columns)};
                             
                             setTimeout(() => {
-                                new VanillaGrid("#popup-grid", data, columns, { 
+                                window.vGrid = new VanillaGrid("#popup-grid", data, columns, { 
                                     threshold: 0,
-                                    resize: false, // <-- Tabla nativa auto-ajustable a la ventana
+                                    resize: false, 
                                     searchInputId: "popup-search", 
                                     autoFocusSearch: true,         
                                     onCheckboxChange: (row, field, val) => {
@@ -976,7 +991,37 @@ window.ConciliacionLogic = {
                                         }
                                     }
                                 });
-                            }, 50); // Le da 50ms al DOM para que termine de pintar el position absolute
+                            }, 50); 
+
+                            // --- ACCIÓN GLOBAL PARA CAMBIAR SIGNO ---
+                            window.flipSign = async function(uid) {
+                                const html = \`
+                                    <div class="mb-3 text-sm text-slate-600 dark:text-slate-300">Seleccione la justificación para convertir todos los montos de esta fila a positivo:</div>
+                                    <select id="flip-reason" class="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 font-bold cursor-pointer">
+                                        <option value="Contracargos positivos">Contracargos positivos</option>
+                                        <option value="Devoluciones positivas">Devoluciones positivas</option>
+                                    </select>
+                                \`;
+                                
+                                // Usamos el SysUI del PopUp
+                                const choice = await window.SysUI._createModal("Invertir Signo a Positivo", html, [
+                                    {text: 'Cancelar', value: null, class: 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg text-slate-700 dark:text-slate-300 font-bold transition-colors'},
+                                    {text: 'Aplicar Cambio', value: 'apply', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
+                                ], "info");
+
+                                if (choice === 'apply') {
+                                    const reason = document.getElementById('flip-reason').value;
+                                    if (window.opener && window.opener.ConciliacionLogic && window.opener.ConciliacionLogic.flipScotiaSign) {
+                                        const success = window.opener.ConciliacionLogic.flipScotiaSign(uid, reason);
+                                        if (success) {
+                                            // Actualizar tabla del popup en tiempo real sin recargar la ventana
+                                            const newData = window.opener.ConciliacionLogic.getPopupData('${type}');
+                                            if (window.vGrid) window.vGrid.updateData(newData);
+                                        }
+                                    }
+                                }
+                            };
+
                         } else {
                             document.body.innerHTML = '<div class="p-10 text-red-500 font-bold">Error: Conexión perdida con la ventana principal.</div>';
                         }
@@ -1591,14 +1636,16 @@ window.ConciliacionLogic = {
         // 6. MOSTRAR PANTALLA DE CARGA INBLOQUEABLE
         const loaderId = 'global-save-loader';
         let loader = document.getElementById(loaderId);
+        
+        // Si no existe, lo creamos
         if(!loader) {
             loader = document.createElement('div');
             loader.id = loaderId;
-            loader.className = 'fixed inset-0 z-[999999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white transition-opacity duration-300 opacity-0 select-none';
+            loader.className = 'fixed inset-0 z-[999999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white transition-opacity duration-300 opacity-0 select-none hidden';
             loader.innerHTML = `
                 <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 transform scale-95 transition-transform duration-300" id="loader-card">
                     <div class="relative w-16 h-16 mb-6">
-                        <svg class="animate-spin text-blue-500 w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg id="loader-spinner" class="animate-spin text-blue-500 w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -1607,32 +1654,46 @@ window.ConciliacionLogic = {
                     <h3 class="text-lg font-bold mb-2 text-white">Guardando Transacciones...</h3>
                     <p class="text-slate-400 text-xs text-center mb-6 h-8" id="loader-text">Preparando paquete de datos...</p>
                     <div class="w-full bg-slate-900 rounded-full h-2 mb-1 overflow-hidden border border-slate-700 shadow-inner">
-                        <div class="bg-blue-500 h-full rounded-full transition-all w-0" id="loader-bar"></div>
+                        <div class="h-full rounded-full transition-all duration-300 ease-out w-0 bg-blue-500" id="loader-bar"></div>
                     </div>
                 </div>
             `;
             document.body.appendChild(loader);
         }
-        
-        requestAnimationFrame(() => {
-            loader.classList.remove('hidden', 'opacity-0');
-            document.getElementById('loader-card').classList.remove('scale-95');
-        });
 
-        let pct = 0;
+        // --- RESET FORZADO DE ESTILOS (Para el 2do guardado SPA) ---
         const elBar = document.getElementById('loader-bar');
         const elPct = document.getElementById('loader-pct');
         const elTxt = document.getElementById('loader-text');
+        const spinner = document.getElementById('loader-spinner');
         
+        elBar.className = "h-full rounded-full transition-all duration-300 ease-out bg-blue-500";
+        elBar.style.width = '0%'; // Reset físico del inline style
+        elPct.innerText = '0%';
+        elTxt.innerText = "Preparando paquete de datos...";
+        elTxt.className = "text-slate-400 text-xs text-center mb-6 h-8";
+        spinner.className = "animate-spin text-blue-500 w-full h-full";
+
+        // Lanzar animación de entrada
+        requestAnimationFrame(() => {
+            loader.classList.remove('hidden');
+            // Un frame extra asegura que CSS procese el display block antes de animar opacity
+            requestAnimationFrame(() => {
+                loader.classList.remove('opacity-0');
+                document.getElementById('loader-card').classList.remove('scale-95');
+            });
+        });
+
+        let pct = 0;
         const progressInterval = setInterval(() => {
             if(pct < 95) {
                 pct += Math.floor(Math.random() * 10) + 2;
-                if(pct > 95) pct = 95; // Se frena en 95% esperando la respuesta final de la BD
+                if(pct > 95) pct = 95; 
                 elBar.style.width = pct + '%'; elPct.innerText = pct + '%';
                 if(pct > 15) elTxt.innerText = "Transfiriendo paquete de datos seguro...";
                 if(pct > 35) elTxt.innerText = "Consolidando registros y evaluando idempotencia...";
                 if(pct > 60) elTxt.innerText = "Escribiendo tablas relacionales en Base de datos...";
-                if(pct > 80) elTxt.innerText = "Verificando integridad de los datos...";
+                if(pct > 80) elTxt.innerText = "Ejecutando auditoría de integridad ...";
             }
         }, 300);
 
@@ -1644,17 +1705,19 @@ window.ConciliacionLogic = {
             });
 
             clearInterval(progressInterval);
+            
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || "Error desconocido devuelto por el servidor.");
+
+            // Animación de Éxito
             elBar.style.width = '100%'; elPct.innerText = '100%';
             elBar.classList.replace('bg-blue-500', 'bg-green-500');
-            document.querySelector('#loader-card svg').classList.replace('text-blue-500', 'text-green-500');
-            document.querySelector('#loader-card svg').classList.remove('animate-spin');
+            spinner.classList.replace('text-blue-500', 'text-green-500');
+            spinner.classList.remove('animate-spin');
             elTxt.innerText = "¡Integridad verificada! Guardado exitoso.";
             elTxt.classList.replace('text-slate-400', 'text-green-400');
             
             await new Promise(r => setTimeout(r, 600));
-
-            const data = await res.json();
-            if (!data.success) throw new Error(data.error || "Error desconocido");
 
             // 8. PURGA ABSOLUTA Y CREACIÓN DE BORRADOR LIMPIO (SI APLICA)
             const purge = (arr) => { if (Array.isArray(arr)) arr.length = 0; };
@@ -1706,7 +1769,12 @@ window.ConciliacionLogic = {
             clearInterval(progressInterval);
             loader.classList.add('opacity-0');
             setTimeout(() => loader.classList.add('hidden'), 300);
-            window.SysUI.alert("Fallo al guardar:\n\n" + error.message, "Error Crítico", "error");
+            
+            const msgError = `Se ha producido un error crítico que ha interrumpido el guardado. La Base de Datos ha revertido los cambios por seguridad (ROLLBACK).\n\n` + 
+                             `<b>Detalle Técnico:</b>\n<span class="font-mono text-[10px] text-red-500">${error.message}</span>\n\n` +
+                             `Por favor, intente nuevamente o contacte al departamento de soporte:\n<a href="mailto:soporte@grupoanc.com" class="text-blue-500 underline font-bold">soporte@grupoanc.com</a>`;
+                             
+            window.SysUI.alert(msgError, "Error Crítico del Servidor", "error");
             this.startAutoSave(); 
         }
     },
@@ -1761,14 +1829,6 @@ window.ConciliacionLogic = {
         await window.SysUI.alert(`El archivo ha sido excluido y los totales han sido recalculados exitosamente.`, "Archivo Eliminado", "success");
     },
 };
-
-// // --- SHIM LEGACY (Para botón "X" de estadísticas) ---
-// window.TableFramework = {
-//     clear: function() {
-//         document.getElementById('global-table-stats').classList.add('hidden');
-//         // VanillaGrid maneja su propia selección, solo ocultamos la barra visual.
-//     }
-// };
 
 // 1. Inicializador (Punto de entrada desde el Router)
 window.initConciliacion = function() { 
