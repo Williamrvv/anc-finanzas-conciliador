@@ -5,6 +5,13 @@ window.CierreCajasLogic = {
     pendientesData: [],
     casosResueltosInfo: {}, // <-- Almacena los tickets listos para cerrar
     currentUser: window.CURRENT_USER_NAME || 'Analista',
+    
+    // Función getter dinámica para el borrador (asegura que la llave sea única y limpia)
+    getDraftKey: function() {
+        // Limpia el nombre del usuario para usarlo como llave segura
+        const userClean = String(this.currentUser).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        return 'iri_cierre_draft_' + userClean;
+    },
     vgHistory: null, // Motor VanillaGrid para el historial
     activeTimelineId: null,
 
@@ -283,6 +290,65 @@ window.CierreCajasLogic = {
     },
 
     // =====================================================================
+    // MOTOR DE BORRADORES (DRAFTS)
+    // =====================================================================
+    guardarBorrador: function() {
+        if (!this.transacciones || this.transacciones.length === 0) return;
+        
+        // Guardar solo los números de contrato (KNUM) que ya están seleccionados/matched
+        const escaneados = this.transacciones.filter(t => t._selected).map(t => t.Numero_Contrato);
+        
+        if (escaneados.length === 0) {
+            return SysUI.alert("No hay transacciones escaneadas para guardar en el borrador.", "Borrador Vacío", "info");
+        }
+
+        const borrador = {
+            fecha: new Date().toLocaleString(),
+            contratos_listos: escaneados
+        };
+
+        localStorage.setItem(this.getDraftKey(), JSON.stringify(borrador));
+        SysUI.alert(`Se ha guardado el progreso de ${escaneados.length} facturas.\n\nPuede cerrar esta ventana con seguridad. La próxima vez que cargue facturación, el sistema aplicará un auto-match.`, "Borrador Guardado", "success");
+    },
+
+    limpiarBorrador: function() {
+        localStorage.removeItem(this.getDraftKey());
+    },
+
+    aplicarAutoMatchBorrador: async function() {
+        const draftStr = localStorage.getItem(this.getDraftKey());
+        if (!draftStr) return false;
+
+        try {
+            const borrador = JSON.parse(draftStr);
+            const cantidadGuardada = borrador.contratos_listos.length;
+            
+            const msg = `Se ha detectado un Borrador guardado el:\n${borrador.fecha}\n\nCon un progreso de ${cantidadGuardada} facturas escaneadas.\n\n¿Desea restaurar su progreso y aplicar un Auto-Match a estas transacciones?`;
+            const restaurar = await SysUI.confirm(msg, "Progreso Detectado", "info");
+            
+            if (restaurar) {
+                let recuperados = 0;
+                this.transacciones.forEach(t => {
+                    if (borrador.contratos_listos.includes(t.Numero_Contrato)) {
+                        t._selected = true;
+                        t._matchTime = Date.now();
+                        recuperados++;
+                    }
+                });
+                
+                SysUI.alert(`Se recuperaron con éxito ${recuperados} de los ${cantidadGuardada} vouchers guardados.`, "Auto-Match Finalizado", "success");
+            } else {
+                // Si dice que no, destruimos el borrador viejo para no seguir molestando
+                this.limpiarBorrador();
+            }
+        } catch (e) {
+            console.error("Error al leer borrador:", e);
+            this.limpiarBorrador();
+        }
+    },
+
+
+    // =====================================================================
     // LÓGICA DEL ESCÁNER Y CIERRE TSD
     // =====================================================================
     loadFacturacion: async function() {
@@ -342,6 +408,10 @@ window.CierreCajasLogic = {
             
             // Adaptamos _selected o matched dependiendo de cómo lo use tu renderTransacciones
             this.transacciones = data.transacciones.map(t => ({...t, matched: false, _selected: false}));
+            
+            // 🚨 DISPARADOR DE BORRADORES 🚨
+            await this.aplicarAutoMatchBorrador();
+
             this.renderTransacciones();
             
             document.getElementById('cc-workspace').classList.remove('hidden');
@@ -699,6 +769,9 @@ window.CierreCajasLogic = {
             const data = await res.json();
 
             if (data.success) {
+                // 🚨 LIMPIEZA DE BORRADOR 🚨 (El cierre oficial mata el borrador temporal)
+                this.limpiarBorrador();
+
                 const nombreSucs = this.headerData.sucursalesRaw;
                 let msgExito = `El cierre de caja para las sucursales [${nombreSucs}] se guardó correctamente.\nFolio de Auditoría: #${data.id_cierre}`;
                 if (crearCasos) {

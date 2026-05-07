@@ -135,19 +135,27 @@
         <div id="cc-action-bar" class="fixed bottom-0 left-0 w-full bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 p-3 sm:p-4 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] flex justify-between items-center z-40 animate-fade-in-up">
             <div class="flex items-center gap-4 sm:gap-6">
                 <div class="flex flex-col">
-                    <span class="text-[10px] font-bold text-slate-500 uppercase">Match</span>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Match</span>
                     <span class="text-xl font-black text-slate-800 dark:text-white font-mono"><span id="cc-sel-count" class="text-green-600">0</span> / <span id="cc-total-count">0</span></span>
                 </div>
                 <div class="flex flex-col border-l border-slate-200 dark:border-slate-700 pl-4 sm:pl-6">
-                    <span class="text-[10px] font-bold text-slate-500 uppercase">Verificado</span>
-                    <span id="cc-sel-total" class="text-xl font-black text-green-600 dark:text-green-400 font-mono">₡0.00</span>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Verificado</span>
+                    <span id="cc-sel-total" class="text-xl font-black text-green-600 dark:text-green-400 font-mono tracking-tight">₡0.00</span>
                 </div>
             </div>
 
-            <button onclick="window.CierreCajasLogic.saveCierre()" id="btn-save-cierre" class="bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-6 py-2.5 sm:py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2" disabled>
-                <span id="btn-save-text">Guardar Cierre</span>
-                <svg class="w-5 h-5 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-            </button>
+            <!-- Botonera Agrupada -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button onclick="window.CierreCajasLogic.guardarBorrador()" id="btn-draft-cierre" class="bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-500 border border-amber-200 dark:border-amber-800/50 px-4 py-2.5 sm:py-3 rounded-xl font-bold shadow-sm transition-all flex items-center justify-center gap-2" title="Guardar progreso y continuar más tarde">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                    <span class="hidden sm:inline">Pausar</span>
+                </button>
+                <div class="w-px h-8 bg-slate-200 dark:bg-slate-700 hidden sm:block mx-1"></div>
+                <button onclick="window.CierreCajasLogic.saveCierre()" id="btn-save-cierre" class="bg-green-600 hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white px-6 py-2.5 sm:py-3 rounded-xl font-bold shadow-lg shadow-green-500/30 transition-all flex items-center justify-center gap-2" disabled>
+                    <span id="btn-save-text">Procesar Cierre</span>
+                    <svg class="w-5 h-5 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                </button>
+            </div>
         </div>
 
     </div>

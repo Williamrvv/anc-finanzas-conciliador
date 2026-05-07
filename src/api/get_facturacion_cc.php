@@ -16,10 +16,9 @@ require_once 'tsd_db.php';
 $emailUsuario = $_SESSION['user']['email'] ?? '';
 $hoy = date('Y-m-d');
 
+
 // ========================================================
-// MODO PRUEBAS UAT: Forzar hora de inicio (Eliminar en Prod)
-// ========================================================
-$FORZAR_PRUEBA = true;
+$FORZAR_PRUEBA = false;
 $HORA_PRUEBA = "08:00:00"; 
 // ========================================================
 
