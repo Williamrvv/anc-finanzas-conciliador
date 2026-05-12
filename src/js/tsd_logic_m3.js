@@ -7,6 +7,171 @@ window.TSDLogic = {
     gridMatched: null,
     gridPending: null,
 
+    // --------------------------------------------------------
+    // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
+    // --------------------------------------------------------
+    exportSoftland: async function(tipo) {
+        const dateVal = document.getElementById('tsd-date-picker').value;
+        if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas para promediar el Tipo de Cambio.", "Fechas Requeridas", "warning");
+
+        let start = dateVal, end = dateVal;
+        if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
+
+        // 1. Validar Tipo
+        if (tipo === 'tarjetas') {
+            return window.SysUI.alert("Estructura de columnas pendiente para este formato.", "En desarrollo", "info");
+        }
+
+        // 2. Pedir Asiento al Usuario (Asíncrono)
+        const asientoId = await window.SysUI.prompt("Ingrese el ID del Asiento Contable (Ej: CB12345):", "Cargador Softland", "CB");
+        if (!asientoId) return; // El usuario canceló
+
+        // Bloquear UI temporalmente
+        document.body.classList.add('cursor-wait');
+
+        try {
+            // 3. Extraer Data del Multiplexor PHP
+            const res = await fetch(`api/get_cargador_softland_m3.php?type=${tipo}&start=${start}&end=${end}`);
+            const json = await res.json();
+            
+            if (!json.success) throw new Error(json.error);
+            if (!json.data || json.data.length === 0) return window.SysUI.alert("No se encontraron registros pendientes en la base de datos para este cargador.", "Sin datos", "warning");
+
+            // 4. Invocar Motor Creador de Excel
+            this.generateSoftlandExcel(tipo, asientoId, start, json.tc_promedio, json.data);
+            
+            window.SysUI.alert("El archivo Excel ha sido generado y descargado con éxito.", "Cargador Creado", "success");
+        } catch (error) {
+            window.SysUI.alert("Error al generar cargador: " + error.message, "Fallo", "error");
+        } finally {
+            document.body.classList.remove('cursor-wait');
+        }
+    },
+
+    generateSoftlandExcel: function(tipo, asientoId, startDate, tcPromedio, data) {
+        // DICCIONARIOS DE CONFIGURACIÓN CONTABLE
+        const configs = {
+            'davi_5': {
+                cuentaCabecera: "101-004-003-000-000-000",
+                cuentaDetalle: "175-001-005-001-005-000",
+                referenciaCabecera: "RETENCION 5.31%",
+                columnaDebito: "debito_5perc"
+            },
+           'davi_2': {
+                cuentaCabecera: "101-004-003-000-000-000",
+                cuentaDetalle: "175-001-005-001-005-000", 
+                referenciaCabecera: "RETENCION 2%",
+                columnaDebito: "Total_Retencion_ISR"
+            },
+            'bac_536': {
+                // NOTA: Puse las mismas cuentas contables que en Davibank. Cambialas aquí si para BAC son diferentes.
+                cuentaCabecera: "101-004-003-000-000-000",
+                cuentaDetalle: "175-001-005-001-005-000", 
+                referenciaCabecera: "RETENCION 5.31%",
+                columnaDebito: "Total_Retencion_Ventas"
+            },
+            'bac_176': {
+                cuentaCabecera: "101-004-003-000-000-000",
+                cuentaDetalle: "175-001-005-001-005-000", 
+                referenciaCabecera: "RETENCION 1.76%",
+                columnaDebito: "Total_Retencion_Renta"
+            }
+        };
+
+        const cfg = configs[tipo];
+        
+        // Parseo Inteligente para "Fuente" (Hoja 2) -> Sigue usando la fecha del filtro original
+        const dPart = startDate.split('-');
+        const fechaFuente = dPart.length === 3 ? `'${dPart[2]}${dPart[1]}${dPart[0]}` : startDate; 
+
+        // Generar Fecha Actual Pura (Hoja 1) -> Obligatorio para Softland
+        const hoy = new Date();
+        const dia = String(hoy.getDate()).padStart(2, '0');
+        const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+        const anio = hoy.getFullYear();
+        const fechaActualSoftland = `${dia}/${mes}/${anio}`;
+
+        // ==========================================
+        // CONSTRUCCIÓN HOJA 1: ASIENTO
+        // ==========================================
+        const ws1Data = [
+            ["Asiento", "Paquete", "Tipo Asiento", "Fecha", "Contabilidad"],
+            [asientoId, "CB", "CB", fechaActualSoftland, "A"]
+        ];
+
+        // ==========================================
+        // CONSTRUCCIÓN HOJA 2: DESGLOSE
+        // ==========================================
+        const ws2Data = [];
+        // Cabeceras exactas
+        ws2Data.push(["Asiento", "Consecutivo", "Nit", "Centro de Costo", "Cuenta Contable", "Fuente", "Referencia", "Debito Colon", "Debito Dolar", "Credito Colon", "Credito Dolar", "TC"]);
+
+        let sumDebitoColon = 0;
+        let sumDebitoDolar = 0;
+
+        // Iteración Previa: Sumar todos los débitos para construir la Fila 1 de Créditos
+        data.forEach(row => {
+            const debitoCol = parseFloat(row[cfg.columnaDebito]) || 0;
+            const debitoDol = debitoCol / tcPromedio; // División para obtener Dólares
+            sumDebitoColon += debitoCol;
+            sumDebitoDolar += debitoDol;
+        });
+
+        // Función Helper para Softland: Formatea el número a 2 o 4 decimales y cambia el punto por coma.
+        const fmtSft = (num, dec = 2) => Number(num).toFixed(dec).replace('.', ',');
+
+        // Fila 1 (La Cabecera Totalizadora - Única que lleva el TC)
+        ws2Data.push([
+            asientoId, 
+            1, 
+            "", // Nit
+            "'00-00-00", // Softland obliga comilla simple
+            cfg.cuentaCabecera,
+            fechaFuente, 
+            cfg.referenciaCabecera, 
+            "", // Debito Colon
+            "", // Debito Dolar
+            fmtSft(sumDebitoColon, 2), // Credito Colon
+            fmtSft(sumDebitoDolar, 2), // Credito Dolar
+            fmtSft(tcPromedio, 4)      // TC Promedio con 4 decimales
+        ]);
+
+        // Filas Dinámicas (Los Detalles / Débitos)
+        let cons = 2;
+        data.forEach(row => {
+            const debitoCol = parseFloat(row[cfg.columnaDebito]) || 0;
+            const debitoDol = debitoCol / tcPromedio; 
+            
+            ws2Data.push([
+                asientoId,
+                cons,
+                "", // Nit
+                "'00-00-00",
+                cfg.cuentaDetalle,
+                row.Fuente || "", 
+                row.Referencia || "", 
+                fmtSft(debitoCol, 2), // Debito Colon
+                fmtSft(debitoDol, 2), // Debito Dolar
+                "", // Credito Colon
+                "", // Credito Dolar
+                ""  // TC (Vacío en las filas de detalle según requerimiento)
+            ]);
+            cons++;
+        });
+
+        // ==========================================
+        // ENSAMBLAJE FINAL SHEETJS
+        // ==========================================
+        const wb = XLSX.utils.book_new();
+        const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+        const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+
+        XLSX.utils.book_append_sheet(wb, ws1, "Asiento");
+        XLSX.utils.book_append_sheet(wb, ws2, "Desglose");
+
+        XLSX.writeFile(wb, `Cargador_${tipo}_${asientoId}.xlsx`);
+    },
+
     init: function() {
         console.log("🚀 Módulo TSD Inicializado");
         

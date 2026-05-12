@@ -38,6 +38,40 @@
             
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
 
+            <!-- Menú Desplegable: Cargadores ERP -->
+            <div class="relative group">
+                <button type="button" class="bg-transparent text-slate-600 dark:text-slate-300 hover:text-green-600 dark:hover:text-green-400 px-3 py-2 rounded-lg font-bold text-sm transition-colors flex items-center gap-1.5 border border-transparent hover:border-green-200 dark:hover:border-green-800 hover:bg-green-50 dark:hover:bg-green-900/20">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    Cargadores Softland
+                    <svg class="w-3 h-3 ml-0.5 group-hover:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </button>
+                
+                <!-- Opciones del Menú -->
+                <div class="absolute right-0 mt-1 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 transform origin-top-right scale-95 group-hover:scale-100">
+                    <div class="py-1">
+                        <button onclick="window.TSDLogic.exportSoftland('tarjetas')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Tarjetas
+                        </button>
+                        <div class="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                        <button onclick="window.TSDLogic.exportSoftland('bac_176')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> BAC 1,76% (Renta)
+                        </button>
+                        <button onclick="window.TSDLogic.exportSoftland('bac_536')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span> BAC 5,36% (Ventas)
+                        </button>
+                        <div class="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
+                        <button onclick="window.TSDLogic.exportSoftland('davi_2')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Davibank 2% (Comisión)
+                        </button>
+                        <button onclick="window.TSDLogic.exportSoftland('davi_5')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Davibank 5% (IVA)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
             <!-- Botón Visor PopUp -->
             <button type="button" onclick="window.TSDLogic.openRawViewer()" class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm flex items-center gap-2 border border-slate-200 dark:border-slate-600">
                 <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>

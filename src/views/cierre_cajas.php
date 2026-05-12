@@ -278,6 +278,12 @@
         </div>
     </div>
 
+    <!-- TOAST DE AUTO-GUARDADO (Burbuja Flotante) -->
+    <div id="toast-autosave" class="fixed bottom-24 sm:bottom-28 left-4 sm:left-8 bg-[#1e293b] text-slate-200 text-xs font-bold px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2.5 transform transition-all duration-500 translate-y-10 opacity-0 z-[100] border border-slate-700 pointer-events-none">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"></span>
+        Progreso guardado
+    </div>
+
 </div> <!-- FIN DEL CONTENEDOR ANIMADO -->
     <div id="cc-history-view" class="hidden flex-col flex-grow w-full h-full animate-fade-in-up pb-10">
         

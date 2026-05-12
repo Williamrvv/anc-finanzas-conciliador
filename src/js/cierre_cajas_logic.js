@@ -12,6 +12,8 @@ window.CierreCajasLogic = {
         const userClean = String(this.currentUser).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
         return 'iri_cierre_draft_' + userClean;
     },
+    
+    autoSaveInterval: null, // Control del temporizador de auto-guardado
     vgHistory: null, // Motor VanillaGrid para el historial
     activeTimelineId: null,
 
@@ -290,16 +292,16 @@ window.CierreCajasLogic = {
     },
 
     // =====================================================================
-    // MOTOR DE BORRADORES (DRAFTS)
+    // MOTOR DE BORRADORES (DRAFTS) Y AUTO-GUARDADO
     // =====================================================================
-    guardarBorrador: function() {
+    guardarBorrador: function(isAuto = false) {
         if (!this.transacciones || this.transacciones.length === 0) return;
         
-        // Guardar solo los números de contrato (KNUM) que ya están seleccionados/matched
         const escaneados = this.transacciones.filter(t => t._selected).map(t => t.Numero_Contrato);
         
         if (escaneados.length === 0) {
-            return SysUI.alert("No hay transacciones escaneadas para guardar en el borrador.", "Borrador Vacío", "info");
+            if (!isAuto) SysUI.alert("No hay transacciones escaneadas para guardar en el borrador.", "Borrador Vacío", "info");
+            return;
         }
 
         const borrador = {
@@ -308,7 +310,35 @@ window.CierreCajasLogic = {
         };
 
         localStorage.setItem(this.getDraftKey(), JSON.stringify(borrador));
-        SysUI.alert(`Se ha guardado el progreso de ${escaneados.length} facturas.\n\nPuede cerrar esta ventana con seguridad. La próxima vez que cargue facturación, el sistema aplicará un auto-match.`, "Borrador Guardado", "success");
+        
+        if (isAuto) {
+            // Mostrar la burbuja discreta inferior
+            const toast = document.getElementById('toast-autosave');
+            if (toast) {
+                toast.classList.remove('translate-y-10', 'opacity-0');
+                // Ocultar después de 3 segundos
+                setTimeout(() => {
+                    toast.classList.add('translate-y-10', 'opacity-0');
+                }, 3000);
+            }
+        } else {
+            SysUI.alert(`Se ha guardado el progreso de ${escaneados.length} vouchers.\n\nPuede cerrar esta ventana con seguridad. La próxima vez que cargue facturación, el sistema aplicará un auto-match.`, "Borrador Guardado", "success");
+        }
+    },
+
+    iniciarAutoGuardado: function() {
+        this.detenerAutoGuardado(); // Prevenir duplicados
+        // Se ejecuta cada 60,000 ms (1 minuto)
+        this.autoSaveInterval = setInterval(() => {
+            this.guardarBorrador(true);
+        }, 60000); 
+    },
+
+    detenerAutoGuardado: function() {
+        if (this.autoSaveInterval) {
+            clearInterval(this.autoSaveInterval);
+            this.autoSaveInterval = null;
+        }
     },
 
     limpiarBorrador: function() {
@@ -416,6 +446,9 @@ window.CierreCajasLogic = {
             
             document.getElementById('cc-workspace').classList.remove('hidden');
             setTimeout(() => document.getElementById('cc-scan-auth').focus(), 100);
+
+            // Iniciar Auto-Guardado cada minuto
+            this.iniciarAutoGuardado();
 
         } catch (err) {
             console.error("Fallo interno en JS:", err); // <--- ESTO NOS DIRÁ LA LÍNEA EXACTA SI FALLA
@@ -650,6 +683,7 @@ window.CierreCajasLogic = {
     },
 
     resetView: function() {
+        this.detenerAutoGuardado(); // Mata el reloj de auto-guardado
         this.currentFacturacion = false; // Apaga la bandera de cierre activo
         this.headerData = null;
         this.transacciones = [];
