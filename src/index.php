@@ -84,6 +84,14 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
                     <!-- Navegación ESCRITORIO (Oculta en Móvil) -->
                     <div class="hidden xl:flex ml-2 space-x-1">
                         <button onclick="loadView('dashboard')" class="text-slate-600 dark:text-slate-300 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Inicio</button>
+
+                        <!-- Módulo TSD (Administradores, Jefes y Agentes) -->
+                        <?php if(in_array($_SESSION['user']['role'], ['admin', 'agente', 'jefe'])): ?>
+                        <button onclick="loadView('cierre_cajas')" class="text-slate-600 dark:text-slate-300 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Cierre de Caja
+                        </button>
+                        <?php endif; ?>
                         
                         <!-- Módulo Bancario (Solo Administradores y Conciliadores) -->
                         <?php if(in_array($_SESSION['user']['role'], ['admin', 'conciliador'])): ?>
@@ -95,13 +103,9 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                             Consolidado TSD
                         </button>
-                        <?php endif; ?>
-
-                        <!-- Módulo TSD (Administradores, Jefes y Agentes) -->
-                        <?php if(in_array($_SESSION['user']['role'], ['admin', 'agente', 'jefe'])): ?>
-                        <button onclick="loadView('cierre_cajas')" class="text-slate-600 dark:text-slate-300 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Cierre de Caja
+                        <button onclick="loadView('auxiliar')" class="text-slate-600 dark:text-slate-300 hover:text-orange-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>
+                            Auxiliar Contable
                         </button>
                         <?php endif; ?>
 
@@ -140,7 +144,9 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
                 
                 <?php if($_SESSION['user']['role'] !== 'visitante'): ?>
                 <button onclick="loadView('conciliacion'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">🏦 Conciliación Bancaria</button>
-                <button onclick="loadView('cierre_cajas'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors">🧾 Cierre de Caja</button>
+                <button onclick="loadView('tsd'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors">📊 Consolidado TSD</button>
+                <button onclick="loadView('auxiliar'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors">⚖️ Auxiliar Contable</button>
+                <button onclick="loadView('cierre_cajas'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">🧾 Cierre de Caja</button>
                 <?php endif; ?>
                 
                 <?php if(($_SESSION['user']['can_manage'] ?? false) || ($_SESSION['user']['role'] ?? '') === 'admin'): ?>

@@ -1685,42 +1685,64 @@ window.BACLogic = {
                         const elType = document.getElementById('fm-type');
                         const elDynamicTitle = document.getElementById('fm-dynamic-title');
 
-                        // Cambiar título dinámico y Lógica de Mantenimiento
+                        // Cambiar título dinámico y Lógica Tributaria de Ajustes
                         elType.addEventListener('change', (e) => {
                             const val = e.target.value;
                             elDynamicTitle.innerText = val ? 'Monto Final ' + val : "Monto Final Ajuste";
                             
-                            // Bloquear comisiones si es Mantenimiento
                             const isMantenimiento = val === 'Mantenimiento';
+                            const isParcial = val === 'Contracargo' || val === 'Devolución';
+
+                            // 1. Resetear todos los campos a estado activo primero
                             [elCom, elRetV, elRetR, elAci].forEach(input => {
-                                input.readOnly = isMantenimiento;
-                                if (isMantenimiento) {
-                                    input.classList.add('bg-slate-100', 'dark:bg-slate-800', 'cursor-not-allowed', 'opacity-70');
-                                } else {
-                                    input.classList.remove('bg-slate-100', 'dark:bg-slate-800', 'cursor-not-allowed', 'opacity-70');
-                                }
+                                input.readOnly = false;
+                                input.classList.remove('bg-slate-100', 'dark:bg-slate-800', 'cursor-not-allowed', 'opacity-70');
                             });
+
+                            // 2. Aplicar bloqueos visuales y de escritura según el tipo
+                            if (isMantenimiento) {
+                                // Mantenimiento bloquea TODO (No aplica ninguna retención ni comisión)
+                                [elCom, elRetV, elRetR, elAci].forEach(input => {
+                                    input.readOnly = true;
+                                    input.classList.add('bg-slate-100', 'dark:bg-slate-800', 'cursor-not-allowed', 'opacity-70');
+                                });
+                            } else if (isParcial) {
+                                // Contracargo/Devolución bloquea SOLO las retenciones fiscales
+                                [elRetV, elRetR].forEach(input => {
+                                    input.readOnly = true;
+                                    input.classList.add('bg-slate-100', 'dark:bg-slate-800', 'cursor-not-allowed', 'opacity-70');
+                                });
+                            }
                             
-                            // Forzar recálculo tras el cambio de modo
+                            // Forzar recálculo matemático
                             window.calcFinanzas();
                         });
 
                         window.calcFinanzas = (e) => {
                             let neto = parseFloat(elNeto.value) || 0;
                             let isAci = chkAci.checked;
-                            let isMantenimiento = elType.value === 'Mantenimiento';
+                            let tipo = elType.value;
 
-                            // Si el usuario cambia el Neto o el Checkbox ACI, recalculamos
+                            // Si el usuario cambia el Neto, el Checkbox ACI o el Tipo de Ajuste, recalculamos
                             if (!e || e.target === elNeto || e.target === chkAci || e.target === elType) {
                                 
-                                if (isMantenimiento) {
-                                    // En mantenimiento, el Monto de Venta es exactamente igual al Neto (0% comisiones)
+                                if (tipo === 'Mantenimiento') {
+                                    // 0% Comisiones
                                     elCom.value = '0.00';
                                     elRetV.value = '0.00';
                                     elRetR.value = '0.00';
                                     elAci.value = '0.00';
+                                } else if (tipo === 'Contracargo' || tipo === 'Devolución') {
+                                    // Ingeniería Inversa Parcial: Solo aplica 1.95% y el ACI (si lo marcó)
+                                    let factor = 0.0195 + (isAci ? 0.0042 : 0);
+                                    let ventaOriginal = neto / (1 - factor);
+
+                                    elCom.value = (ventaOriginal * 0.0195).toFixed(2);
+                                    elRetV.value = '0.00'; // Forzado a cero
+                                    elRetR.value = '0.00'; // Forzado a cero
+                                    elAci.value = isAci ? (ventaOriginal * 0.0042).toFixed(2) : '0.00';
                                 } else {
-                                    // Ingeniería Inversa Normal: Venta = Neto / (1 - Porcentajes)
+                                    // Ingeniería Inversa Normal (Remisión o Vacío): Aplica TODOS los porcentajes
                                     let factorRetenciones = 0.0195 + 0.0531 + 0.0176 + (isAci ? 0.0042 : 0);
                                     let ventaOriginal = neto / (1 - factorRetenciones);
 
@@ -1731,7 +1753,7 @@ window.BACLogic = {
                                 }
                             }
 
-                            // Calcular Venta sumando todo (por si el usuario editó las comisiones a mano)
+                            // Calcular Venta Final sumando todo (por si el usuario editó un campo manual)
                             let com = parseFloat(elCom.value) || 0;
                             let retv = parseFloat(elRetV.value) || 0;
                             let retr = parseFloat(elRetR.value) || 0;

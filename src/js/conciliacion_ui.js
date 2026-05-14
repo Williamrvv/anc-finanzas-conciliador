@@ -505,7 +505,8 @@ window.ConciliacionLogic = {
                         });
                     }
                 }
-                else if (r.Banco === 'SCOTIA') {
+                // Aceptamos ambos nombres para compatibilidad retroactiva y nueva
+                else if (r.Banco === 'SCOTIA' || r.Banco === 'DAVIBANK') {
                     counts.scotia++;
                     // Normalización de Moneda
                     const dbCurr = String(r.Moneda || 'COLON').toUpperCase().includes('DOLAR') ? 'USD' : 'CRC';
@@ -1226,7 +1227,6 @@ window.ConciliacionLogic = {
     // PREPARAR EL PAQUETE DE DATOS
     preparePayload: function(bancoObjetivo) {
         const payload = {
-            fecha_cierre: document.getElementById('process-date').value,
             transacciones: []
         };
         const processedUids = new Set();
@@ -1619,7 +1619,6 @@ window.ConciliacionLogic = {
 
         // 5. ENSAMBLAR PAYLOAD FINAL
         let finalPayload = {
-            fecha_cierre: document.getElementById('process-date').value,
             transacciones: [],
             total_conciliado: 0
         };
@@ -1692,8 +1691,8 @@ window.ConciliacionLogic = {
                 elBar.style.width = pct + '%'; elPct.innerText = pct + '%';
                 if(pct > 15) elTxt.innerText = "Transfiriendo paquete de datos seguro...";
                 if(pct > 35) elTxt.innerText = "Consolidando registros y evaluando idempotencia...";
-                if(pct > 60) elTxt.innerText = "Escribiendo tablas relacionales en Base de datos...";
-                if(pct > 80) elTxt.innerText = "Ejecutando auditoría de integridad ...";
+                if(pct > 60) elTxt.innerText = "Guardando información en la Base de Datos...";
+                if(pct > 80) elTxt.innerText = "Verificando integridad de información...";
             }
         }, 300);
 
@@ -1714,7 +1713,7 @@ window.ConciliacionLogic = {
             elBar.classList.replace('bg-blue-500', 'bg-green-500');
             spinner.classList.replace('text-blue-500', 'text-green-500');
             spinner.classList.remove('animate-spin');
-            elTxt.innerText = "¡Integridad verificada! Guardado exitoso.";
+            elTxt.innerText = "¡Verificación completa! Guardado exitoso.";
             elTxt.classList.replace('text-slate-400', 'text-green-400');
             
             await new Promise(r => setTimeout(r, 600));

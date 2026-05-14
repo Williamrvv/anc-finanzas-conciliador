@@ -6,6 +6,8 @@ window.TSDLogic = {
     ws: { tsd: [], bancos: [], originalTsd: [], originalBancos: [], rowUid: null, isAutoMatch: false }, // Workspace State
     gridMatched: null,
     gridPending: null,
+    currentMatchedData: [], // Almacenará los éxitos para el guardado
+    currentPendingData: [], // Almacenará los pendientes para el guardado
 
     // --------------------------------------------------------
     // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
@@ -716,6 +718,10 @@ window.TSDLogic = {
             r.EstadoMatch === 'Sobrante' || 
             r.EstadoMatch === 'Sugerencia (Monto)'
         );
+
+        // Guardamos las matrices en la RAM global para el empaquetador del botón "Guardar"
+        this.currentMatchedData = matchedData;
+        this.currentPendingData = pendingData;
         
         const fmtMoney = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v || 0).replace(/\./g, ' ');
 
@@ -1131,5 +1137,199 @@ window.TSDLogic = {
 
         // Re-dibujar la tabla principal
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+    },
+
+    // --------------------------------------------------------
+    // MOTOR DE EMPAQUETADO Y GUARDADO (FASE DE PERSISTENCIA)
+    // --------------------------------------------------------
+    saveTSDCierre: async function() {
+        if (!this.currentMatchedData || !this.currentPendingData) return window.SysUI.alert("No hay datos para procesar. Ejecute un cruce primero.", "Sin datos", "warning");
+
+        const dataMatched = this.currentMatchedData;
+        const dataPending = this.currentPendingData;
+
+        // Validar si hay algo que guardar
+        const pendientesTSDCount = dataPending.filter(r => r.EstadoMatch === 'Pendiente' || r.EstadoMatch === 'Sugerencia (Monto)').length;
+        const sobrantesBancoCount = dataPending.filter(r => r.EstadoMatch === 'Sobrante').length;
+
+        if (dataMatched.length === 0 && pendientesTSDCount === 0) {
+            return window.SysUI.alert("No hay registros TSD nuevos (ni conciliados ni pendientes) para guardar.", "Tabla vacía", "warning");
+        }
+
+        const confirmado = await window.SysUI.confirm(
+            `¿Desea registrar este Cierre en la Base de Datos?\n\n` + 
+            `<b>Resumen de Operación:</b>\n` +
+            `✔️ ${dataMatched.length} agrupaciones marcadas como CONCILIADAS.\n` +
+            `❌ ${pendientesTSDCount} contratos de TSD marcados como PENDIENTES.\n` +
+            `🏦 ${sobrantesBancoCount} transacciones bancarias como SOBRANTES.\n\n` +
+            `<i>Nota: Los pendientes de TSD y los sobrantes de Banco quedarán resguardados de forma segura en el Auxiliar Contable para su resolución en un próximo análisis. Se sugiere monitorear el módulo de excepciones periódicamente.</i>\n\n` +
+            `Los folios bancarios de esta sesión quedarán sellados de forma permanente.`,
+            "Confirmar Cierre Consolidado TSD",
+            "info"
+        );
+
+        if (!confirmado) return;
+
+        // --- 1. BLOQUE A: Extraer Folios a Sellar ---
+        // Buscamos todos los IdCierre (Folios) únicos de los bancos que están en la memoria RAM
+        const foliosSet = new Set();
+        this.lastBancos.forEach(b => { if (b.Folio_Cierre) foliosSet.add(b.Folio_Cierre); });
+        const foliosArray = Array.from(foliosSet);
+
+        // --- 2. BLOQUE B: Empaquetar Exitosos (Matches) ---
+        const payloadMatched = [];
+        dataMatched.forEach(row => {
+            const arrT = Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw];
+            const arrB = Array.isArray(row._bancoRaw) ? row._bancoRaw : [row._bancoRaw];
+            
+            // Extraer justificación si es Manual
+            let justif = null;
+            const strStatus = String(row.EstadoMatch);
+            if (strStatus.startsWith('Manual|')) { justif = strStatus.split('|')[1]; }
+
+            payloadMatched.push({
+                IdMatchTSD: 'm_tsd_' + Math.random().toString(36).substr(2, 10), // Matrimonio Único
+                TipoCruce: strStatus.split('|')[0], // Limpiamos la justificación del texto principal
+                Justificacion: justif,
+                TSD: arrT,
+                Bancos: arrB.map(b => b.IdTransaccion) // Solo mandamos el ID del banco para hacerle el UPDATE
+            });
+        });
+
+        // --- 3. BLOQUE C: Empaquetar Excepciones (TSD Huérfanos) ---
+        const payloadPending = [];
+        dataPending.forEach(row => {
+            // Solo nos interesan los huérfanos de TSD. Ignoramos los "Sobrantes" del banco porque esos ya viven en SQL.
+            if (row.EstadoMatch === 'Pendiente' || row.EstadoMatch === 'Sugerencia (Monto)') {
+                const arrT = Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw];
+                arrT.forEach(t => payloadPending.push(t));
+            }
+        });
+
+        // --- 4. ENVIAR A PHP CON MODAL DE CARGA ESTÁNDAR ---
+        const btn = document.getElementById('btn-save-tsd');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<svg class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Procesando...';
+        btn.disabled = true;
+        document.body.classList.add('cursor-wait');
+
+        // 4.1 CREACIÓN DINÁMICA DEL MODAL DE CARGA (Con colores de TSD: Púrpura)
+        const loaderId = 'global-save-loader';
+        let loader = document.getElementById(loaderId);
+        if(!loader) {
+            loader = document.createElement('div');
+            loader.id = loaderId;
+            loader.className = 'fixed inset-0 z-[999999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white transition-opacity duration-300 opacity-0 select-none hidden';
+            loader.innerHTML = `
+                <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 transform scale-95 transition-transform duration-300" id="loader-card">
+                    <div class="relative w-16 h-16 mb-6">
+                        <svg id="loader-spinner" class="animate-spin text-purple-500 w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center text-xs font-bold font-mono" id="loader-pct">0%</div>
+                    </div>
+                    <h3 class="text-lg font-bold mb-2 text-white">Guardando Información...</h3>
+                    <p class="text-slate-400 text-xs text-center mb-6 h-8" id="loader-text">Preparando paquete de datos...</p>
+                    <div class="w-full bg-slate-900 rounded-full h-2 mb-1 overflow-hidden border border-slate-700 shadow-inner">
+                        <div class="h-full rounded-full transition-all duration-300 ease-out w-0 bg-purple-500" id="loader-bar"></div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loader);
+        }
+
+        // 4.2 RESET FORZADO DE ESTILOS Y TEXTOS
+        const elBar = document.getElementById('loader-bar');
+        const elPct = document.getElementById('loader-pct');
+        const elTxt = document.getElementById('loader-text');
+        const spinner = document.getElementById('loader-spinner');
+        
+        elBar.className = "h-full rounded-full transition-all duration-300 ease-out bg-purple-500";
+        elBar.style.width = '0%';
+        elPct.innerText = '0%';
+        elTxt.innerText = "Preparando paquete de datos...";
+        elTxt.className = "text-slate-400 text-xs text-center mb-6 h-8";
+        spinner.className = "animate-spin text-purple-500 w-full h-full";
+
+        // 4.3 ANIMACIÓN DE ENTRADA SUAVE
+        requestAnimationFrame(() => {
+            loader.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                loader.classList.remove('opacity-0');
+                document.getElementById('loader-card').classList.remove('scale-95');
+            });
+        });
+
+        // 4.4 SIMULADOR DE PROGRESO (Avanza hasta el 95%)
+        let pct = 0;
+        const progressInterval = setInterval(() => {
+            if(pct < 95) {
+                pct += Math.floor(Math.random() * 10) + 2;
+                if(pct > 95) pct = 95; 
+                elBar.style.width = pct + '%'; 
+                elPct.innerText = pct + '%';
+                
+                if(pct > 15) elTxt.innerText = "Transfiriendo paquete de datos...";
+                if(pct > 35) elTxt.innerText = "Procesando información...";
+                if(pct > 60) elTxt.innerText = "Guardando información en la Base de Datos...";
+                if(pct > 80) elTxt.innerText = "Verificando integridad de información...";
+            }
+        }, 300);
+
+        try {
+            // 4.5 PETICIÓN REAL AL SERVIDOR
+            const res = await fetch('api/save_tsd_m3.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending })
+            });
+            const data = await res.json();
+
+            if (!data.success) throw new Error(data.error);
+
+            // 4.6 ÉXITO: COMPLETAR AL 100% Y PINTAR DE VERDE
+            clearInterval(progressInterval);
+            elBar.style.width = '100%'; 
+            elPct.innerText = '100%';
+            elBar.classList.replace('bg-purple-500', 'bg-green-500');
+            spinner.classList.replace('text-purple-500', 'text-green-500');
+            spinner.classList.remove('animate-spin');
+            elTxt.innerText = "¡Verificación completa! Guardado exitoso.";
+            elTxt.classList.replace('text-slate-400', 'text-green-400');
+            
+            await new Promise(r => setTimeout(r, 800));
+
+            // 4.7 OCULTAR Y CERRAR
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.classList.add('hidden'), 300);
+
+            // Limpieza y alerta final
+            await window.SysUI.alert(`El cierre de TSD se ha guardado exitosamente.\nLos folios bancarios han sido sellados.`, "Bóveda Actualizada", "success");
+            
+            this.lastTSD = [];
+            this.lastBancos = [];
+            if(this.gridMatched) { if (typeof this.gridMatched.destroy === 'function') this.gridMatched.destroy(); this.gridMatched = null; }
+            if(this.gridPending) { if (typeof this.gridPending.destroy === 'function') this.gridPending.destroy(); this.gridPending = null; }
+            
+            const matchedContainer = document.getElementById('table-matched-tsd');
+            const pendingContainer = document.getElementById('table-pending-tsd');
+            if (matchedContainer) matchedContainer.innerHTML = '<div class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2 opacity-50 z-0"><span class="text-sm font-medium">Cierre completado. Ejecute un nuevo cruce.</span></div>';
+            if (pendingContainer) pendingContainer.innerHTML = '';
+            
+            this.updateFinancialDashboard([], []);
+
+        } catch (error) {
+            // 4.8 ERROR: DETENER Y OCULTAR
+            clearInterval(progressInterval);
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.classList.add('hidden'), 300);
+            
+            window.SysUI.alert("Hubo un error al guardar en la Base de Datos:\n\n" + error.message, "Fallo Crítico", "error");
+        } finally {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            document.body.classList.remove('cursor-wait');
+        }
     }
 };

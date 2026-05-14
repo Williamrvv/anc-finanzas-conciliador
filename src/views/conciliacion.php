@@ -10,9 +10,7 @@
                 <button onclick="window.ConciliacionFunctions.switchTab('scotia')" id="tab-scotia" class="px-4 py-1.5 text-sm font-medium rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 transition-all">Davibank</button>
             </nav>
         </div>
-        <div class="flex items-center gap-3">
-            <input type="date" id="process-date" class="bg-slate-100 dark:bg-slate-700 border-none rounded text-xs font-bold py-1 px-2 text-slate-700 dark:text-white" value="<?php echo date('Y-m-d'); ?>">
-            
+        <div class="flex items-center gap-3">            
             <!-- BOTÓN DISCRETO (Guardado Local) -->
             <button onclick="window.ConciliacionFunctions.forceLocalSave()" title="Guardar borrador temporal en el navegador" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>

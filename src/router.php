@@ -19,12 +19,12 @@ if (!isset($_SESSION['user'])) {
     switch ($role) {
         case 'admin':
             // El admin tiene acceso absoluto a todo
-            $allowed_views = ['dashboard', 'conciliacion', 'tsd', 'cierre_cajas', 'usuarios'];
+            $allowed_views = ['dashboard', 'conciliacion', 'tsd', 'auxiliar', 'cierre_cajas', 'usuarios'];
             break;
             
         case 'conciliador':
-            // Solo ve la parte de bancos y consolidado TSD
-            $allowed_views = ['dashboard', 'conciliacion', 'tsd'];
+            // Solo ve la parte de bancos, consolidado TSD y Auxiliar Contable
+            $allowed_views = ['dashboard', 'conciliacion', 'tsd', 'auxiliar'];
             break;
             
         case 'jefe':

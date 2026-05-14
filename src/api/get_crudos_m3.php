@@ -23,8 +23,8 @@ try {
     if ($source === 'bac' || $source === 'all') {
         $sqlBAC = "
             SELECT 
-                c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio, 'BAC' AS Banco, 
-                b.IdTransaccion, b.NUMERO_AFILIADO AS Afiliado_MerID, b.NOMBRECOMERCIO AS Nombre_Comercio, 
+                c.IdCierre AS Folio_Cierre, 'BAC' AS Banco, 
+                b.IdTransaccion, b.NUMERO_AFILIADO AS Afiliado_MerID, b.NOMBRECOMERCIO AS Nombre_Comercio,
                 b.NUMERO_DE_TARJETA AS Numero_Tarjeta, b.AUTORIZACION AS Numero_Autorizacion, 
                 b.TERMINAL AS Terminal, b.MONTO_VENTA AS Monto_Original, b.MONTONETO AS Monto_Neto, 
                 b.FECHA_PAGO AS Fecha_Pago_Excel, b.FECHA_TRANSACCION, b.FECHA_CIERRE_DATAFONO, 
@@ -49,8 +49,8 @@ try {
     else if ($source === 'scotia') {
         $sqlSCOTIA = "
             SELECT 
-                c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio, 'SCOTIA' AS Banco, 
-                s.IdTransaccion, s.MerID AS Afiliado_MerID, s.Nombre AS Nombre_Comercio, 
+                c.IdCierre AS Folio_Cierre, 'SCOTIA' AS Banco, 
+                s.IdTransaccion, s.MerID AS Afiliado_MerID, s.Nombre AS Nombre_Comercio,
                 s.Numero_Tarjeta AS Numero_Tarjeta, s.Numero_Autorizacion AS Numero_Autorizacion, 
                 s.Terminal AS Terminal, s.Monto_Orig AS Monto_Original, s.Monto_Neto AS Monto_Neto, 
                 s.Fecha_Pago AS Fecha_Pago_Excel, s.Fuente, s.Moneda, s.Transaccion, s.Razon_Social, 
@@ -71,12 +71,13 @@ try {
     }
 
     // =====================================
-    // 3. EXTRACCIÓN TSD (Pesada)
+    // 3. EXTRACCIÓN TSD (Pesada)  
     // =====================================
     else if ($source === 'tsd') {
         $pdoTSD = TSDDatabase::connect();
         $sqlTSD = "
             SELECT
+                P.ID AS [ID_Transaccion],
                 P.KNUM AS [Contrato],
                 C.FNAME + ' ' + C.LNAME AS [Cliente],
                 P.AMOUNT AS [MontoUSD],

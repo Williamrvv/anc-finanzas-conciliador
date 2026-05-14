@@ -24,7 +24,6 @@ if (!$data || empty($data['transacciones'])) {
 }
 
 $transacciones = $data['transacciones'];
-$fechaCierre = $data['fecha_cierre'] ?? date('Y-m-d');
 $usuario = $_SESSION['user']['username'] ?? ($_SESSION['user']['email'] ?? 'Sistema');
 $totalConciliado = floatval($data['total_conciliado'] ?? 0);
 
@@ -45,12 +44,14 @@ try {
         }
     }
 
-    // 2. Generar un Folio (IdCierre) independiente para cada banco
+    // 2. Generar un Folio (IdCierre) independiente para cada banco/fuente
     $cierresIds = [];
-    $stmtCierre = $pdo->prepare("INSERT INTO Tbl_Conciliacion_Cierres (FechaCierre, Usuario, Banco, TotalConciliado) VALUES (?, ?, ?, ?)");
+    $stmtCierre = $pdo->prepare("INSERT INTO Tbl_Conciliacion_Cierres (Usuario, Fuente, TotalConciliado) VALUES (?, ?, ?)");
     foreach ($bancosUnicos as $banco) {
-        $stmtCierre->execute([$fechaCierre, $usuario, $banco, $totalesPorBanco[$banco] ?? 0]);
-        $cierresIds[$banco] = $pdo->lastInsertId();
+        // Traducción para la Base de Datos
+        $nombreDB = ($banco === 'SCOTIA') ? 'DAVIBANK' : $banco;
+        $stmtCierre->execute([$usuario, $nombreDB, $totalesPorBanco[$banco] ?? 0]);
+        $cierresIds[$banco] = $pdo->lastInsertId(); // JS necesita que la llave siga siendo SCOTIA
     }
 
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
@@ -70,42 +71,46 @@ try {
     $stmtAjuste = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion, EvidenciaB64) VALUES (?, ?, ?, ?)");
 
     $filasAfectadas = 0;
-    $hashesProcesados = []; // NUEVO: Rastreador de auditoría 
+    $auditHashes = []; // Rastreador para transacciones nuevas
+    $auditIds = [];    // Rastreador para transacciones históricas
 
     foreach ($transacciones as $t) {
         $idTrans = $t['IdTransaccion'] ?? 'SIN_ID';
         $bancoT = $t['Banco'] ?? 'DESC';
-        $idCierre = $cierresIds[$bancoT] ?? null; // ASIGNACIÓN INTELIGENTE DEL FOLIO
+        $idCierre = $cierresIds[$bancoT] ?? null; 
         
         $fecha = (!empty($t['FechaTransaccion']) && $t['FechaTransaccion'] !== 'N/A') ? $t['FechaTransaccion'] : null;
         $bruto = floatval($t['MontoBruto'] ?? 0);
         $neto  = floatval($t['MontoNeto'] ?? 0);
 
-        $hashStr = $t['HashString'] ?? "FALLBACK|" . uniqid();
-        $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
-        
-        $hashesProcesados[] = $hashUnico; // Guardamos la huella para la auditoría final
-
-        // Si JS nos dice que esto es un saldo que ya sacó de la BD, lo forzamos a UPDATE directo
+        // CASO 1: SALDOS HISTÓRICOS (Ya existen en la BD)
         if (!empty($t['IsFromDB'])) {
             $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idTrans]);
             $filasAfectadas++;
-            continue; // Saltamos a la siguiente transacción
+            $auditIds[] = $idTrans; // Las auditamos por Llave Primaria
+            continue; 
         }
+
+        // CASO 2: NUEVOS ARCHIVOS O AJUSTES MANUALES
+        $hashStr = $t['HashString'] ?? "FALLBACK|" . uniqid();
+        $hashUnico = ($t['Origen'] === 'AJUSTE') ? $idTrans : md5($hashStr);
+        $auditHashes[] = $hashUnico; // Las auditamos por Huella Criptográfica
 
         $stmtCheck->execute([$hashUnico]);
         $idExistente = $stmtCheck->fetchColumn();
 
         if ($idExistente) {
-            // LÓGICA DE SEGURIDAD (ANTI-DUPLICADOS COLADOS DESDE EXCEL)
-            if ($idExistente !== $idTrans && ($t['Origen'] ?? '') !== 'AJUSTE') {
-                throw new \Exception("Bloqueo de Seguridad: Se intentó procesar un archivo con transacciones duplicadas (El Hash Criptográfico ya existe en BD).");
-            } else {
-                $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
-            }
+            // IDEMPOTENCIA ABSOLUTA: Si el Excel trae transacciones que ya existen en la BD
+            // (superposición de fechas o recarga accidental), NO explotamos el servidor.
+            // Simplemente actualizamos su estado (Ej. de Pendiente a Conciliado), 
+            // omitimos volver a insertar sus detalles, y continuamos con el resto.
+            $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
         } else {
+            // Traducción para la Base de Datos
+            $bancoParaBD = (($t['Banco'] ?? '') === 'SCOTIA') ? 'DAVIBANK' : ($t['Banco'] ?? 'DESC');
+            
             $stmtInsert->execute([
-                $idTrans, $idCierre, $t['Banco'] ?? 'DESC', $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, 
+                $idTrans, $idCierre, $bancoParaBD, $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, 
                 $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico
             ]);
 
@@ -148,33 +153,49 @@ try {
     }
 
     // =========================================================================
-    // AUDITORÍA DE INTEGRIDAD POST-INSERCIÓN (Double-Check)
+    // AUDITORÍA DE INTEGRIDAD POST-INSERCIÓN (Double-Check Bimodal)
     // =========================================================================
-    // Eliminamos duplicados teóricos del payload para saber cuántos hashes únicos DEBEN existir
-    $hashesUnicosPayload = array_unique($hashesProcesados);
-    $totalEsperado = count($hashesUnicosPayload);
+    $hashesUnicos = array_unique($auditHashes);
+    $idsUnicos = array_unique($auditIds);
+    
+    $totalEsperado = count($hashesUnicos) + count($idsUnicos);
     $totalVerificados = 0;
 
-    // Dividimos en bloques de 1000 para no reventar el límite de parámetros de SQL Server (2100)
-    $chunks = array_chunk($hashesUnicosPayload, 1000);
-    foreach ($chunks as $chunk) {
-        $inQuery = implode(',', array_fill(0, count($chunk), '?'));
-        $stmtVerify = $pdo->prepare("SELECT COUNT(DISTINCT HashUnico) FROM Tbl_Transacciones_Maestra WHERE HashUnico IN ($inQuery)");
-        $stmtVerify->execute($chunk);
-        $totalVerificados += (int)$stmtVerify->fetchColumn();
+    // 1. Verificar registros nuevos (Por Huella Criptográfica)
+    if (count($hashesUnicos) > 0) {
+        $chunks = array_chunk($hashesUnicos, 1000);
+        foreach ($chunks as $chunk) {
+            $inQuery = implode(',', array_fill(0, count($chunk), '?'));
+            $stmtVerify = $pdo->prepare("SELECT COUNT(DISTINCT HashUnico) FROM Tbl_Transacciones_Maestra WHERE HashUnico IN ($inQuery)");
+            $stmtVerify->execute($chunk);
+            $totalVerificados += (int)$stmtVerify->fetchColumn();
+        }
+    }
+
+    // 2. Verificar saldos históricos recuperados (Por Llave Primaria)
+    if (count($idsUnicos) > 0) {
+        $chunks = array_chunk($idsUnicos, 1000);
+        foreach ($chunks as $chunk) {
+            $inQuery = implode(',', array_fill(0, count($chunk), '?'));
+            $stmtVerify = $pdo->prepare("SELECT COUNT(DISTINCT IdTransaccion) FROM Tbl_Transacciones_Maestra WHERE IdTransaccion IN ($inQuery)");
+            $stmtVerify->execute($chunk);
+            $totalVerificados += (int)$stmtVerify->fetchColumn();
+        }
     }
 
     if ($totalVerificados < $totalEsperado) {
-        // Si falta un solo registro en el disco duro, abortamos TODO.
         throw new \Exception("Auditoría de Integridad Fallida: Se procesaron {$totalEsperado} transacciones únicas, pero solo se verificaron {$totalVerificados} en la Base de Datos. Se aplicó ROLLBACK de seguridad.");
     }
     // =========================================================================
 
     $pdo->commit(); // Si llega aquí, es 100% seguro guardarlo en disco
     
-    // Convertimos los cierres generados en un string visual (Ej: "BAC: 15, SCOTIA: 16")
+    // Convertimos los cierres generados en un string visual
     $stringCierres = [];
-    foreach ($cierresIds as $b => $id) { $stringCierres[] = "$b: #$id"; }
+    foreach ($cierresIds as $b => $id) { 
+        $n = ($b === 'SCOTIA') ? 'DAVIBANK' : $b;
+        $stringCierres[] = "$n: #$id"; 
+    }
     $textoVisualCierres = implode(' | ', $stringCierres);
 
     echo json_encode(['success' => true, 'filas_insertadas' => $filasAfectadas, 'id_cierre' => $textoVisualCierres]);

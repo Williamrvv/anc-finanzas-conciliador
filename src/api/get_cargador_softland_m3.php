@@ -42,7 +42,7 @@ try {
     $tcPromedio = $tcRow['PromedioTC'] ? (float)$tcRow['PromedioTC'] : 1; // Respaldo matemático final
 
     $data = [];
-
+ 
     // 2. Multiplexor de Consultas (Estrategia por Configuración)
     if ($type === 'davi_5') {
         $sql = "

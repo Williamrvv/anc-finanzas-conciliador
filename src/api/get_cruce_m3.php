@@ -28,6 +28,7 @@ try {
     // ==========================================
     $sqlTSD = "
         SELECT
+            P.ID AS [ID_Transaccion],
             P.KNUM AS [Contrato],
             C.FNAME + ' ' + C.LNAME AS [Cliente],
             P.AMOUNT AS [MontoUSD],
@@ -90,7 +91,7 @@ try {
         WITH FoliosNuevos AS (
     -- 1. EXTRACCIÓN DIRECTA: BAC CREDOMATIC
     SELECT 
-        b.IdTransaccion, c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio,
+        b.IdTransaccion, c.IdCierre AS Folio_Cierre,
         'BAC' AS Banco, b.NUMERO_AFILIADO AS Afiliado_MerID, b.TERMINAL AS Codigo_Sucursal_Terminal,
         b.NOMBRECOMERCIO AS Nombre_Sucursal_Comercio, RIGHT(RTRIM(LTRIM(b.NUMERO_DE_TARJETA)), 4) AS Tarjeta_Ultimos4,
         b.AUTORIZACION AS Numero_Autorizacion, b.MONTO_VENTA AS Monto_Venta_Original, b.FECHA_PAGO AS Fecha_Pago_Excel,
@@ -110,9 +111,9 @@ try {
 
     UNION ALL
 
-    -- 2. EXTRACCIÓN DIRECTA: SCOTIABANK (DAVIBANK)
+    -- 2. EXTRACCIÓN DIRECTA: SCOTIA (DAVIBANK)
     SELECT 
-        s.IdTransaccion, c.IdCierre AS Folio_Cierre, c.FechaCierre AS Fecha_Del_Folio,
+        s.IdTransaccion, c.IdCierre AS Folio_Cierre,
         'Davibank' AS Banco, s.MerID AS Afiliado_MerID, s.Terminal AS Codigo_Sucursal_Terminal,
         s.Nombre AS Nombre_Sucursal_Comercio, RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
         s.Numero_Autorizacion AS Numero_Autorizacion, s.Monto_Orig AS Monto_Venta_Original, s.Fecha_Pago AS Fecha_Pago_Excel,
