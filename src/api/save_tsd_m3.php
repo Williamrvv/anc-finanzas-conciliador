@@ -116,11 +116,6 @@ try {
     // 3. PROCESAR MATCHES (Éxitos Azules y Amarillos)
     // ==============================================================
     $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ? WHERE IdTransaccion = ?");
-    $stmtUpdateDomino = $pdo->prepare("
-        UPDATE Tbl_Transacciones_Maestra 
-        SET IdMatchTSD = ?, TipoCruceTSD = ? 
-        WHERE IdMatch IN (SELECT IdMatch FROM Tbl_Transacciones_Maestra WHERE IdTransaccion = ?) AND IdMatch IS NOT NULL
-    ");
     $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, 'Cruce Manual TSD', ?)");
 
     foreach ($matches as $match) {
@@ -144,12 +139,9 @@ try {
             }
         }
 
-        // Matrimonio a 3 Bandas (Bancos)
+        // Matrimonio Directo (Solo actualizamos la transacción Detallada visible)
         foreach ($match['Bancos'] as $bancoIdTrans) {
-            // Actualizar el Datáfono
             $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $bancoIdTrans]);
-            // Efecto Dominó: Actualizar el Depósito (Pagado) que comparte el IdMatch viejo
-            $stmtUpdateDomino->execute([$idMatchTSD, $tipoCruce, $bancoIdTrans]);
         }
     }
 

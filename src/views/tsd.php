@@ -25,18 +25,7 @@
                 </div>
             </div>
             
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-            <!-- Alerta de Diferencia Visual -->
-            <div class="flex flex-col px-3 relative">
-                <span class="text-[10px] font-bold text-slate-400 uppercase mb-0.5" title="Resaltar diferencias mayores o iguales a este monto">Alerta Dif. (₡)</span>
-                <div class="flex items-center gap-1 border-b border-slate-300 dark:border-slate-600 pb-1">
-                    <span class="text-red-500 font-bold text-xs">≥</span>
-                    <input type="number" id="tsd-threshold" value="10000" min="0" step="1" oninput="window.TSDLogic.updateThreshold()" class="bg-transparent text-sm font-bold text-red-600 dark:text-red-400 outline-none w-20 text-center">
-                </div>
-            </div>
-            
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden md:block"></div>
 
             <!-- Menú Desplegable: Cargadores ERP -->
             <div class="relative group">
@@ -75,7 +64,14 @@
             <!-- Botón Visor PopUp -->
             <button type="button" onclick="window.TSDLogic.openRawViewer()" class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm flex items-center gap-2 border border-slate-200 dark:border-slate-600">
                 <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                Visor de Datos Crudos
+                Visor Crudos
+            </button>
+
+            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+            <button id="btn-save-tsd" onclick="window.TSDLogic.saveTSDCierre()" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-black text-xs transition-all shadow-md shadow-purple-500/30 flex items-center gap-2 shrink-0 hover:scale-105">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                GUARDAR CONSOLIDADO TSD
             </button>
         </div>
     </div>
@@ -146,12 +142,7 @@
             Ingestar Histórico Tarjetas
             </button>
 
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
-
-            <button id="btn-save-tsd" onclick="window.TSDLogic.saveTSDCierre()" class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg font-black text-xs transition-all shadow-md shadow-purple-500/30 flex items-center gap-2 shrink-0 h-fit mb-1 hover:scale-105">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-                GUARDAR CIERRE TSD
-            </button>
+            <!-- (El botón de Guardar fue movido a la cabecera) -->
         </div>
 
         <!-- FILA 2: PANEL DE RESUMEN FINANCIERO -->
@@ -275,9 +266,19 @@
         
         <!-- TABLA 1: RESULTADOS CONCILIADOS (Éxitos) -->
         <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <div class="bg-blue-50 dark:bg-blue-900/40 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2 shrink-0">
-                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-                <h3 class="text-xs font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Resultados Conciliados (Match Exitoso)</h3>
+            <div class="bg-blue-50 dark:bg-blue-900/40 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex justify-between items-center shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                    <h3 class="text-xs font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Resultados Conciliados (Match Exitoso)</h3>
+                </div>
+                
+                <div class="flex items-center gap-2 bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 px-2 py-0.5 rounded shadow-sm">
+                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase" title="Resaltar en rojo las filas cuya diferencia sea igual o mayor">Alerta de Diferencia ≥</span>
+                    <div class="flex items-center border-b border-blue-300 dark:border-blue-600">
+                        <span class="text-red-500 font-bold text-xs mr-0.5">₡</span>
+                        <input type="number" id="tsd-threshold" value="10000" min="0" step="1" oninput="window.TSDLogic.updateThreshold()" class="bg-transparent text-xs font-bold text-red-600 dark:text-red-400 outline-none w-16 text-center">
+                    </div>
+                </div>
             </div>
             <!-- Altura inicial definida en style, VanillaGrid la ajustará desde ahí -->
             <div id="table-matched-tsd" style="height: 500px;" class="w-full relative border-none">

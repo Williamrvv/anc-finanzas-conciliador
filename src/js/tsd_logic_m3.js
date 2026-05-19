@@ -2,7 +2,7 @@ window.TSDLogic = {
     lastTSD: [],
     lastBancos: [],
     blacklist: [], 
-    manualMatches: [], 
+    manualMatches: [],
     ws: { tsd: [], bancos: [], originalTsd: [], originalBancos: [], rowUid: null, isAutoMatch: false }, // Workspace State
     gridMatched: null,
     gridPending: null,
@@ -302,15 +302,15 @@ window.TSDLogic = {
 
             if (!json.success) throw new Error(json.error);
 
-            // Inyectamos un _id único a la data cruda para poder rastrear qué añade/quita el usuario en el modal
-            this.lastTSD = json.tsd.map((t, i) => { t._id = 't_' + i; return t; });
-            this.lastBancos = json.bancos.map((b, i) => { b._id = 'b_' + i; return b; });
+            // Sellar usando las llaves primarias de BD para evitar "secuestros" de memoria tras una recarga
+            this.lastTSD = json.tsd.map(t => { t._id = 't_' + t.ID_Transaccion; return t; });
+            this.lastBancos = json.bancos.map(b => { b._id = 'b_' + b.IdTransaccion; return b; });
 
             // Actualizar Dashboard Financiero
             this.updateFinancialDashboard(this.lastTSD, this.lastBancos);
 
-            // Limpiamos los manual matches de sesiones anteriores
-            this.manualMatches = [];
+            // Ya NO limpiamos manualMatches ni la blacklist aquí.
+            // Preservamos el "Snapshot" del usuario intacto entre recargas.
             this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
 
         } catch (error) {
@@ -445,7 +445,8 @@ window.TSDLogic = {
         const cleanAuth = (str) => { const a = cleanStr(str).replace(/^0+/, ''); return a === '' ? null : a; };
         const getCard = (str) => { const c = cleanStr(str).slice(-4); return c.length === 4 ? c : null; };
         
-        const isBlacklisted = (knum, idTrans) => this.blacklist.includes(String(knum).trim() + '|' + String(idTrans).trim());
+        // CORRECCIÓN: Blacklist opera 100% por Llave Primaria (Id_Transaccion de TSD y Banco)
+        const isBlacklisted = (idTsd, idTrans) => this.blacklist.includes(String(idTsd).trim() + '|' + String(idTrans).trim());
         const isSameMonto = (m1, m2) => Math.abs(parseFloat(m1) - parseFloat(m2)) < 2; 
 
         // MOTOR DE DIBUJO DE FILAS
@@ -468,8 +469,9 @@ window.TSDLogic = {
                 finalMatchType = `Manual|${justificacion}`;
             }
 
-            const montoTSD = tsdArr.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
-            const montoBanco = bancoArr.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
+            // Colocar los datos en orden de mayor a menor magnitud
+            const montoTSD = tsdArr.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+            const montoBanco = bancoArr.map(c => parseFloat(c.Monto_Venta_Original) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
             const isNegative = montoTSD < 0;
 
             let bgColorClass = 'bg-[#fce4d6] dark:bg-[#7c6f69] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
@@ -478,15 +480,31 @@ window.TSDLogic = {
             if (finalMatchType.startsWith('Manual')) bgColorClass = 'bg-[#ffe699] dark:bg-[#b2a06b] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800 font-bold'; 
             if (isNegative) bgColorClass = 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold';
 
-            const contratoRep = isMulti ? `Varios (${tsdArr.length} registros)` : tsdArr[0].Contrato;
-            const clienteRep = isMulti ? `Agrupación Múltiple (Doble clic para ver)` : tsdArr[0].Cliente; // Cliente vuelve a ser texto puro
-            const authTSDRep = isMulti ? tsdArr[0].Autorizacion : tsdArr[0].Autorizacion;
+            // Blindaje: Extracción segura en caso de que sea un Ajuste Manual de 1 solo lado
+            const t0 = tsdArr.length > 0 ? tsdArr[0] : {};
+            const b0 = bancoArr.length > 0 ? bancoArr[0] : {};
+
+            const contratoRep = isMulti ? `Varios (${tsdArr.length} reg)` : (t0.Contrato || 'Solo Banco');
+            const clienteRep = isMulti ? `Agrupación Múltiple` : (t0.Cliente || '-'); 
+            const authTSDRep = t0.Autorizacion || '-';
             
-            const tarjetaLimpia = cleanStr(tsdArr[0].Tarjeta_Ultimos4);
-            const tarjetaRep = isMulti ? `****${tarjetaLimpia.slice(-4)}` : (tarjetaLimpia.length >= 4 ? `****${tarjetaLimpia.slice(-4)}` : 'S/D');
+            const tarjetaLimpia = cleanStr(t0.Tarjeta_Ultimos4);
+            const tarjetaRep = tarjetaLimpia.length >= 4 ? `****${tarjetaLimpia.slice(-4)}` : 'S/D';
             
-            const bancoRep = isMulti ? (bancoArr.length > 1 ? `Múltiples Bancos` : bancoArr[0].Banco) : bancoArr[0].Banco;
-            const authBancoRep = isMulti ? bancoArr[0].Numero_Autorizacion : bancoArr[0].Numero_Autorizacion;
+            const bancoRep = isMulti ? (bancoArr.length > 1 ? `Múltiples Bancos` : (b0.Banco || '-')) : (b0.Banco || 'Solo TSD');
+            const authBancoRep = b0.Numero_Autorizacion || '-';
+
+            // Diferencia Contable Real: Tomar el mayor, restarle el menor y conservar el signo del mayor
+            const absT = Math.abs(montoTSD);
+            const absB = Math.abs(montoBanco);
+            const gap = Math.abs(absT - absB);
+            
+            let diffReal = 0;
+            if (absT >= absB) {
+                diffReal = montoTSD < 0 ? -gap : gap;
+            } else {
+                diffReal = montoBanco < 0 ? -gap : gap;
+            }
 
             gridData.push({
                 _uid: 'row_' + Math.random().toString(36).substr(2, 9),
@@ -498,10 +516,9 @@ window.TSDLogic = {
                 Cliente: clienteRep,
                 TarjetaTSD: tarjetaRep,
                 Autorizacion: authTSDRep,
-                // Objeto Matemático: VanillaGrid lo suma como número, pero el buscador lo lee como texto
                 MontoTSD: { 
                     valor: montoTSD, 
-                    recibo: isMulti ? '' : (tsdArr[0].Recibo_Detalle || ''),
+                    recibo: isMulti ? '' : (t0.Recibo_Detalle || ''),
                     valueOf: function() { return this.valor; },
                     toString: function() { return this.valor.toString(); }
                 }, 
@@ -509,17 +526,20 @@ window.TSDLogic = {
                 Banco_Nombre: bancoRep,
                 Banco_Auth: authBancoRep,
                 Banco_Monto: montoBanco, 
-                Diferencia: montoTSD - montoBanco
+                Diferencia: diffReal
             });
         };
 
         // --- FASE 0: MANUALES DEL USUARIO ---
+        // Actualizamos los objetos con las llaves primarias para que el snapshot soporte recargas de BD (Ingesta de tarjetas)
         this.manualMatches.forEach(mMatch => {
-            const arrT = pendientesTSD.filter(t => mMatch.tsdArr.some(x => x._id === t._id));
-            const arrB = bancosDisponibles.filter(b => mMatch.bancoArr.some(x => x._id === b._id));
+            const arrT = pendientesTSD.filter(t => mMatch.tsdArr.some(x => x.ID_Transaccion === t.ID_Transaccion));
+            const arrB = bancosDisponibles.filter(b => mMatch.bancoArr.some(x => x.IdTransaccion === b.IdTransaccion));
+            
             if (arrT.length > 0 || arrB.length > 0) processMatch(arrT, arrB, 'Manual', mMatch.justificacion);
-            pendientesTSD = pendientesTSD.filter(t => !mMatch.tsdArr.some(x => x._id === t._id));
-            bancosDisponibles = bancosDisponibles.filter(b => !mMatch.bancoArr.some(x => x._id === b._id));
+            
+            pendientesTSD = pendientesTSD.filter(t => !mMatch.tsdArr.some(x => x.ID_Transaccion === t.ID_Transaccion));
+            bancosDisponibles = bancosDisponibles.filter(b => !mMatch.bancoArr.some(x => x.IdTransaccion === b.IdTransaccion));
         });
 
         const blindajeTSD = [...tsdData]; 
@@ -536,7 +556,8 @@ window.TSDLogic = {
                     matchIdx = bancosDisponibles.findIndex(b => {
                         const kB = keyGetterB(b);
                         const sameMonto = isSameMonto(b.Monto_Venta_Original, montoTSD);
-                        return kB === kT && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion) && (!requireSameMonto || sameMonto);
+                        // Evaluamos usando ID_Transaccion
+                        return kB === kT && !isBlacklisted(tsdRow.ID_Transaccion, b.IdTransaccion) && (!requireSameMonto || sameMonto);
                     });
                 }
                 if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], matchLabel);
@@ -553,7 +574,8 @@ window.TSDLogic = {
             for (const k in groupT) {
                 if (groupB[k]) {
                     const arrT = groupT[k], arrB = groupB[k];
-                    if (!arrT.some(t => arrB.some(b => isBlacklisted(t.Contrato, b.IdTransaccion)))) {
+                    // Evaluamos usando ID_Transaccion en la matriz grupal
+                    if (!arrT.some(t => arrB.some(b => isBlacklisted(t.ID_Transaccion, b.IdTransaccion)))) {
                         const sumT = arrT.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
                         const sumB = arrB.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
                         if (isSameMonto(sumT, sumB)) {
@@ -592,7 +614,7 @@ window.TSDLogic = {
             const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
             let matchIdx = -1;
             if (Math.abs(montoTSD) > 0) { 
-                matchIdx = bancosDisponibles.findIndex(b => isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.Contrato, b.IdTransaccion));
+                matchIdx = bancosDisponibles.findIndex(b => isSameMonto(b.Monto_Venta_Original, montoTSD) && !isBlacklisted(tsdRow.ID_Transaccion, b.IdTransaccion));
             }
             if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], 'Sugerencia (Monto)');
             else nextTSD.push(tsdRow);
@@ -789,6 +811,17 @@ window.TSDLogic = {
                 bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
                 formatter: (cell) => {
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    
+                    // Extraer la fila actual para saber si es un éxito o una excepción
+                    const rowData = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    const isException = rowData.EstadoMatch === 'Pendiente' || rowData.EstadoMatch === 'Sobrante' || rowData.EstadoMatch === 'Sugerencia (Monto)';
+
+                    // Si es una excepción (tabla inferior), devolverlo neutro sin analizar el umbral
+                    if (isException) {
+                        return `<span class="font-bold bg-white/40 dark:bg-black/30 px-2 py-0.5 rounded text-sm">${fmtMoney(val)}</span>`;
+                    }
+
+                    // Lógica original de la alerta de diferencia (solo para Match Exitosos)
                     const thresholdInput = document.getElementById('tsd-threshold');
                     const threshold = thresholdInput ? Math.abs(parseFloat(thresholdInput.value)) || 0 : 10000;
                     
@@ -1016,9 +1049,21 @@ window.TSDLogic = {
                 function renderUI() {
                     const ws = parentLogic.ws;
                     
-                    const sumT = ws.tsd.reduce((a,c)=>a+(parseFloat(c.MontoCRC)||0), 0);
-                    const sumB = ws.bancos.reduce((a,c)=>a+(parseFloat(c.Monto_Venta_Original)||0), 0);
-                    const diff = sumT - sumB;
+                    // Colocar los datos en orden de mayor a menor magnitud
+                    const sumT = ws.tsd.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+                    const sumB = ws.bancos.map(c => parseFloat(c.Monto_Venta_Original) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+                    
+                    // Diferencia Contable Real: Tomar el mayor, restarle el menor y conservar el signo del mayor
+                    const absT = Math.abs(sumT);
+                    const absB = Math.abs(sumB);
+                    const gap = Math.abs(absT - absB); // Brecha absoluta para buscar sugerencias
+                    
+                    let diff = 0;
+                    if (absT >= absB) {
+                        diff = sumT < 0 ? -gap : gap;
+                    } else {
+                        diff = sumB < 0 ? -gap : gap;
+                    }
                     
                     const diffEl = document.getElementById('ws-diff');
                     diffEl.innerText = fmt(diff);
@@ -1040,8 +1085,8 @@ window.TSDLogic = {
                         const bAuths = ws.bancos.map(b=>b.Numero_Autorizacion).filter(a=>a);
                         const bCards = ws.bancos.map(b=>b.Tarjeta_Ultimos4).filter(c=>c);
                         availableT = availableT.sort((a, b) => {
-                            const wA = (bAuths.includes(a.Autorizacion) ? 10 : 0) + (bCards.includes(a.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(a.MontoCRC) - diff) < 2 ? 20 : 0);
-                            const wB = (bAuths.includes(b.Autorizacion) ? 10 : 0) + (bCards.includes(b.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(b.MontoCRC) - diff) < 2 ? 20 : 0);
+                            const wA = (bAuths.includes(a.Autorizacion) ? 10 : 0) + (bCards.includes(a.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(a.MontoCRC) - gap) < 2 ? 20 : 0);
+                            const wB = (bAuths.includes(b.Autorizacion) ? 10 : 0) + (bCards.includes(b.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(b.MontoCRC) - gap) < 2 ? 20 : 0);
                             return wB - wA; 
                         });
                     }
@@ -1054,8 +1099,8 @@ window.TSDLogic = {
                         const tAuths = ws.tsd.map(t=>t.Autorizacion).filter(a=>a);
                         const tCards = ws.tsd.map(t=>t.Tarjeta_Ultimos4).filter(c=>c);
                         availableB = availableB.sort((a, b) => {
-                            const wA = (tAuths.includes(a.Numero_Autorizacion) ? 10 : 0) + (tCards.includes(a.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(a.Monto_Venta_Original) - sumT) < 2 ? 20 : 0);
-                            const wB = (tAuths.includes(b.Numero_Autorizacion) ? 10 : 0) + (tCards.includes(b.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(b.Monto_Venta_Original) - sumT) < 2 ? 20 : 0);
+                            const wA = (tAuths.includes(a.Numero_Autorizacion) ? 10 : 0) + (tCards.includes(a.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(a.Monto_Venta_Original) - gap) < 2 ? 20 : 0);
+                            const wB = (tAuths.includes(b.Numero_Autorizacion) ? 10 : 0) + (tCards.includes(b.Tarjeta_Ultimos4) ? 5 : 0) + (Math.abs(parseFloat(b.Monto_Venta_Original) - gap) < 2 ? 20 : 0);
                             return wB - wA;
                         });
                     }
@@ -1100,53 +1145,84 @@ window.TSDLogic = {
     },
 
     wsRemove: function(side, id) {
-        if (side === 'tsd') this.ws.tsd = this.ws.tsd.filter(t => t._id !== id);
-        else this.ws.bancos = this.ws.bancos.filter(b => b._id !== id);
+        if (side === 'tsd') {
+            this.ws.tsd = this.ws.tsd.filter(t => t._id !== id);
+        } else {
+            this.ws.bancos = this.ws.bancos.filter(b => b._id !== id);
+        }
     },
 
     wsSave: function(justificacion = '') {
-        // Regla 1: Blindaje contra Auto-Unión.
+        const removedTsd = this.ws.originalTsd.filter(t => !this.ws.tsd.some(x => x.ID_Transaccion === t.ID_Transaccion));
+        const removedBancos = this.ws.originalBancos.filter(b => !this.ws.bancos.some(x => x.IdTransaccion === b.IdTransaccion));
+
+        // Regla 1: Blindaje contra Auto-Unión Exacta (Blacklist)
         this.ws.originalTsd.forEach(t => {
             this.ws.originalBancos.forEach(b => {
-                const key = String(t.Contrato).trim() + '|' + String(b.IdTransaccion).trim();
+                const key = String(t.ID_Transaccion).trim() + '|' + String(b.IdTransaccion).trim();
                 if (!this.blacklist.includes(key)) this.blacklist.push(key);
             });
         });
         
-        // Regla 2: Destrucción por Contenido (En lugar de por UID).
-        const originTsdIds = this.ws.originalTsd.map(t => t._id);
-        const originBancoIds = this.ws.originalBancos.map(b => b._id);
+        // Regla 2: Destrucción por Colisión (Limpiar manualMatches viejos)
+        const originTsdIds = this.ws.originalTsd.map(t => t.ID_Transaccion);
+        const originBancoIds = this.ws.originalBancos.map(b => b.IdTransaccion);
         
         this.manualMatches = this.manualMatches.filter(m => {
-            const hasTsdCollision = m.tsdArr.some(t => originTsdIds.includes(t._id));
-            const hasBancoCollision = m.bancoArr.some(b => originBancoIds.includes(b._id));
+            const hasTsdCollision = m.tsdArr.some(t => originTsdIds.includes(t.ID_Transaccion));
+            const hasBancoCollision = m.bancoArr.some(b => originBancoIds.includes(b.IdTransaccion));
             return !hasTsdCollision && !hasBancoCollision;
         });
 
-        // Regla 3: Evaluación Final del Workspace.
+        // REGLA DE ORO ESTRICTA: Un Match SOLO es válido si tiene ambas partes (TSD y Banco)
         if (this.ws.tsd.length > 0 && this.ws.bancos.length > 0) {
-            this.manualMatches.push({ 
-                tsdArr: [...this.ws.tsd], 
-                bancoArr: [...this.ws.bancos],
-                justificacion: justificacion
-            });
-            if(window.SysUI) window.SysUI.alert("Conciliación manual aplicada. Se fijará al inicio de la tabla en amarillo.", "Éxito", "success");
-        } else {
-            if(window.SysUI) window.SysUI.alert("Datos desvinculados permanentemente. Reubicados en tabla inferior.", "Separados", "warning");
+            this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion: justificacion });
         }
 
-        // Re-dibujar la tabla principal
+        // Re-ejecutar el algoritmo permitiendo que los liberados busquen nuevas parejas
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+
+        // --- RASTREO DE NUEVOS MATCHES ---
+        const newMatches = [];
+        this.currentMatchedData.forEach(row => {
+            // Ignorar los matches manuales, solo queremos ver si el sistema automático pescó algo
+            if (String(row.EstadoMatch).startsWith('Manual')) return;
+
+            const rowTsdIds = (Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw]).filter(Boolean).map(t => t.ID_Transaccion);
+            const rowBancoIds = (Array.isArray(row._bancoRaw) ? row._bancoRaw : [row._bancoRaw]).filter(Boolean).map(b => b.IdTransaccion);
+
+            const hasRemovedTsd = removedTsd.some(rt => rowTsdIds.includes(rt.ID_Transaccion));
+            const hasRemovedBanco = removedBancos.some(rb => rowBancoIds.includes(rb.IdTransaccion));
+
+            if (hasRemovedTsd || hasRemovedBanco) {
+                newMatches.push(row);
+            }
+        });
+
+        if (newMatches.length > 0) {
+            let msg = "El algoritmo encontró <b>nuevas coincidencias</b> para los datos que acabas de liberar:\n\n";
+            newMatches.forEach(nm => {
+                const monto = nm.MontoTSD.valor !== undefined ? nm.MontoTSD.valor : nm.MontoTSD;
+                msg += `📌 <b>Contrato:</b> ${nm.Contrato} | <b>Banco:</b> ${nm.Banco_Nombre} | <b>Monto:</b> ₡${monto}\n`;
+            });
+            msg += "\nRevise la tabla superior (Resultados Conciliados) para validarlos.";
+            setTimeout(() => window.SysUI.alert(msg, "¡Nuevo Match Automático!", "info"), 500);
+        } else if (this.ws.tsd.length === 0 || this.ws.bancos.length === 0) {
+            if(window.SysUI) window.SysUI.alert("Datos desvinculados correctamente. Han regresado a la bandeja de pendientes.", "Separados", "warning");
+        }
     },
 
     // --------------------------------------------------------
     // MOTOR DE EMPAQUETADO Y GUARDADO (FASE DE PERSISTENCIA)
     // --------------------------------------------------------
     saveTSDCierre: async function() {
-        if (!this.currentMatchedData || !this.currentPendingData) return window.SysUI.alert("No hay datos para procesar. Ejecute un cruce primero.", "Sin datos", "warning");
+        // CLONACIÓN ABSOLUTA: Congelamos el estado visual exacto para que el algoritmo no toque nada
+        const dataMatched = this.currentMatchedData ? JSON.parse(JSON.stringify(this.currentMatchedData)) : [];
+        const dataPending = this.currentPendingData ? JSON.parse(JSON.stringify(this.currentPendingData)) : [];
 
-        const dataMatched = this.currentMatchedData;
-        const dataPending = this.currentPendingData;
+        if (dataMatched.length === 0 && dataPending.length === 0) {
+            return window.SysUI.alert("No hay datos para procesar. Ejecute un cruce primero.", "Sin datos", "warning");
+        }
 
         // Validar si hay algo que guardar
         const pendientesTSDCount = dataPending.filter(r => r.EstadoMatch === 'Pendiente' || r.EstadoMatch === 'Sugerencia (Monto)').length;
@@ -1309,6 +1385,8 @@ window.TSDLogic = {
             
             this.lastTSD = [];
             this.lastBancos = [];
+            this.manualMatches = [];
+            this.blacklist = [];
             if(this.gridMatched) { if (typeof this.gridMatched.destroy === 'function') this.gridMatched.destroy(); this.gridMatched = null; }
             if(this.gridPending) { if (typeof this.gridPending.destroy === 'function') this.gridPending.destroy(); this.gridPending = null; }
             
