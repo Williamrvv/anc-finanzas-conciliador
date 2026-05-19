@@ -97,17 +97,17 @@ try {
         b.AUTORIZACION AS Numero_Autorizacion, b.MONTO_VENTA AS Monto_Venta_Original, b.FECHA_PAGO AS Fecha_Pago_Excel,
         
         -- Datos Financieros Homologados
-        b.MONTONETO AS Monto_Neto,
-        b.COMISION AS Comision,
-        b.RETENCION_VENTAS AS Retencion_Ventas,
-        b.RETENCION_RENTA AS Retencion_Renta,
-        b.AJUSTE_COMISION_INTERNACIONAL AS ACI,
+        b.MONTONETO AS Monto_Neto, b.COMISION AS Comision, b.RETENCION_VENTAS AS Retencion_Ventas,
+        b.RETENCION_RENTA AS Retencion_Renta, b.AJUSTE_COMISION_INTERNACIONAL AS ACI,
         
         a.TipoAjuste, a.Justificacion
     FROM Tbl_Detalle_BAC b
+    INNER JOIN Tbl_Transacciones_Maestra m ON b.IdTransaccion = m.IdTransaccion
     INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
     LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
     WHERE c.ConsolidadoTSD IS NULL
+      AND m.IdMatch IS NOT NULL 
+      AND m.Origen IN ('DETALLADO', 'AJUSTE')
 
     UNION ALL
 
@@ -118,18 +118,18 @@ try {
         s.Nombre AS Nombre_Sucursal_Comercio, RIGHT(RTRIM(LTRIM(s.Numero_Tarjeta)), 4) AS Tarjeta_Ultimos4,
         s.Numero_Autorizacion AS Numero_Autorizacion, s.Monto_Orig AS Monto_Venta_Original, s.Fecha_Pago AS Fecha_Pago_Excel,
 
-        -- Datos Financieros Homologados (Davibank no usa ACI, inyectamos 0)
-        s.Monto_Neto AS Monto_Neto,
-        s.Monto_Comision_Total AS Comision,
-        s.Monto_Retencion_IVA AS Retencion_Ventas,
-        s.Monto_Retencion_ISR AS Retencion_Renta,
-        0 AS ACI,
-
+        -- Datos Financieros Homologados
+        s.Monto_Neto AS Monto_Neto, s.Monto_Comision_Total AS Comision, s.Monto_Retencion_IVA AS Retencion_Ventas,
+        s.Monto_Retencion_ISR AS Retencion_Renta, 0 AS ACI,
+        
         a.TipoAjuste, a.Justificacion
     FROM Tbl_Detalle_Scotia s
+    INNER JOIN Tbl_Transacciones_Maestra m ON s.IdTransaccion = m.IdTransaccion
     INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
     LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
     WHERE c.ConsolidadoTSD IS NULL
+      AND m.IdMatch IS NOT NULL 
+      AND m.Origen IN ('DETALLADO', 'AJUSTE')
 )
 SELECT * 
 FROM FoliosNuevos

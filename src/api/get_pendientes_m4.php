@@ -61,7 +61,8 @@ try {
         LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion
         LEFT JOIN Tbl_Ajustes_Auditoria a ON m.IdTransaccion = a.IdTransaccion
         WHERE m.Banco = 'BAC' 
-          AND m.Origen <> 'PAGADO' 
+          AND m.Origen IN ('DETALLADO', 'AJUSTE')
+          AND m.IdMatch IS NOT NULL 
           AND m.IdMatchTSD IS NULL 
 
         UNION ALL
@@ -69,7 +70,7 @@ try {
         SELECT 
             CAST(m.IdTransaccion AS VARCHAR(50)) AS IdTransaccion, 
             MAX(m.IdCierre) AS Folio_Cierre, 
-            CAST(m.Banco AS VARCHAR(20)) AS Banco, -- Leer directamente de la maestra y asegurarlo en el Group By
+            CAST(m.Banco AS VARCHAR(20)) AS Banco, 
             CAST(MAX(s.MerID) AS VARCHAR(50)) AS Afiliado_MerID, 
             CAST(MAX(s.Terminal) AS VARCHAR(50)) AS Codigo_Sucursal_Terminal,
             CAST(COALESCE(MAX(s.Nombre), 'AJUSTE MANUAL') AS VARCHAR(255)) AS Nombre_Sucursal_Comercio, 
@@ -83,7 +84,8 @@ try {
         LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion
         LEFT JOIN Tbl_Ajustes_Auditoria a ON m.IdTransaccion = a.IdTransaccion
         WHERE m.Banco = 'Davibank' 
-          AND m.Origen <> 'PAGADO' 
+          AND m.Origen IN ('DETALLADO', 'AJUSTE')
+          AND m.IdMatch IS NOT NULL 
           AND m.IdMatchTSD IS NULL 
         GROUP BY m.IdTransaccion, m.Banco
     ";

@@ -1,17 +1,184 @@
 window.AuxiliarLogic = {
     lastTSD: [], lastBancos: [], blacklist: [], manualMatches: [],
-    gridSug: null, gridLimbo: null,
-    currentSugData: [], currentLimboData: [],
+    gridSug: null, gridLimbo: null, gridHistorial: null,
+    currentSugData: [], currentLimboData: [], currentHistorialData: [],
 
     init: function() {
         console.log("⚖️ Módulo Auxiliar Contable (M4) Inicializado");
         if(this.gridSug) { if (typeof this.gridSug.destroy === 'function') this.gridSug.destroy(); this.gridSug = null; }
         if(this.gridLimbo) { if (typeof this.gridLimbo.destroy === 'function') this.gridLimbo.destroy(); this.gridLimbo = null; }
+        if(this.gridHistorial) { if (typeof this.gridHistorial.destroy === 'function') this.gridHistorial.destroy(); this.gridHistorial = null; }
+        
         this.blacklist = [];
         this.manualMatches = [];
         
-        // Auto-Extracción al iniciar el módulo
+        // Iniciar Calendario
+        if (window.flatpickr) {
+            flatpickr("#m4-historial-date", {
+                mode: "range", dateFormat: "Y-m-d", locale: "es", defaultDate: [new Date(), new Date()]
+            });
+        }
+        
+        this.switchTab('bandeja');
         this.fetchPendientes();
+    },
+
+    switchTab: function(tabName) {
+        const btnB = document.getElementById('tab-m4-bandeja');
+        const btnH = document.getElementById('tab-m4-historial');
+        const viewB = document.getElementById('m4-view-bandeja');
+        const viewH = document.getElementById('m4-view-historial');
+        const actionBar = document.getElementById('m4-action-bar');
+
+        if (tabName === 'bandeja') {
+            btnB.className = "px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2";
+            btnH.className = "px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2";
+            viewB.classList.remove('hidden'); 
+            viewB.classList.add('flex');
+            viewH.classList.remove('flex'); 
+            viewH.classList.add('hidden');
+            actionBar.classList.remove('hidden');
+        } else {
+            btnB.className = "px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2";
+            btnH.className = "px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2";
+            viewB.classList.remove('flex'); 
+            viewB.classList.add('hidden');
+            viewH.classList.remove('hidden'); 
+            viewH.classList.add('flex');
+            actionBar.classList.add('hidden');
+            
+            // Si el historial está vacío, cargar por defecto el día de hoy
+            if(this.currentHistorialData.length === 0) this.fetchHistorial();
+        }
+    },
+
+    fetchHistorial: async function() {
+        const dateVal = document.getElementById('m4-historial-date').value;
+        if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
+        let start = dateVal, end = dateVal;
+        if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
+
+        document.body.classList.add('cursor-wait');
+        try {
+            const res = await fetch(`api/get_historial_m4.php?start=${start}&end=${end}`);
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error);
+
+            // AGRUPACIÓN MULTIPLEXADA EN RAM (Al estilo processMatch)
+            const groups = {};
+            json.data.forEach(r => {
+                const id = r.IdMatchTSD;
+                if (!groups[id]) {
+                    groups[id] = {
+                        IdMatchTSD: id, TipoCruce: r.TipoCruceTSD, Folio: r.Folio || 'S/D', FechaFolio: r.FechaFolio || '-',
+                        Justificacion: r.Justificacion || '', tsdArr: [], bancoArr: []
+                    };
+                }
+                if (r.Banco === 'TSD') groups[id].tsdArr.push(r);
+                else groups[id].bancoArr.push(r);
+                if (r.Justificacion) groups[id].Justificacion = r.Justificacion;
+            });
+
+            this.currentHistorialData = Object.values(groups).map(g => {
+                const tsdArr = g.tsdArr;
+                const bancoArr = g.bancoArr;
+                const isMulti = tsdArr.length > 1 || bancoArr.length > 1;
+
+                // Sumas con Regla de Magnitudes
+                const sumT = tsdArr.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b)-Math.abs(a)).reduce((a,b)=>a+b, 0);
+                const sumB = bancoArr.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b)-Math.abs(a)).reduce((a,b)=>a+b, 0);
+                
+                const absT = Math.abs(sumT), absB = Math.abs(sumB), gap = Math.abs(absT - absB);
+                const diffReal = absT >= absB ? (sumT < 0 ? -gap : gap) : (sumB < 0 ? -gap : gap);
+
+                const t0 = tsdArr.length > 0 ? tsdArr[0] : {};
+                const b0 = bancoArr.length > 0 ? bancoArr[0] : {};
+
+                let tarjetaLimpia = String(t0.Tarjeta || '').replace(/[^a-zA-Z0-9]/g, '');
+                const tarjetaRep = tarjetaLimpia.length >= 4 ? `****${tarjetaLimpia.slice(-4)}` : 'S/D';
+
+                return {
+                    _uid: g.IdMatchTSD,
+                    _rowClass: 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
+                    Contrato: isMulti ? `Varios (${tsdArr.length} reg)` : (t0.Contrato || 'Solo Banco'),
+                    Cliente: isMulti ? `Agrupación Múltiple` : (t0.Cliente || '-'),
+                    TarjetaTSD: tarjetaRep,
+                    Autorizacion: t0.Autorizacion || '-',
+                    MontoTSD: { valor: sumT, recibo: isMulti ? '' : (t0.Recibo_Detalle || ''), valueOf: function(){return this.valor;} },
+                    TipoCruce: { tipo: g.TipoCruce, justificacion: g.Justificacion, valueOf: function(){return this.tipo;} },
+                    Banco_Nombre: isMulti ? (bancoArr.length > 1 ? `Múltiples Bancos` : (b0.Banco || '-')) : (b0.Banco || 'Solo TSD'),
+                    Banco_Auth: b0.Autorizacion || '-',
+                    Banco_Monto: sumB,
+                    Diferencia: diffReal,
+                    Folio: g.Folio,
+                    FechaFolio: g.FechaFolio
+                };
+            });
+
+            this.renderHistorialGrid();
+        } catch (error) {
+            window.SysUI.alert("Error al cargar historial: " + error.message, "Fallo", "error");
+        } finally {
+            document.body.classList.remove('cursor-wait');
+        }
+    },
+
+    renderHistorialGrid: function() {
+        const fmtMoney = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v||0).replace(/\./g, ' ');
+
+        const columns = [
+            { title: "Contrato", field: "Contrato", width: 120, cssClass: "font-mono font-bold" },
+            { title: "Cliente", field: "Cliente", width: 160, cssClass: "truncate text-[10px]" },
+            { title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center" },
+            { 
+                title: "Monto TSD", field: "MontoTSD", width: 130, hozAlign: "right", bottomCalc: "sum",
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    const valor = val && 'valor' in val ? val.valor : val;
+                    const recibo = val && 'recibo' in val ? val.recibo : '';
+                    const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
+                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
+                }
+            },
+            { 
+                title: "RESOLUCIÓN APLICADA", field: "TipoCruce", width: 180, hozAlign: "center",
+                cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-green-50/50 dark:bg-green-900/10 font-bold",
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    const tipoString = val && typeof val === 'object' ? val.tipo : val;
+                    const justString = val && typeof val === 'object' ? val.justificacion : '';
+                    
+                    const justHtml = justString ? `<div class="text-[9px] text-green-700 dark:text-green-400 font-normal mt-0.5 truncate max-w-[160px] mx-auto italic" title="${justString}">"${justString}"</div>` : '';
+                    return `<div class="flex flex-col items-center"><span class="text-green-800 dark:text-green-300 uppercase tracking-widest text-[10px]">✅ ${tipoString.replace('[AUX] ', '')}</span>${justHtml}</div>`;
+                }
+            },
+            { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
+            { title: "Auth Banco", field: "Banco_Auth", width: 90, cssClass: "font-mono", hozAlign: "center" },
+            { 
+                title: "Monto", field: "Banco_Monto", hozAlign: "right", formatter: "money", bottomCalc: "sum",
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`, cssClass: "font-bold" 
+            },
+            { 
+                title: "Dif", field: "Diferencia", hozAlign: "right", bottomCalc: "sum",
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-500 dark:text-slate-400">${fmtMoney(val)}</span>`,
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    // Diseño neutro/pacífico: El dato ya está auditado y cerrado, no requiere alertas visuales.
+                    return `<span class="font-medium text-slate-500 dark:text-slate-400 text-sm">${fmtMoney(val)}</span>`;
+                }
+            },
+            { 
+                title: "Datos de Cierre", field: "Folio", width: 140,
+                formatter: (cell) => {
+                    const row = (typeof cell === 'object' && typeof cell.getRow === 'function') ? cell.getRow() : cell;
+                    return `<div class="flex flex-col"><span class="text-[10px] font-mono text-slate-500 font-bold" title="${row.Folio}">${row.Folio.substring(0, 15)}...</span><span class="text-[9px] text-slate-400">📅 ${row.FechaFolio}</span></div>`;
+                }
+            }
+        ];
+
+        if (this.gridHistorial) this.gridHistorial.updateData(this.currentHistorialData);
+        else this.gridHistorial = new VanillaGrid("#table-historial-m4", this.currentHistorialData, columns, { searchInputId: "search-m4-historial" });
     },
 
     fetchPendientes: async function() {

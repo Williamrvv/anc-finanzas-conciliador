@@ -12,7 +12,7 @@
         </div>
         
         <!-- Botonera de Acción Flotante -->
-        <div class="flex items-center mt-2 md:mt-0">
+        <div id="m4-action-bar" class="flex items-center mt-2 md:mt-0 transition-opacity">
             <button id="btn-save-m4" onclick="window.AuxiliarLogic.saveAprobaciones()" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-black text-xs transition-all shadow-md shadow-green-500/30 flex items-center gap-2 shrink-0 hover:scale-105">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
                 APROBAR Y GUARDAR AJUSTES
@@ -20,8 +20,16 @@
         </div>
     </div>
 
-    <!-- Área Superior: Buscador Universal -->
-    <div class="flex justify-between items-center mb-2 shrink-0">
+    <!-- Pestañas de Navegación -->
+    <div class="flex gap-2 mb-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg w-fit shrink-0 border border-slate-200 dark:border-slate-700">
+        <button id="tab-m4-bandeja" onclick="window.AuxiliarLogic.switchTab('bandeja')" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2">⚖️ Bandeja de Resolución</button>
+        <button id="tab-m4-historial" onclick="window.AuxiliarLogic.switchTab('historial')" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">📚 Historial de Aprobados</button>
+    </div>
+
+    <!-- VISTA 1: BANDEJA PRINCIPAL (Por defecto) -->
+    <div id="m4-view-bandeja" class="flex flex-col w-full animate-fade-in-up">
+        <!-- Área Superior: Buscador Universal -->
+        <div class="flex justify-between items-center mb-2 shrink-0">
         <div class="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
             <span class="text-slate-500 dark:text-slate-400 ml-2">Simbología M4:</span>
             <div class="flex items-center gap-1 text-green-700 dark:text-green-500">
@@ -79,9 +87,35 @@
                 <span class="text-[10px] text-green-600 dark:text-green-500 font-medium">Listas para guardar</span>
             </div>
             <div id="table-sug-m4" style="height: 250px; min-height: 200px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
-        </div>
+                </div>
+            </div> <!-- Cierra Contenedor Split de Tablas -->
+        </div> <!-- ¡AQUÍ ESTÁ EL DIV FALTANTE! Cierra m4-view-bandeja -->
 
-    </div>
+    <!-- VISTA 2: HISTORIAL DE APROBADOS (Oculta por defecto) -->
+    <div id="m4-view-historial" class="hidden flex-col w-full gap-2 animate-fade-in-up">
+        <div class="flex justify-between items-center shrink-0">
+            <!-- Selector Rango -->
+            <div class="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha de Folio:</span>
+                <input type="text" id="m4-historial-date" class="bg-slate-50 dark:bg-slate-900 text-sm font-bold text-slate-700 dark:text-white px-3 py-1 outline-none cursor-pointer w-52 text-center rounded border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500" placeholder="Seleccione fechas...">
+                <button onclick="window.AuxiliarLogic.fetchHistorial()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm">Buscar</button>
+            </div>
+            
+            <div class="relative">
+                <input type="text" id="search-m4-historial" placeholder="Filtrar Historial..." class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 w-72 shadow-sm text-slate-700 dark:text-white">
+                <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+        </div>
+        
+        <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div class="bg-slate-100 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center gap-2 shrink-0">
+                <span class="text-lg">📚</span>
+                <h3 class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Historial de Ajustes Manuales y Conciliaciones (M4)</h3>
+            </div>
+            <div id="table-historial-m4" style="height: 600px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
+        </div>
+    </div> <!-- FIN VISTA 2 -->
+
 </div>
 
 <style>
