@@ -405,8 +405,8 @@ window.BACLogic = {
         const det = {};
         this.data.detalle.forEach(r => {
             if(!r._enabled) return;
-            const id = r._id;
-            const net = r._netoACI; // Usamos Neto - ACI
+            const id = r._id; // Mantenemos el ID crudo
+            const net = r._netoACI; 
             if(!det[id]) det[id]={id, count:0, sumNeto:0, rows: []};
             det[id].count++; 
             det[id].sumNeto += net;
@@ -418,6 +418,7 @@ window.BACLogic = {
         this.data.pagado.forEach(r => {
             if(!r._enabled) return;
             const d = r._desc || ""; 
+            // RESTAURADO: El corte mágico de BAC (Quita la palabra "AFI" y deja solo el número)
             const id = d.length > 3 ? d.split(' ')[0].substring(3) : "SIN_ID"; 
             if(id) { 
                 if(!pag[id]) pag[id] = { id, sum: 0, rows: [] }; 
@@ -584,13 +585,13 @@ window.BACLogic = {
         this.renderBACAudit(exceptions);
     },
 
-    // Sub-función lógica para intentar casar por Liquidación
+    // Sub-función lógica para intentar casar por Liquidación y luego por Monto
     tryMatchByLiquidation: function(rowsDet, rowsPag, afiId, timeKey) {
         const matched = [];
-        const unmatchedDet = [];
-        let unmatchedPag = [...rowsPag]; // Copia para ir consumiendo
+        let unmatchedDet = [];
+        let unmatchedPag = [...rowsPag]; // Clonamos para ir extrayendo los que usamos
 
-        // 1. Agrupar Detalle por Liquidación
+        // PASO 1: Agrupar Detalle por Liquidación
         const detByLiq = {};
         rowsDet.forEach(r => {
             const liq = r._liq ? String(r._liq).trim() : "SIN_LIQ";
@@ -599,26 +600,23 @@ window.BACLogic = {
             detByLiq[liq].rows.push(r);
         });
 
-        // 2. Buscar esa Liquidación en el Pagado
+        // PASO 2: Buscar Cruce Exacto de Liquidación en el Pagado
         Object.keys(detByLiq).forEach(liq => {
             if (liq === "SIN_LIQ") {
-                // Si no tiene liquidación, va directo a residuo
                 unmatchedDet.push(...detByLiq[liq].rows);
                 return;
             }
 
             const detGroup = detByLiq[liq];
-            
-            // Buscar en Pagado filas con ese _liqRef
-            // Filtramos el array de pagados pendientes
-            const matchPagRows = unmatchedPag.filter(p => String(p._liqRef).trim() === liq);
-            const matchPagSum = matchPagRows.reduce((s, p) => s + p._monto, 0);
+            // Eliminamos ceros a la izquierda para que 00123 empate con 123
+            const cleanLiq = liq.replace(/^0+/, '');
 
+            const matchPagRows = unmatchedPag.filter(p => p._liqRef && String(p._liqRef).trim().replace(/^0+/, '') === cleanLiq);
+            const matchPagSum = matchPagRows.reduce((s, p) => s + p._monto, 0);
             const diff = detGroup.sum - matchPagSum;
 
-            // SI CUADRA LA LIQUIDACIÓN (Tolerancia 1 colón)
+            // SI CUADRA LA LIQUIDACIÓN
             if (Math.abs(diff) < 1 && matchPagRows.length > 0) {
-                // ¡MATCH! -> A Tabla Verde
                 matched.push({
                     uuid: `${timeKey}-${afiId}-${liq}`,
                     id: `${afiId} - LIQ ${liq}`, 
@@ -629,19 +627,42 @@ window.BACLogic = {
                     rowsDet: detGroup.rows,
                     rowsPag: matchPagRows
                 });
-
-                // Quitar los usados de unmatchedPag
-                unmatchedPag = unmatchedPag.filter(p => String(p._liqRef).trim() !== liq);
+                // Extraer de los huérfanos los pagos que acabamos de usar
+                unmatchedPag = unmatchedPag.filter(p => !matchPagRows.includes(p));
             } else {
-                // NO CUADRA -> A Residuo
                 unmatchedDet.push(...detGroup.rows);
+            }
+        });
+
+        // PASO 3: RESCATE POR MONTO EXACTO (La Bala de Plata)
+        // Si el banco olvidó enviar el número de liquidación, buscamos montos que sean idénticos
+        let finalUnmatchedDet = [];
+        
+        unmatchedDet.forEach(dRow => {
+            // Buscamos un pago huérfano con el mismo monto de la venta
+            const matchIdx = unmatchedPag.findIndex(p => Math.abs(dRow._netoACI - p._monto) < 1);
+            
+            if (matchIdx !== -1) {
+                const pRow = unmatchedPag.splice(matchIdx, 1)[0]; // Lo extraemos del array
+                matched.push({
+                    uuid: `${timeKey}-${afiId}-resc-${dRow._uid}`,
+                    id: `${afiId} (Rescate)`, 
+                    count: 1,
+                    neto: dRow._netoACI,
+                    pagado: pRow._monto,
+                    diferencia_val: dRow._netoACI - pRow._monto,
+                    rowsDet: [dRow],
+                    rowsPag: [pRow]
+                });
+            } else {
+                finalUnmatchedDet.push(dRow);
             }
         });
 
         return {
             matched: matched,
             residue: {
-                rowsDet: unmatchedDet,
+                rowsDet: finalUnmatchedDet,
                 rowsPag: unmatchedPag
             }
         };

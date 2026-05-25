@@ -49,7 +49,7 @@ try {
         $stmtMotivo->execute([$comentario, $idCaso]);
 
     } 
-    elseif (in_array($accion, ['CONTRACARGO', 'DEVOLUCION', 'OTRO_CONTRATO'])) {
+    elseif (in_array($accion, ['CONTRACARGO', 'DEVOLUCION', 'OTRO_CONTRATO', 'CAMBIO_RAZON_SOCIAL'])) {
         if ($estadoActual !== 'NO_REPORTADO') throw new Exception("El caso ya fue procesado.");
         $nuevoEstado = 'CERRADO';
         $notaHistorial = "Cerrado directamente por el Agente ($accion). Nota: $comentario";

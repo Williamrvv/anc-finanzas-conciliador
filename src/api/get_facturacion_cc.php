@@ -1,7 +1,10 @@
 <?php
-// MODO DEBUG: Forzamos ver el error en Postman o en el tab Network del navegador
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
+
+// Forzamos la zona horaria de Costa Rica para evitar fechas futuras
+date_default_timezone_set('America/Costa_Rica');
+
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
@@ -14,12 +17,15 @@ require_once '../db.php';
 require_once 'tsd_db.php';
 
 $emailUsuario = $_SESSION['user']['email'] ?? '';
-$hoy = date('Y-m-d');
 
+// Usamos formato seguro YYYYMMDD para evitar choques de cultura de SQL
+$hoySeguro = date('Ymd'); 
 
 // ========================================================
-$FORZAR_PRUEBA = false;
-$HORA_PRUEBA = "04:33:00"; 
+// MODO PRUEBAS UAT: Forzar hora de inicio (Eliminar en Prod)
+// ========================================================
+$FORZAR_PRUEBA = true; // <-- Cambia a false para apagarlo
+$HORA_PRUEBA = "10:00:00"; // La hora de inicio simulada
 // ========================================================
 
 try {
@@ -28,11 +34,9 @@ try {
 
     // 1. Obtener sucursales asignadas según el Rol del Usuario
     $rolUsuario = $_SESSION['user']['role'] ?? '';
-    
     if ($rolUsuario === 'agente') {
         $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion WHERE EmailAgente = ? AND Activo = 1");
     } else {
-        // Jefes, Administradores y Servicio al Cliente
         $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion WHERE EmailJefe = ? AND Activo = 1");
     }
     
@@ -43,33 +47,35 @@ try {
         throw new Exception("No tiene sucursales asignadas. Solicite a un Administrador que configure sus sucursales desde el panel de Usuarios.");
     }
 
-    // 2. Calcular la fecha/hora de inicio por cada sucursal y armar el bloque WHERE de SQL
+    // 2. Calcular la fecha/hora de inicio por cada sucursal
     $whereConditions = [];
     $infoMetadatos = [];
 
     foreach ($sucursales as $suc) {
         $codigo = $suc['CodigoSucursal'];
         
-        // Buscar la fecha exacta del último voucher procesado en la BD Local HOY para ESTA SUCURSAL
         $stmtLast = $pdoLocal->prepare("
             SELECT MAX(D.Fecha_Transaccion) 
             FROM Tbl_CierreCaja_Detalle D
             INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
-            WHERE H.Sucursal LIKE ? AND CAST(D.Fecha_Transaccion AS DATE) = ?
+            WHERE H.Sucursal LIKE ? AND CONVERT(varchar(8), D.Fecha_Transaccion, 112) = ?
         ");
-        $stmtLast->execute(["%$codigo%", $hoy]);
+        $stmtLast->execute(["%$codigo%", $hoySeguro]);
         $lastDate = $stmtLast->fetchColumn();
 
-        // Si no hay transacciones procesadas hoy, iniciamos a las 00:00:00
-        $fechaInicio = $lastDate ? date('Y-m-d H:i:s', strtotime($lastDate)) : "$hoy 00:00:00";
-        
-        // 🚨 INTERCEPTOR UAT 🚨
-        if ($FORZAR_PRUEBA) {
-            $fechaInicio = "$hoy $HORA_PRUEBA";
+        if ($lastDate) {
+            $timestampSeguro = strtotime($lastDate) - 60; 
+            $fechaInicio = date('Ymd H:i:s', $timestampSeguro);
+        } else {
+            $fechaInicio = "$hoySeguro 00:00:00";
         }
         
-        // Usamos > (mayor estricto) para no repetir el voucher de la hora exacta de corte
-        $whereConditions[] = "(P.LOC_CODE = '$codigo' AND P.Pay_Date > '$fechaInicio')";
+        if ($FORZAR_PRUEBA) {
+            $fechaInicio = "$hoySeguro $HORA_PRUEBA";
+        }
+        
+        // La consulta a la BD
+        $whereConditions[] = "(P.LOC_CODE = '$codigo' AND P.Pay_Date >= '$fechaInicio')";
         
         $infoMetadatos[] = [
             'sucursal' => $codigo,
@@ -81,6 +87,7 @@ try {
     $dynamicWhere = implode(' OR ', $whereConditions);
 
     // 3. Ejecutar la Consulta Dinámica en TSD
+    // Simplificamos la extracción y aseguramos el formato de las fechas
     $sqlFacturacion = "
         SELECT
             P.KNUM AS Numero_Contrato,
@@ -91,16 +98,10 @@ try {
             P.LOC_CODE AS Sucursal,
             P.Ref AS Numero_Autorizacion,
             P.dbr AS ICD,
-            P.Pay_Date,
-            ISNULL(E.sell, C.USDRate) AS Tipo_Cambio_Dia, 
-            ISNULL(E.sell, C.USDRate) * P.AMOUNT AS Conversion
-        FROM dbo.Cpay AS P
-        INNER JOIN dbo.Cra001 AS C ON P.KNUM = C.KNUM
-        OUTER APPLY (
-            SELECT TOP 1 Ex.sell FROM dbo.Exchange AS Ex
-            WHERE Ex.description = 'TO-CR' AND Ex.AsOf <= CAST(P.Pay_Date AS DATE) 
-            ORDER BY Ex.AsOf DESC 
-        ) AS E
+            CONVERT(varchar(23), P.Pay_Date, 121) AS Pay_Date,
+            ISNULL((SELECT TOP 1 Ex.sell FROM dbo.Exchange Ex WHERE Ex.description = 'TO-CR' AND Ex.AsOf <= CAST(P.Pay_Date AS DATE) ORDER BY Ex.AsOf DESC), C.USDRate) AS Tipo_Cambio_Dia
+        FROM dbo.Cpay P
+        INNER JOIN dbo.Cra001 C ON P.KNUM = C.KNUM
         WHERE P.PAY_CHARGE = 'P' 
           AND P.TYPE IN ('3','7','C','F','J')
           AND ($dynamicWhere)
@@ -109,16 +110,56 @@ try {
 
     $stmtFact = $pdoTsd->prepare($sqlFacturacion);
     $stmtFact->execute();
-    $transacciones = $stmtFact->fetchAll(PDO::FETCH_ASSOC);
+    $transaccionesTSD = $stmtFact->fetchAll(PDO::FETCH_ASSOC);
 
-    // 4. Analizar los ICDs involucrados para validar si están cerrados (POST_FLAG)
+    // Si sigue vacía, no es error de código, es que no hay match en TSD
+    if (count($transaccionesTSD) === 0) {
+        throw new Exception("La consulta se ejecutó, pero TSD no devolvió facturas (TYPE P) para las sucursales asignadas en las últimas horas.");
+    }
+
+    // Calcular la Conversión Matemática localmente en PHP para evitar los cruces rotos de SQL
+    foreach ($transaccionesTSD as &$trx) {
+        $tc = floatval($trx['Tipo_Cambio_Dia'] ?? 0);
+        $monto = floatval($trx['Monto_Pago'] ?? 0);
+        $trx['Conversion'] = $monto * $tc;
+    }
+
+    // 4. FILTRO DE SEGURIDAD (Limpiar Traslapes)
+    $contratosTSD = array_unique(array_filter(array_column($transaccionesTSD, 'Numero_Contrato')));
+    $transacciones = [];
+
+    if (!empty($contratosTSD)) {
+        $inClause = str_repeat('?,', count($contratosTSD) - 1) . '?';
+        
+        $stmtCerrados = $pdoLocal->prepare("
+            SELECT Numero_Contrato 
+            FROM Tbl_CierreCaja_Detalle 
+            WHERE Numero_Contrato IN ($inClause) AND CONVERT(varchar(8), Fecha_Transaccion, 112) = ?
+            UNION
+            SELECT NumeroContrato
+            FROM Tbl_Casos_TSD
+            WHERE NumeroContrato IN ($inClause) AND CONVERT(varchar(8), FechaCreacion, 112) = ?
+        ");
+        
+        $parametrosCheck = array_merge($contratosTSD, [$hoySeguro], $contratosTSD, [$hoySeguro]);
+        $stmtCerrados->execute($parametrosCheck);
+        $contratosYaCerrados = $stmtCerrados->fetchAll(PDO::FETCH_COLUMN);
+
+        foreach ($transaccionesTSD as $t) {
+            if (!in_array($t['Numero_Contrato'], $contratosYaCerrados)) {
+                $transacciones[] = $t;
+            }
+        }
+    }
+
+    // 5. Analizar los ICDs involucrados para validar si están cerrados (POST_FLAG)
     $icdsInvolucrados = array_unique(array_filter(array_column($transacciones, 'ICD')));
     $icdsAbiertos = [];
     $icdsInfo = [];
 
     if (!empty($icdsInvolucrados)) {
-        $inClause = str_repeat('?,', count($icdsInvolucrados) - 1) . '?';
-        $stmtDBR = $pdoTsd->prepare("SELECT DBRNum, POST_FLAG, EMP_CODE FROM dbo.DBR WHERE DBRNum IN ($inClause)");
+        $inClauseDBR = str_repeat('?,', count($icdsInvolucrados) - 1) . '?';
+        $stmtDBR = $pdoTsd->prepare("SELECT DBRNum, POST_FLAG, EMP_CODE FROM dbo.DBR WHERE DBRNum IN ($inClauseDBR)");
         $stmtDBR->execute(array_values($icdsInvolucrados));
         $dbrResults = $stmtDBR->fetchAll(PDO::FETCH_ASSOC);
 
@@ -130,20 +171,17 @@ try {
         }
     }
 
-    // 5. MATCH INTELIGENTE: Buscar si hay casos RESUELTOS para estos contratos
+    // 6. MATCH INTELIGENTE
     $casosResueltosMatch = [];
-    $contratosUnicos = array_unique(array_filter(array_column($transacciones, 'Numero_Contrato')));
-    
-    if (!empty($contratosUnicos)) {
-        $inClauseC = str_repeat('?,', count($contratosUnicos) - 1) . '?';
-        // Buscamos los resueltos. Ordenamos ASC para que si hay varios, el array se quede con el más reciente.
+    if (!empty($contratosTSD)) {
+        $inClauseC = str_repeat('?,', count($contratosTSD) - 1) . '?';
         $stmtMatch = $pdoLocal->prepare("
             SELECT IdCaso, NumeroContrato, MontoCRC 
             FROM Tbl_Casos_TSD 
             WHERE Estado = 'RESUELTO' AND NumeroContrato IN ($inClauseC)
             ORDER BY IdCaso ASC
         ");
-        $stmtMatch->execute(array_values($contratosUnicos));
+        $stmtMatch->execute(array_values($contratosTSD));
         foreach ($stmtMatch->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $casosResueltosMatch[$row['NumeroContrato']] = $row;
         }
@@ -155,15 +193,13 @@ try {
         'icds_info' => implode(', ', $icdsInfo), 
         'icds_abiertos' => $icdsAbiertos,
         'transacciones' => $transacciones,
-        'casos_resueltos' => $casosResueltosMatch // <-- Enviamos los matches encontrados
+        'casos_resueltos' => $casosResueltosMatch 
     ]);
 
-} catch (Throwable $e) { // Usamos Throwable para atrapar Fatal Errors de PHP
+} catch (Throwable $e) { // ATRAPAMOS TODO
     echo json_encode([
         'success' => false, 
-        'error' => 'ERROR CRÍTICO: ' . $e->getMessage(),
-        'linea' => $e->getLine(),
-        'archivo' => $e->getFile()
+        'error' => 'ERROR: ' . $e->getMessage() . ' en la línea ' . $e->getLine()
     ]);
 }
 ?>

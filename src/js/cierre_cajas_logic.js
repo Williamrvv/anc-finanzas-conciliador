@@ -17,6 +17,15 @@ window.CierreCajasLogic = {
     vgHistory: null, // Motor VanillaGrid para el historial
     activeTimelineId: null,
 
+    // Función global para copiar contratos al portapapeles
+    copiarContrato: function(contrato, element) {
+        navigator.clipboard.writeText(contrato).then(() => {
+            const originalHtml = element.innerHTML;
+            element.innerHTML = `<span class="text-green-500 dark:text-green-400 flex items-center gap-1">✅ Copiado</span>`;
+            setTimeout(() => { element.innerHTML = originalHtml; }, 1500);
+        }).catch(err => console.error('Error al copiar:', err));
+    },
+
     init: function() {
         console.log("Módulo Cierre de Caja Iniciado");
 
@@ -120,6 +129,7 @@ window.CierreCajasLogic = {
                         <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
                         <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
                         <option value="OTRO_CONTRATO">✅ Cerrar: Va para otro contrato</option>
+                        <option value="CAMBIO_RAZON_SOCIAL">✅ Cerrar: Cambio de Razón Social</option>
                     </select>
                     <textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Justifique detalladamente el motivo..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>
                 `;
@@ -212,6 +222,7 @@ window.CierreCajasLogic = {
                         <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
                         <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
                         <option value="OTRO_CONTRATO">✅ Cerrar: Otro contrato</option>
+                        <option value="CAMBIO_RAZON_SOCIAL">✅ Cerrar: Cambio de Razón Social</option>
                     </select>
                     <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-white rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Justifique el motivo..." value="${c.MotivoAgente || ''}">
                 </div>
@@ -613,7 +624,13 @@ window.CierreCajasLogic = {
                 <div class="flex-grow flex flex-col sm:flex-row justify-between w-full gap-2">
                     <div>
                         <div class="flex items-center gap-2 mb-0.5">
-                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">CTO: ${t.Numero_Contrato}</span>
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                CTO: 
+                                <span onclick="window.CierreCajasLogic.copiarContrato('${t.Numero_Contrato}', this)" class="text-slate-600 dark:text-slate-300 cursor-pointer hover:text-indigo-600 transition-colors flex items-center gap-1 group" title="Clic para copiar">
+                                    ${t.Numero_Contrato}
+                                    <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                </span>
+                            </span>
                             <span class="text-[9px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800">🏢 ${t.Sucursal}</span>
                             <span class="text-[9px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">🕒 ${horaPago}</span>
                         </div>
@@ -1072,7 +1089,13 @@ window.CierreCajasLogic = {
                 <span class="text-[10px] text-slate-400 font-bold">${c.DiasAtraso > 0 ? c.DiasAtraso + 'd' : 'Hoy'}</span>
             </div>
             <h4 class="text-sm font-black text-slate-800 dark:text-white leading-tight mb-1 truncate" title="${c.NombreCliente}">${c.NombreCliente}</h4>
-            <div class="text-[11px] font-mono text-slate-500 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">CTO: ${c.NumeroContrato}</div>
+            <div class="text-[11px] font-mono text-slate-500 mb-3 border-b border-slate-100 dark:border-slate-700 pb-2 flex items-center gap-1">
+                CTO: 
+                <span onclick="event.stopPropagation(); window.CierreCajasLogic.copiarContrato('${c.NumeroContrato}', this)" class="text-slate-600 dark:text-slate-300 cursor-pointer hover:text-indigo-600 transition-colors flex items-center gap-1 group" title="Clic para copiar">
+                    ${c.NumeroContrato}
+                    <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                </span>
+            </div>
             
             <div class="mt-auto flex justify-between items-end">
                 <div class="text-[10px] text-slate-500 uppercase font-bold max-w-[50%] truncate pr-2" title="${c.Sucursal_Relacionada}">
@@ -1143,6 +1166,7 @@ window.CierreCajasLogic = {
                         <option value="CONTRACARGO">✅ Cerrar Directamente: Contracargo</option>
                         <option value="DEVOLUCION">✅ Cerrar Directamente: Devolución</option>
                         <option value="OTRO_CONTRATO">✅ Cerrar Directamente: Va para otro contrato</option>
+                        <option value="CAMBIO_RAZON_SOCIAL">✅ Cerrar Directamente: Cambio de Razón Social</option>
                     </select>
                     <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 resize-none mb-3" placeholder="Justifique el motivo..."></textarea>
                     <div class="flex justify-end">
@@ -1199,6 +1223,7 @@ window.CierreCajasLogic = {
             'CONTRACARGO': "¿Confirmar el cierre directo del caso por motivo de Contracargo?",
             'DEVOLUCION': "¿Confirmar el cierre directo del caso por motivo de Devolución?",
             'OTRO_CONTRATO': "¿Confirmar el cierre directo indicando que pertenece a otro contrato?",
+            'CAMBIO_RAZON_SOCIAL': "¿Confirmar el cierre directo indicando que fue un Cambio de Razón Social?",
             'RESOLVER': "¿Confirmar que el caso ha sido corregido en TSD y marcar como resuelto?",
             'REVERTIR': "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado."
         };

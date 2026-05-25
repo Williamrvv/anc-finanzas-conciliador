@@ -178,7 +178,10 @@ window.AuxiliarLogic = {
         ];
 
         if (this.gridHistorial) this.gridHistorial.updateData(this.currentHistorialData);
-        else this.gridHistorial = new VanillaGrid("#table-historial-m4", this.currentHistorialData, columns, { searchInputId: "search-m4-historial" });
+        else this.gridHistorial = new VanillaGrid("#table-historial-m4", this.currentHistorialData, columns, { 
+            searchInputId: "search-m4-historial",
+            onRowDblClick: (r) => window.AuxiliarLogic.openForenseModal(r) 
+        });
     },
 
     fetchPendientes: async function() {
@@ -881,6 +884,230 @@ window.AuxiliarLogic = {
         } finally {
             btn.innerHTML = originalHtml;
             btn.disabled = false;
+            document.body.classList.remove('cursor-wait');
+        }
+    },
+
+    openForenseModal: async function(row) {
+        if (!row || !row._uid) return;
+        document.body.classList.add('cursor-wait');
+        
+        try {
+            const res = await fetch(`api/get_forense_m4.php?id=${row._uid}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            const fmt = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v||0).replace(/\./g, ' ');
+
+            // 1. ORIGEN: TSD (Izquierda)
+            const htmlTSD = data.tsd.map(t => {
+                const monto = parseFloat(t.MontoCRC) || parseFloat(t.MontoBruto) || 0;
+                return `
+                <div class="relative bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 hover:shadow-md transition-shadow group">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-purple-500 rounded-l-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-xs font-bold text-purple-500 uppercase tracking-wider mb-1">Contrato TSD</p>
+                            <h4 class="font-black text-slate-800 dark:text-white text-lg">${t.Contrato || 'S/D'}</h4>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-black text-2xl ${monto < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">${fmt(monto)}</span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 truncate" title="${t.Cliente}">👤 ${t.Cliente || '-'}</p>
+                    
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">Auth: <b class="text-slate-800 dark:text-white">${t.Autorizacion||'-'}</b></span>
+                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">Tarj: ****${t.Tarjeta_Ultimos4||'S/D'}</span>
+                    </div>
+
+                    <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-400 space-y-3 border border-slate-100 dark:border-slate-700/50">
+                        <p class="text-xs font-bold text-slate-500 uppercase mb-2">Detalles Operativos</p>
+                        <div class="flex justify-between"><span class="font-medium">Recibo/Detalle:</span> <span class="font-bold text-orange-600 truncate max-w-[150px]" title="${t.Recibo_Detalle}">${t.Recibo_Detalle || 'S/D'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Fecha Transacción:</span> <span class="font-mono">${t.FechaPago || t.FechaTransaccion || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Agente:</span> <span class="truncate max-w-[150px]" title="${t.RecibidoPor}">${t.RecibidoPor || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Sucursal:</span> <span>${t.SucursalNombre || '-'} (${t.SucursalCod || '-'})</span></div>
+                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between">
+                            <span class="font-bold text-blue-600 dark:text-blue-400">Monto Origen USD:</span>
+                            <span class="font-mono font-bold text-base">$${t.MontoUSD || 0} <span class="text-xs font-normal text-slate-400">(TC: ₡${t.TipoCambio || 1})</span></span>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // 2. TRÁNSITO: DETALLADO (Centro)
+            const htmlDetallado = data.detallado.map(d => {
+                const isBac = d.Banco === 'BAC';
+                const monto = parseFloat(isBac ? d.BacMonto : d.ScoMonto) || 0;
+                const neto = parseFloat(isBac ? d.BacNeto : d.ScoNeto) || 0;
+                const com = parseFloat(isBac ? d.BacCom : d.ScoCom) || 0;
+                const rVenta = parseFloat(isBac ? d.RETENCION_VENTAS : d.Monto_Retencion_IVA) || 0;
+                const rRenta = parseFloat(isBac ? d.RETENCION_RENTA : d.Monto_Retencion_ISR) || 0;
+                
+                return `
+                <div class="relative bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 hover:shadow-md transition-shadow group">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 rounded-l-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-xs font-bold text-blue-500 uppercase tracking-wider mb-1">Liquidación Bancaria</p>
+                            <h4 class="font-black text-slate-800 dark:text-white text-lg">${d.Banco}</h4>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-black text-2xl ${monto < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">${fmt(monto)}</span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 truncate" title="${isBac ? d.NOMBRECOMERCIO : d.Nombre}">🏢 ${isBac ? d.NOMBRECOMERCIO : d.Nombre || '-'}</p>
+                    
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">Auth: <b class="text-slate-800 dark:text-white">${d.Autorizacion||'-'}</b></span>
+                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">Tarj: ****${d.Tarjeta ? d.Tarjeta.slice(-4) : 'S/D'}</span>
+                    </div>
+
+                    <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-400 space-y-3 border border-slate-100 dark:border-slate-700/50">
+                        <p class="text-xs font-bold text-slate-500 uppercase mb-2">Desglose Financiero</p>
+                        <div class="flex justify-between"><span class="font-medium">Monto Bruto:</span> <span class="font-mono font-bold text-slate-800 dark:text-slate-200">${fmt(monto)}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Comisión Banco:</span> <span class="font-mono text-red-500">${fmt(com)}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Retención Ventas/IVA:</span> <span class="font-mono text-red-500">${fmt(rVenta)}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Retención Renta/ISR:</span> <span class="font-mono text-red-500">${fmt(rRenta)}</span></div>
+                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                            <span class="font-bold text-green-600 dark:text-green-500">Monto Neto a Depositar:</span>
+                            <span class="font-mono font-black text-lg text-green-600 dark:text-green-500">${fmt(neto)}</span>
+                        </div>
+                        <div class="pt-3 mt-3 flex justify-between text-xs text-slate-400">
+                            <span>Afiliado: ${isBac ? d.NUMERO_AFILIADO : d.MerID}</span>
+                            <span>Terminal: ${isBac ? d.BacTerm : d.ScoTerm}</span>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // 3. DESTINO: PAGADO (Derecha)
+            const htmlPagado = data.pagado.map(p => {
+                const isBac = p.Banco === 'BAC';
+                const ref = isBac ? p.BacRef : p.ScoRef;
+                const fecha = isBac ? p.BacFecha : p.ScoFecha;
+                const desc = isBac ? p.BacDesc : p.ScoDesc;
+                const monto = isBac ? parseFloat(p.BacCred||0) : parseFloat(p.ScoMonto||0);
+                
+                return `
+                <div class="relative bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700 hover:shadow-md transition-shadow group">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-teal-500 rounded-l-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <p class="text-xs font-bold text-teal-500 uppercase tracking-wider mb-1">Depósito Cuenta</p>
+                            <h4 class="font-black text-slate-800 dark:text-white text-lg">Abono Real</h4>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-black text-2xl text-teal-600 dark:text-teal-400">+${fmt(monto)}</span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 font-mono">Ref: ${ref || 'S/D'}</p>
+                    
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">📅 ${fecha || '-'}</span>
+                    </div>
+
+                    <details class="[&::-webkit-details-marker]:hidden cursor-pointer">
+                        <summary class="text-sm font-bold text-slate-400 hover:text-teal-600 transition-colors list-none flex items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            Descripción del Extracto
+                        </summary>
+                        <div class="mt-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-500 dark:text-slate-400 italic border border-slate-100 dark:border-slate-700/50">
+                            "${desc || 'Sin descripción en el extracto bancario'}"
+                        </div>
+                    </details>
+                </div>`;
+            }).join('') || `
+                <div class="flex flex-col items-center justify-center h-48 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-4 text-center">
+                    <span class="text-4xl mb-4">👻</span>
+                    <span class="text-base font-bold text-slate-400">Sin depósito bancario registrado</span>
+                    <span class="text-sm text-slate-500">Es posible que sea una transacción de ajuste manual, o el depósito aún no se ha reflejado.</span>
+                </div>`;
+
+            // CREAR E INYECTAR MODAL
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[99999] flex justify-center items-center p-4 lg:p-8 animate-fade-in-up';
+            modal.innerHTML = `
+                <div class="bg-slate-50 dark:bg-slate-900 w-full max-w-6xl h-[90vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10">
+                    
+                    <!-- HEADER MODERNO -->
+                    <div class="bg-white dark:bg-slate-800 px-8 py-5 flex justify-between items-center shrink-0 z-10 shadow-sm">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-black text-slate-800 dark:text-white tracking-tight">Timeline de Transacción</h2>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs font-mono font-bold">Folio: ${row.Folio}</span>
+                                    <span class="text-slate-400 text-xs font-medium">📅 ${row.FechaFolio}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="text-slate-400 hover:text-slate-700 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 w-9 h-9 rounded-full flex items-center justify-center transition-colors" onclick="this.closest('.fixed').remove()">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+
+                    <!-- TIMELINE INDICATOR -->
+                    <div class="px-8 py-3 bg-slate-100 dark:bg-slate-800/50 flex justify-between items-center text-xs font-black tracking-widest uppercase text-slate-400 shrink-0">
+                        <div class="flex-1 text-center text-purple-600 dark:text-purple-400">1. Origen Interno (TSD)</div>
+                        <div class="text-slate-300 dark:text-slate-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></div>
+                        <div class="flex-1 text-center text-blue-600 dark:text-blue-400">2. Procesamiento Adquirente (Banco)</div>
+                        <div class="text-slate-300 dark:text-slate-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></div>
+                        <div class="flex-1 text-center text-teal-600 dark:text-teal-400">3. Aterrizaje en Cuenta (Depósito)</div>
+                    </div>
+
+                    <!-- 3 COLUMNAS -->
+                    <div class="flex-1 flex overflow-hidden p-6 gap-6 relative">
+                        <!-- Conectores de fondo -->
+                        <div class="absolute top-1/2 left-[33%] w-6 border-t-2 border-dashed border-slate-300 dark:border-slate-600 -translate-y-1/2 z-0"></div>
+                        <div class="absolute top-1/2 left-[66%] w-6 border-t-2 border-dashed border-slate-300 dark:border-slate-600 -translate-y-1/2 z-0"></div>
+
+                        <!-- COLUMNA 1: TSD -->
+                        <div class="flex-1 flex flex-col overflow-hidden z-10">
+                            <div class="flex-1 overflow-y-auto space-y-4 pr-3 custom-scrollbar">${htmlTSD}</div>
+                        </div>
+
+                        <!-- COLUMNA 2: Detallado -->
+                        <div class="flex-1 flex flex-col overflow-hidden z-10">
+                            <div class="flex-1 overflow-y-auto space-y-4 pr-3 custom-scrollbar">${htmlDetallado}</div>
+                        </div>
+
+                        <!-- COLUMNA 3: Pagado -->
+                        <div class="flex-1 flex flex-col overflow-hidden z-10">
+                            <div class="flex-1 overflow-y-auto space-y-4 pr-3 custom-scrollbar">${htmlPagado}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- FOOTER AUDITORÍA -->
+                    <div class="bg-white dark:bg-slate-800 px-8 py-4 shrink-0 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
+                        <div class="flex items-center gap-3">
+                            <span class="flex items-center justify-center w-7 h-7 rounded-full bg-green-100 text-green-600 text-base">✓</span>
+                            <span class="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Resolución: <span class="text-slate-900 dark:text-white">${row.TipoCruce.tipo}</span></span>
+                        </div>
+                        <div class="text-sm text-slate-500 italic max-w-xl truncate" title="${row.TipoCruce.justificacion}">
+                            ${row.TipoCruce.justificacion ? `"${row.TipoCruce.justificacion}"` : 'Sin justificación registrada'}
+                        </div>
+                    </div>
+                </div>
+
+                <style>
+                    /* Custom scrollbar para las columnas */
+                    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+                    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 6px; }
+                    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
+                    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+                    .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
+                </style>
+            `;
+            
+            document.body.appendChild(modal);
+
+        } catch (error) {
+            window.SysUI.alert("Error al cargar la trazabilidad: " + error.message, "Fallo", "error");
+        } finally {
             document.body.classList.remove('cursor-wait');
         }
     }

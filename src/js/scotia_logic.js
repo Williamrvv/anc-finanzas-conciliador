@@ -161,10 +161,15 @@ window.ScotiaLogic = {
                 if (currCols.pIva !== -1) mappedData[String(indexMap[currCols.pIva])] = vPIva;
             }
         
+            // Extraer Moneda (Default CRC)
+            const rawCurr = currCols.moneda !== -1 ? String(workingRow[currCols.moneda] || '').toUpperCase() : 'COLON';
+            const detectedCurr = (rawCurr.includes('DOLAR') || rawCurr.includes('USD')) ? 'USD' : 'CRC';
+
             const rowObj = {
                 _uid: 'scodet_' + Math.random().toString(36).substr(2, 9), 
                 _enabled: true,
                 _extractedId: rawMerId, 
+                _currency: detectedCurr, // <--- Bimonetarismo activado
                 _neto: finalNeto,
                 _bruto: finalBruto,
                 _comision: vCom,
