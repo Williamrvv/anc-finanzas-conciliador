@@ -61,7 +61,7 @@ try {
     
     // Consultar si existe
      $stmt = $pdo->prepare("
-        SELECT u.Activo, u.Puede_Administrar, r.Nombre_Rol 
+        SELECT u.Activo, u.Puede_Administrar, r.Nombre_Rol, u.Password_Hash 
         FROM Tbl_Usuarios u 
         INNER JOIN Tbl_Roles r ON u.Id_Rol = r.Id_Rol 
         WHERE u.Email = ?
@@ -78,7 +78,15 @@ try {
         }
         $finalRole = $dbUser['Nombre_Rol'];
         
-        // (Opcional: Se podría hacer un UPDATE aquí para refrescar su Puesto si cambió en Microsoft)
+        // SELLO DE SEGURIDAD O365: Si el Password_Hash está en NULL, lo rellenamos con basura criptográfica
+        // Esto evita que alguien vaya al login local, use el correo y cree una clave suplantando la cuenta.
+        if (empty($dbUser['Password_Hash'])) {
+            // Generamos un hash de un string largo e irrepetible para inutilizar el login local
+            $basuraCriptografica = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+            $stmtSello = $pdo->prepare("UPDATE Tbl_Usuarios SET Password_Hash = ? WHERE Email = ?");
+            $stmtSello->execute([$basuraCriptografica, $email]);
+        }
+        
     } else {
         // NO EXISTE: Crearlo automáticamente
         // Primero, obtener el Id del rol visitante
@@ -86,12 +94,15 @@ try {
         $stmtRol->execute();
         $idRolVisitante = $stmtRol->fetchColumn();
 
+        // Inmediatamente le aplicamos el sello criptográfico para que nazca protegido
+        $basuraCriptografica = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+
         // Insertar usuario
         $stmtInsert = $pdo->prepare("
-            INSERT INTO Tbl_Usuarios (Email, Nombre, Apellidos, Puesto, Id_Rol) 
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO Tbl_Usuarios (Email, Nombre, Apellidos, Puesto, Id_Rol, Password_Hash) 
+            VALUES (?, ?, ?, ?, ?, ?)
         ");
-        $stmtInsert->execute([$email, $name, $surname, $jobTitle, $idRolVisitante]);
+        $stmtInsert->execute([$email, $name, $surname, $jobTitle, $idRolVisitante, $basuraCriptografica]);
     }
 
     $canManage = isset($dbUser['Puede_Administrar']) && $dbUser['Puede_Administrar'] == 1;

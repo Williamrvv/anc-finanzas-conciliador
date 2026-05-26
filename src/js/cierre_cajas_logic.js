@@ -125,7 +125,7 @@ window.CierreCajasLogic = {
                 // Select de Acción e Input Reactivo
                 let motivoHtml = `
                     <select id="accion-home-${c.IdCaso}" class="cc-accion-select-home w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors">
-                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente (Error TSD)</option>
+                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente y Jefatura</option>
                         <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
                         <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
                         <option value="OTRO_CONTRATO">✅ Cerrar: Va para otro contrato</option>
@@ -218,7 +218,7 @@ window.CierreCajasLogic = {
                         <span class="text-amber-700 dark:text-amber-500">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                     </div>
                     <select id="accion-suc-${c.IdCaso}" class="cc-accion-select-suc w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 font-bold transition-colors">
-                        <option value="ESCALAR">⚠️ Escalar a SC (Error)</option>
+                        <option value="ESCALAR">⚠️ Escalar a SC y Jefatura</option>
                         <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
                         <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
                         <option value="OTRO_CONTRATO">✅ Cerrar: Otro contrato</option>
@@ -239,42 +239,54 @@ window.CierreCajasLogic = {
         const inputsMotivo = document.querySelectorAll(inputClass);
         
         const casosData = [];
-        const jefesInvolucrados = new Set(); // Evita jefes duplicados en la alerta
+        const jefesInvolucrados = new Set(); 
+        let hasErrors = false;
 
         inputsMotivo.forEach(input => {
             const motivo = input.value.trim();
-            if (motivo !== '') {
-                const parts = input.id.split('-');
-                const idCaso = parts[parts.length - 1];
+            const parts = input.id.split('-');
+            const idCaso = parts[parts.length - 1];
+            
+            // Aseguramos capturar bien el Select usando el ID dinámico
+            const selectId = origen === 'home' ? `accion-home-${idCaso}` : `accion-suc-${idCaso}`;
+            const selectElement = document.getElementById(selectId);
+            const accionValue = selectElement ? selectElement.value : 'ESCALAR';
+            
+            // Intención de procesar: El usuario escribió algo O cambió la opción por defecto (ESCALAR)
+            if (motivo !== '' || accionValue !== 'ESCALAR') {
                 
-                // Capturar la acción seleccionada
-                const selectId = origen === 'home' ? `accion-home-${idCaso}` : `accion-suc-${idCaso}`;
-                const accionValue = document.getElementById(selectId).value;
-                
-                casosData.push({ id_caso: idCaso, motivo: motivo, accion: accionValue });
+                // VALIDACIÓN ESTRICTA: Estas 3 opciones EXIGEN texto obligatorio
+                if ((accionValue === 'ESCALAR' || accionValue === 'OTRO_CONTRATO' || accionValue === 'CAMBIO_RAZON_SOCIAL') && motivo === '') {
+                    input.classList.add('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
+                    hasErrors = true;
+                } else {
+                    input.classList.remove('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
+                    casosData.push({ id_caso: idCaso, motivo: motivo, accion: accionValue });
 
-                // Extraemos el jefe desde la memoria que guardamos
-                const casoBd = this.pendientesData.find(c => c.IdCaso == idCaso);
-                if (casoBd) {
-                    const nombreJefes = casoBd.NombreJefe || 'Jefatura no asignada';
-                    const emailJefes = casoBd.EmailJefe || 'Sin correo registrado';
-                    jefesInvolucrados.add(`👤 ${nombreJefes} \n   ✉️ ${emailJefes}`);
+                    const casoBd = this.pendientesData.find(c => c.IdCaso == idCaso);
+                    if (casoBd) {
+                        const nombreJefes = casoBd.NombreJefe || 'Jefatura no asignada';
+                        const emailJefes = casoBd.EmailJefe || 'Sin correo registrado';
+                        jefesInvolucrados.add(`👤 ${nombreJefes} \n   ✉️ ${emailJefes}`);
+                    }
                 }
             }
         });
 
-        if (casosData.length === 0) {
-            return SysUI.alert("Debe escribir una justificación en al menos un caso para poder reportarlo.", "Ningún caso justificado", "warning");
+        if (hasErrors) {
+            return SysUI.alert("Las acciones de Escalamiento, Cambio de Razón Social u Otro Contrato exigen una justificación obligatoria. Por favor, revise los campos resaltados en rojo.", "Justificación Requerida", "warning");
         }
 
-        // Armamos el mensaje final mostrando la lista de correos
-        let listaJefesHtml = Array.from(jefesInvolucrados).join('\n');
-        const msg = `Se enviará un reporte con ${casosData.length} caso(s) a los siguientes destinos:\n\n` + 
-                    `📋 Jefe de sucursal:\n${listaJefesHtml}\n\n` + 
-                    `📋 También a:\n👤 Servicio al Cliente\n\n` + 
-                    `¿Desea proceder con el envío?`;
+        if (casosData.length === 0) {
+            return SysUI.alert("Debe seleccionar una acción de cierre o justificar al menos un caso para poder procesarlo.", "Ningún caso seleccionado", "warning");
+        }
 
-        const confirm = await SysUI.confirm(msg, "Confirmar Envío de Reportes", "info");
+        let listaJefesHtml = Array.from(jefesInvolucrados).join('\n');
+        const msg = `Se procesarán ${casosData.length} caso(s). Las notificaciones de cierre informativo y escalamientos se enviarán a:\n\n` + 
+                    `📋 Jefatura de sucursal:\n${listaJefesHtml}\n\n` + 
+                    `¿Desea proceder con el procesamiento?`;
+
+        const confirm = await SysUI.confirm(msg, "Confirmar Procesamiento", "info");
         if (!confirm) return;
 
         try {
@@ -286,19 +298,24 @@ window.CierreCajasLogic = {
             const data = await res.json();
 
             if (data.success) {
-                await SysUI.alert("Los casos han sido reportados exitosamente a las Jefaturas y a Servicio al Cliente.", "Reportes Enviados", "success");
+                // Actualización Optimista: Eliminamos visualmente los casos procesados de inmediato
+                casosData.forEach(casoProcesado => {
+                    this.pendientesData = this.pendientesData.filter(c => c.IdCaso != casoProcesado.id_caso);
+                });
+
+                await SysUI.alert("Los casos han sido procesados y las alertas enviadas exitosamente.", "Proceso Exitoso", "success");
                 
-                // Recargar la bandeja correcta
+                // Forzamos el redibujado con la memoria ya filtrada (mucho más rápido que ir a la BD)
                 if (origen === 'home') {
-                    this.loadBandejaPendientes();
+                    this.renderHomeBandeja(this.pendientesData);
                 } else {
-                    this.loadBandejaPendientes(this.headerData.LOC_CODE);
+                    this.renderSucursalBandeja(this.pendientesData);
                 }
             } else {
                 throw new Error(data.error);
             }
         } catch (e) {
-            SysUI.alert("Ocurrió un error al enviar: " + e.message, "Error Crítico", "error");
+            SysUI.alert("Ocurrió un error: " + e.message, "Error Crítico", "error");
         }
     },
 
@@ -1162,7 +1179,7 @@ window.CierreCajasLogic = {
                 actionHtml = `
                     <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Acción sobre la Inconsistencia</label>
                     <select id="tl-select-accion" class="w-full text-sm px-3 py-2 mb-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors">
-                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente (Error TSD)</option>
+                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente y Jefatura</option>
                         <option value="CONTRACARGO">✅ Cerrar Directamente: Contracargo</option>
                         <option value="DEVOLUCION">✅ Cerrar Directamente: Devolución</option>
                         <option value="OTRO_CONTRATO">✅ Cerrar Directamente: Va para otro contrato</option>
@@ -1207,23 +1224,27 @@ window.CierreCajasLogic = {
         const inputEl = document.getElementById('tl-input-action');
         const comentario = inputEl ? inputEl.value.trim() : '';
         
-        // Si viene del Modal, leemos el Select
         let accionFinal = actionType;
+        let isReporteDinamico = false;
+
+        // Si viene del Modal en estado NO_REPORTADO, leemos el Select
         if (actionType === 'REPORTAR_DINAMICO') {
+            isReporteDinamico = true;
             const selectEl = document.getElementById('tl-select-accion');
             accionFinal = selectEl ? selectEl.value : 'ESCALAR';
         }
         
-        if ((accionFinal === 'ESCALAR' || accionFinal === 'RESOLVER' || accionFinal !== 'REVERTIR') && !comentario) {
-            return SysUI.alert("Debe escribir un comentario para proceder.", "Campo requerido", "warning");
+        // Validación Estricta
+        if ((accionFinal === 'ESCALAR' || accionFinal === 'RESOLVER' || accionFinal === 'OTRO_CONTRATO' || accionFinal === 'CAMBIO_RAZON_SOCIAL') && !comentario) {
+            return SysUI.alert("Debe escribir un comentario/justificación obligatoria para proceder con esta acción.", "Campo requerido", "warning");
         }
 
         const msgs = {
-            'ESCALAR': "¿Enviar este caso a Servicio al Cliente para su corrección en TSD?",
+            'ESCALAR': "¿Enviar este caso a Servicio al Cliente y Jefatura para su corrección en TSD?",
             'CONTRACARGO': "¿Confirmar el cierre directo del caso por motivo de Contracargo?",
             'DEVOLUCION': "¿Confirmar el cierre directo del caso por motivo de Devolución?",
             'OTRO_CONTRATO': "¿Confirmar el cierre directo indicando que pertenece a otro contrato?",
-            'CAMBIO_RAZON_SOCIAL': "¿Confirmar el cierre directo indicando que fue un Cambio de Razón Social?",
+            'CAMBIO_RAZON_SOCIAL': "¿Confirmar el cierre directo por Cambio de Razón Social?",
             'RESOLVER': "¿Confirmar que el caso ha sido corregido en TSD y marcar como resuelto?",
             'REVERTIR': "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado."
         };
@@ -1233,21 +1254,37 @@ window.CierreCajasLogic = {
         if (!confirm) return;
 
         try {
-            const res = await fetch('api/procesar_accion_modal_cc.php', {
+            let url = 'api/procesar_accion_modal_cc.php';
+            let payload = {
+                idCaso: this.activeTimelineId,
+                accion: accionFinal,
+                comentario: comentario
+            };
+
+            // MAGIA DE ARQUITECTURA: Si el caso no ha sido reportado, lo pasamos por la API de correos masivos
+            // empacado como un array de 1 elemento. Así garantizamos que el Jefe reciba el correo.
+            if (isReporteDinamico) {
+                url = 'api/enviar_casos_jefatura.php';
+                payload = {
+                    casos: [{
+                        id_caso: this.activeTimelineId,
+                        motivo: comentario,
+                        accion: accionFinal
+                    }]
+                };
+            }
+
+            const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    idCaso: this.activeTimelineId,
-                    accion: accionFinal,
-                    comentario: comentario
-                })
+                body: JSON.stringify(payload)
             });
             
             const data = await res.json();
 
             if (data.success) {
                 document.getElementById('modal-timeline').classList.add('hidden');
-                SysUI.alert("Acción ejecutada correctamente.", "Éxito", "success");
+                SysUI.alert("Acción procesada correctamente.", "Éxito", "success");
                 this.loadHistoryData(true); // Recarga las tarjetas
                 this.loadBandejaPendientes(); // Recarga insignias
             } else {

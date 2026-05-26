@@ -191,16 +191,85 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
 
     <!-- BARRA ESTADO TIPO EXCEL (Fija abajo) -->
     <div id="global-table-stats" class="fixed bottom-0 left-0 w-full bg-slate-100 dark:bg-slate-900 border-t border-slate-300 dark:border-slate-700 py-1 px-4 flex justify-end items-center gap-6 text-xs font-mono hidden z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
-        <div class="text-slate-500 dark:text-blue-400">SELECCIÓN ACTUAL:</div>
-        <div class="flex gap-2">
-            <span class="text-slate-500 dark:text-blue">RECUENTO:</span>
-            <span id="gst-count" class="font-bold text-slate-800 dark:text-white">0</span>
-        </div>
-        <div class="flex gap-2">
-            <span class="text-slate-500">SUMA:</span>
-            <span id="gst-sum" class="font-bold text-slate-800 dark:text-white">0</span>
+        <!-- ... stats ... -->
+    </div>
+
+    <!-- MODAL FORZAR CONTRASEÑA -->
+    <?php if(isset($_SESSION['user']) && ($_SESSION['user']['req_password'] ?? false)): ?>
+    <div id="modal-force-pass" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-700 transform transition-all animate-fade-in-up">
+            <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-700 bg-indigo-600 text-center">
+                <span class="text-4xl block mb-2">🔐</span>
+                <h3 class="text-lg font-black text-white">Configuración de Seguridad</h3>
+                <p class="text-indigo-200 text-xs mt-1">Debe establecer una contraseña privada</p>
+            </div>
+            <form id="form-force-pass" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nueva Contraseña</label>
+                    <input type="password" id="fp-pass1" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Confirmar Contraseña</label>
+                    <input type="password" id="fp-pass2" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+                    <p id="fp-error" class="text-xs text-red-500 font-bold mt-2 hidden">Las contraseñas no coinciden.</p>
+                </div>
+                <button type="submit" id="fp-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all mt-4 mb-2 hover:-translate-y-0.5">
+                    Guardar Contraseña
+                </button>
+                <div class="text-center mt-2 border-t border-slate-100 dark:border-slate-700 pt-3">
+                    <a href="logout.php" class="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors">
+                        Cancelar y Cerrar Sesión
+                    </a>
+                </div>
+            </form>
         </div>
     </div>
+    <script>
+        document.getElementById('form-force-pass').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const p1 = document.getElementById('fp-pass1').value;
+            const p2 = document.getElementById('fp-pass2').value;
+            const err = document.getElementById('fp-error');
+            const btn = document.getElementById('fp-btn');
+
+            if (p1.length < 6) {
+                err.innerText = "La contraseña debe tener al menos 6 caracteres.";
+                err.classList.remove('hidden'); return;
+            }
+            if (p1 !== p2) {
+                err.innerText = "Las contraseñas no coinciden.";
+                err.classList.remove('hidden'); return;
+            }
+
+            err.classList.add('hidden');
+            btn.disabled = true;
+            btn.innerText = "Guardando...";
+
+            try {
+                const res = await fetch('api/force_password.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ password: p1 })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    document.getElementById('modal-force-pass').remove();
+                    // Refrescar para limpiar la bandera de sesión
+                    window.location.reload();
+                } else {
+                    err.innerText = data.error;
+                    err.classList.remove('hidden');
+                }
+            } catch (error) {
+                err.innerText = "Error de red. Intente de nuevo.";
+                err.classList.remove('hidden');
+            }
+            btn.disabled = false;
+            btn.innerText = "Guardar Contraseña";
+        });
+    </script>
+    <?php endif; ?>
 
     <!-- CSS y JS de Flatpickr (Calendario Rango) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">

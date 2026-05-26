@@ -56,6 +56,7 @@ try {
         // Manejo de Switches (Checkboxes html mandan 'on' si están marcados)
         $activo = isset($_POST['activo']) && $_POST['activo'] === 'on' ? 1 : 0;
         $puedeAdmin = isset($_POST['puedeAdmin']) && $_POST['puedeAdmin'] === 'on' ? 1 : 0;
+        $forzarReseteo = isset($_POST['resetPassword']) && $_POST['resetPassword'] === 'on';
 
         if (!$email || !$nombre || !$idRol) throw new Exception("Faltan datos obligatorios.");
 
@@ -64,13 +65,20 @@ try {
         if ($isEdit) {
             if ($email === $_SESSION['user']['email'] && $activo == 0) throw new Exception("No puedes desactivar tu propia cuenta.");
 
-            $sql = "UPDATE Tbl_Usuarios SET Nombre=?, Apellidos=?, Puesto=?, Id_Rol=?, Activo=?, Puede_Administrar=? WHERE Email=?";
-            $params = [$nombre, $apellidos, $puesto, $idRol, $activo, $puedeAdmin, $email];
-            
-            if (!empty($password)) {
+            if ($forzarReseteo) {
+                // Si el admin activó Forzar Reseteo, destruimos la clave actual dejándola en NULL
+                $sql = "UPDATE Tbl_Usuarios SET Nombre=?, Apellidos=?, Puesto=?, Id_Rol=?, Activo=?, Puede_Administrar=?, Password_Hash=NULL WHERE Email=?";
+                $params = [$nombre, $apellidos, $puesto, $idRol, $activo, $puedeAdmin, $email];
+            } elseif (!empty($password)) {
+                // Si el admin escribió una clave manual, la guardamos
                 $sql = "UPDATE Tbl_Usuarios SET Nombre=?, Apellidos=?, Puesto=?, Id_Rol=?, Activo=?, Puede_Administrar=?, Password_Hash=? WHERE Email=?";
                 $params = [$nombre, $apellidos, $puesto, $idRol, $activo, $puedeAdmin, password_hash($password, PASSWORD_DEFAULT), $email];
+            } else {
+                // Actualización normal sin tocar la clave
+                $sql = "UPDATE Tbl_Usuarios SET Nombre=?, Apellidos=?, Puesto=?, Id_Rol=?, Activo=?, Puede_Administrar=? WHERE Email=?";
+                $params = [$nombre, $apellidos, $puesto, $idRol, $activo, $puedeAdmin, $email];
             }
+            
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
         } else {

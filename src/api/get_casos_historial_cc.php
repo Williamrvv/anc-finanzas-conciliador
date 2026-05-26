@@ -27,12 +27,12 @@ try {
     // Estos no se paginan porque el usuario debe ver todo lo que debe hacer hoy.
     // =========================================================
     $sqlActivos = "SELECT C.IdCaso, C.Estado, C.NumeroContrato, C.NombreCliente, C.Sucursal_Relacionada, 
-                          C.MontoCRC, C.DiasAtraso, 
+                          C.MontoCRC, C.DiasAtraso, C.ICD_Relacionado,
                           CONVERT(varchar, C.FechaCreacion, 103) AS FechaCreacion,
                           ISNULL(U.Nombre, C.EmailCreador) AS CreadoPor
                    FROM Tbl_Casos_TSD C
                    LEFT JOIN Tbl_Usuarios U ON C.EmailCreador = U.Email
-                   WHERE C.Estado != 'RESUELTO'";
+                   WHERE C.Estado NOT IN ('RESUELTO', 'CERRADO')";
     
     $paramsActivos = [];
 
@@ -54,11 +54,11 @@ try {
 
 
     // =========================================================
-    // 2. CARGAR HISTORIAL RESUELTO (Paginado y Buscado en BD)
+    // 2. CARGAR HISTORIAL RESUELTO O CERRADO (Paginado y Buscado en BD)
     // =========================================================
     $sqlBaseResueltos = "FROM Tbl_Casos_TSD C
                          LEFT JOIN Tbl_Usuarios U ON C.EmailCreador = U.Email
-                         WHERE C.Estado = 'RESUELTO'";
+                         WHERE C.Estado IN ('RESUELTO', 'CERRADO')";
     $paramsResueltos = [];
 
     // RBAC

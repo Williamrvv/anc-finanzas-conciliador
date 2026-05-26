@@ -75,6 +75,7 @@ try {
         $gruposPorJefe[$emailJefe]['casos'][] = [
             'id_caso' => $idC,
             'motivo' => $inputCaso['motivo'],
+            'accion' => $inputCaso['accion'] ?? 'ESCALAR', 
             'datos_bd' => $r
         ];
     }
@@ -87,7 +88,8 @@ try {
     $sqlEscalar = "UPDATE Tbl_Casos_TSD SET Estado = 'PENDIENTE_RESOLUCION', MotivoAgente = ?, TokenAprobacionJefe = ?, TokenResolucionCS = ? WHERE IdCaso = ?";
     $stmtEscalar = $pdo->prepare($sqlEscalar);
 
-    $sqlCerrar = "UPDATE Tbl_Casos_TSD SET Estado = 'CERRADO', MotivoAgente = ?, TokenAprobacionJefe = NULL, TokenResolucionCS = NULL WHERE IdCaso = ?";
+    // Cierre Absoluto (Solo cambia el estado y el motivo)
+    $sqlCerrar = "UPDATE Tbl_Casos_TSD SET Estado = 'CERRADO', MotivoAgente = ? WHERE IdCaso = ?";
     $stmtCerrar = $pdo->prepare($sqlCerrar);
 
     $sqlHist = "INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, ?, ?, ?)";
@@ -102,44 +104,49 @@ try {
         foreach ($grupo['casos'] as $item) {
             $idC = $item['id_caso'];
             $motivo = $item['motivo'];
-            $accion = $item['accion'] ?? 'ESCALAR'; // Valor por defecto
+            $accion = $item['accion'] ?? 'ESCALAR'; // Si el frontend no manda acción, escala por defecto
             $r = $item['datos_bd'];
             
             $montoFmt = number_format((float)$r['MontoCRC'], 2, '.', ',');
-            $tokenJefe = bin2hex(random_bytes(16)); 
             
-            if ($accion === 'ESCALAR') {
+            // Verificamos explícitamente si es un cierre directo
+            if ($accion === 'CONTRACARGO' || $accion === 'DEVOLUCION' || $accion === 'OTRO_CONTRATO' || $accion === 'CAMBIO_RAZON_SOCIAL') {
+                
+                // CIERRE DIRECTO (AR es autónomo)
+                $motivoCompleto = "[$accion] " . $motivo;
+                $stmtCerrar->execute([$motivoCompleto, $idC]);
+                $stmtHist->execute([$idC, 'ESTADO_CERRADO', $emailUsuario, "Cerrado directamente por el Agente. Motivo: $accion. Nota: $motivo"]);
+                
+                // Tarjeta HTML Informativa para el Jefe (Sin botón de resolver)
+                $btnHtml = "";
+                $etiquetaHtml = "<span style='font-size: 11px; background-color: #d1fae5; color: #047857; padding: 2px 6px; border-radius: 4px; font-weight: bold;'>✅ CERRADO INFORMATIVO ($accion)</span>";
+                $motivoParaCorreo = $motivoCompleto; 
+                $colorBorde = '#10b981';
+
+            } else {
+                
+                // FLUJO NORMAL (Escalar a SC y Jefe)
+                $tokenJefe = bin2hex(random_bytes(16)); 
                 $tokenCS = bin2hex(random_bytes(16));
+                
                 $stmtEscalar->execute([$motivo, $tokenJefe, $tokenCS, $idC]);
                 $stmtHist->execute([$idC, 'ENVIADO_RESOLUCION', $emailUsuario, 'Caso escalado a Jefatura y SC para corrección.']);
                 
-                // Agregamos a la cola de Servicio al Cliente
                 $todosLosCasosParaCS[] = [
                     'datos' => $r,
                     'motivo' => $motivo,
                     'token' => $tokenCS
                 ];
 
-                // Tarjeta HTML con Botón de Resolver para el Jefe
                 $btnHtml = "<div style='text-align: center; margin-top: 10px;'>
                                 <a href='https://$dominioLocal/resolver_caso_cc.php?token=$tokenJefe&actor=" . urlencode($emailDestino) . "' style='display: block; width: 100%; background-color: #10b981; color: #ffffff; text-decoration: none; padding: 12px 0; border-radius: 6px; font-weight: bold; font-size: 14px;'>Resolver Caso</a>
                             </div>";
                 $etiquetaHtml = "<span style='font-size: 11px; background-color: #fef3c7; color: #b45309; padding: 2px 6px; border-radius: 4px; font-weight: bold;'>⚠️ REQUIERE ACCIÓN</span>";
-            } else {
-                // CIERRE DIRECTO (Contracargo, Devolución, Otro)
-                $motivoCompleto = "[$accion] " . $motivo;
-                $stmtCerrar->execute([$motivoCompleto, $idC]);
-                $stmtHist->execute([$idC, 'ESTADO_CERRADO', $emailUsuario, "Cerrado directamente por el Agente. Motivo: $accion. Nota: $motivo"]);
-                
-                // Tarjeta HTML Informativa (Sin botón)
-                $btnHtml = "";
-                $etiquetaHtml = "<span style='font-size: 11px; background-color: #d1fae5; color: #047857; padding: 2px 6px; border-radius: 4px; font-weight: bold;'>✅ CERRADO INFORMATIVO ($accion)</span>";
-                $motivo = $motivoCompleto; // Para mostrarlo en el correo
+                $motivoParaCorreo = $motivo;
+                $colorBorde = '#ef4444';
             }
 
             // Construir tarjeta HTML unificada
-            $colorBorde = ($accion === 'ESCALAR') ? '#ef4444' : '#10b981';
-            
             $htmlBody .= "
                 <li style='background-color: #ffffff; padding: 20px; margin-bottom: 15px; border-left: 5px solid $colorBorde; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;'>
                     <div style='display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 10px;'>
@@ -158,22 +165,22 @@ try {
                     </div>
                     <div style='background-color: #f8fafc; color: #334155; padding: 12px 15px; border-radius: 6px; font-size: 13px; border: 1px solid #e2e8f0; margin-bottom: 15px;'>
                         <b style='display: block; margin-bottom: 5px;'>Justificación del Agente Rentista:</b>
-                        $motivo
+                        $motivoParaCorreo
                     </div>
                     $btnHtml
                 </li>";
-        } // Fin del foreach de casos
+        } // Fin del foreach de casos individuales
 
         // Armar y enviar el correo para ESTE jefe
         $bodyFinal = "
         <div style='font-family: Arial, sans-serif; color: #334155; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;'>
             <div style='background-color: #4f46e5; color: #ffffff; padding: 25px 20px; text-align: center;'>
-                <h2 style='margin: 0; font-size: 22px; font-weight: bold;'>Resolución Requerida en TSD</h2>
+                <h2 style='margin: 0; font-size: 22px; font-weight: bold;'>Resolución y Novedades TSD</h2>
                 <p style='margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;'>Integración Regional de Ingresos (IRI)</p>
             </div>
             <div style='padding: 30px 20px; background-color: #ffffff;'>
                 <p>Estimada Jefatura <b>({$grupo['nombreJefe']})</b>,</p>
-                <p>El usuario <b>$nombreReal</b> ha reportado inconsistencias en su sucursal. Por favor, realice los ajustes correspondientes en TSD y marque el caso como resuelto.</p>
+                <p>El usuario <b>$nombreReal</b> ha reportado las siguientes inconsistencias en su sucursal. Por favor, revise el estado de cada una.</p>
                 <ul style='list-style-type: none; padding: 0; margin: 20px 0;'>
                     $htmlBody
                 </ul>

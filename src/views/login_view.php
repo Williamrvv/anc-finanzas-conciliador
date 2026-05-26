@@ -48,7 +48,7 @@ $loginUrl = "https://login.microsoftonline.com/$tenantId/oauth2/v2.0/authorize?c
             <div>
                 <label for="password" class="block text-sm font-medium leading-6 text-slate-900 dark:text-slate-300">Contraseña</label>
                 <div class="mt-1">
-                    <input id="password" name="password" type="password" required class="block w-full rounded-md border-0 py-1.5 px-3 text-slate-900 dark:text-white dark:bg-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-slate-600 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 outline-none transition-all">
+                    <input id="password" name="password" type="password" class="block w-full rounded-md border-0 py-1.5 px-3 text-slate-900 dark:text-white dark:bg-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-slate-600 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6 outline-none transition-all">
                 </div>
             </div>
 

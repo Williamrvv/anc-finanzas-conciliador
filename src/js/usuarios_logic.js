@@ -13,6 +13,22 @@ window.UsuariosLogic = {
     
     init: function() {
         this.loadData();
+        
+        // UX: Si activa el Reseteo, bloquea el campo de escribir contraseña
+        const resetToggle = document.getElementById('u-reset-pass');
+        const passInput = document.getElementById('u-password');
+        if (resetToggle && passInput) {
+            resetToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    passInput.value = '';
+                    passInput.disabled = true;
+                    passInput.classList.add('opacity-50', 'cursor-not-allowed');
+                } else {
+                    passInput.disabled = false;
+                    passInput.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            });
+        }
     },
 
     loadData: async function() {
@@ -192,6 +208,15 @@ window.UsuariosLogic = {
             
             this.selectedBranches.clear();
             passHelp.innerText = "La contraseña es opcional si el usuario utilizará Office 365.";
+        }
+        
+        // Resetear el switch y liberar el input de clave
+        const resetToggle = document.getElementById('u-reset-pass');
+        const passInput = document.getElementById('u-password');
+        if (resetToggle && passInput) {
+            resetToggle.checked = false;
+            passInput.disabled = false;
+            passInput.classList.remove('opacity-50', 'cursor-not-allowed');
         }
 
         this.toggleSucursales(); // Ejecuta lógica visual del rol

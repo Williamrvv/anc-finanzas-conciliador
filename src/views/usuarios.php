@@ -161,10 +161,23 @@
                     </div>
                 </div>
 
-                <div class="bg-blue-50/50 dark:bg-blue-900/10 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30">
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contraseña de Respaldo</label>
-                    <input type="password" name="password" id="u-password" placeholder="••••••••" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
-                    <p id="u-pass-help" class="text-[9px] text-slate-400 mt-1"></p>
+                <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30">
+                    <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                        <div class="flex-grow w-full">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cambiar / Asignar Contraseña Manual</label>
+                            <input type="password" name="password" id="u-password" placeholder="••••••••" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
+                            <p id="u-pass-help" class="text-[9px] text-slate-400 mt-1"></p>
+                        </div>
+                        <div class="w-full sm:w-auto shrink-0 flex items-center justify-between sm:justify-center border-t sm:border-t-0 sm:border-l border-blue-200 dark:border-blue-800 pt-3 sm:pt-0 sm:pl-4 mt-1 sm:mt-0">
+                            <label class="flex items-center cursor-pointer gap-2 group" title="Al guardar, borrará la clave actual y obligará al usuario a crear una nueva en su próximo ingreso.">
+                                <div class="relative">
+                                    <input type="checkbox" name="resetPassword" id="u-reset-pass" class="sr-only peer">
+                                    <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                                </div>
+                                <span class="text-xs font-bold text-slate-600 dark:text-slate-300 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">Forzar Reseteo</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
 

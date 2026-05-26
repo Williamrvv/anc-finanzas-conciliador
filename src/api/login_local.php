@@ -9,55 +9,78 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// 1. Sanitización Básica (Anti-Prompt / Anti-SQLi)
 $email = filter_var(trim($_POST['email'] ?? ''), FILTER_SANITIZE_EMAIL);
 $password = $_POST['password'] ?? '';
 
-// Retraso artificial de 1 segundo (Anti Fuerza Bruta / Time-based attacks)
-sleep(1);
+sleep(1); // Anti Fuerza Bruta
 
-if (!$email || !$password) {
-    echo json_encode(['success' => false, 'error' => 'Faltan credenciales']);
+if (empty($email)) {
+    echo json_encode(['success' => false, 'error' => 'Por favor, ingrese su correo electrónico.']);
     exit;
 }
 
 try {
     $pdo = Database::connect();
     
-    // 2. Consulta Segura (Prepared Statement) que trae también el Rol
     $stmt = $pdo->prepare("
-        SELECT u.Nombre, u.Apellidos, u.Puesto, u.Password_Hash, u.Activo, u.Puede_Administrar, r.Nombre_Rol 
+        SELECT u.Email, u.Nombre, u.Apellidos, u.Puesto, u.Password_Hash, u.Activo, u.Puede_Administrar, r.Nombre_Rol 
         FROM Tbl_Usuarios u
         INNER JOIN Tbl_Roles r ON u.Id_Rol = r.Id_Rol
         WHERE u.Email = ?
     ");
-    // Reemplazar por (Manejo de Nulls y Unificación de Error):
     $stmt->execute([$email]);
     $user = $stmt->fetch();
 
-    // Evitar Fatal Error en PHP 8.2 si el usuario no tiene contraseña (NULL)
-    $hash = $user['Password_Hash'] ?? '';
-
-    // 3. Lógica de Seguridad Estricta (Mensaje Genérico Único)
-    // Si NO existe, o si está DADO DE BAJA, o si FALLA LA CLAVE -> Mismo error para no dar pistas.
-    if (!$user || $user['Activo'] == 0 || !password_verify($password, $hash)) {
+    if (!$user) {
         echo json_encode(['success' => false, 'error' => 'Usuario y/o contraseña incorrectos.']);
         exit;
     }
 
-    // 4. Iniciar Sesión Exitosa
+    if ($user['Activo'] == 0) {
+        echo json_encode(['success' => false, 'error' => 'Su cuenta se encuentra inactiva o dada de baja. Contacte al administrador.']);
+        exit;
+    }
+
+    $hash = $user['Password_Hash'];
+    $requiereCambio = false;
+
+    // LÓGICA DE BYPASS: Si la BD tiene el hash vacío y el usuario NO mandó contraseña...
+    if (empty($hash) && empty($password)) {
+        // Le damos pase libre temporal, PERO le levantamos la bandera de exigir cambio
+        $requiereCambio = true;
+    } 
+    // Si la BD TIENE contraseña, procedemos con validación estricta
+    elseif (!empty($hash)) {
+        if (empty($password)) {
+            echo json_encode(['success' => false, 'error' => 'Debe ingresar su contraseña.']);
+            exit;
+        }
+        if (!password_verify($password, $hash)) {
+            echo json_encode(['success' => false, 'error' => 'Usuario y/o contraseña incorrectos.']);
+            exit;
+        }
+    } 
+    // Si la BD NO TIENE contraseña, pero el usuario trató de inventar una para entrar (Ataque a ciegas)
+    else {
+        // Le mandamos el mismo error genérico que si se hubiera equivocado de clave, 
+        // así no sabe que la cuenta está vulnerable esperando un ingreso en blanco.
+        echo json_encode(['success' => false, 'error' => 'Usuario y/o contraseña incorrectos.']);
+        exit;
+    }
+
+    // Iniciar Sesión Existosa (o en modo Reseteo)
     $_SESSION['user'] = [
-        'email' => $email,
+        'email' => $user['Email'],
         'name' => $user['Nombre'] . ' ' . $user['Apellidos'],
         'jobTitle' => $user['Puesto'],
         'role' => $user['Nombre_Rol'],
-        'can_manage' => ($user['Puede_Administrar'] == 1 || $user['Nombre_Rol'] === 'admin')
+        'can_manage' => ($user['Puede_Administrar'] == 1 || $user['Nombre_Rol'] === 'admin'),
+        'req_password' => $requiereCambio
     ];
 
     echo json_encode(['success' => true]);
 
 } catch (Exception $e) {
-    // Log interno del error, no lo exponemos al cliente
     error_log("Login Error: " . $e->getMessage());
     echo json_encode(['success' => false, 'error' => 'Error interno del servidor.']);
 }

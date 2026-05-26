@@ -24,8 +24,8 @@ $hoySeguro = date('Ymd');
 // ========================================================
 // MODO PRUEBAS UAT: Forzar hora de inicio (Eliminar en Prod)
 // ========================================================
-$FORZAR_PRUEBA = true; // <-- Cambia a false para apagarlo
-$HORA_PRUEBA = "10:00:00"; // La hora de inicio simulada
+$FORZAR_PRUEBA = false; // <-- Cambia a false para apagarlo
+$HORA_PRUEBA = "06:00:00"; // La hora de inicio simulada
 // ========================================================
 
 try {
