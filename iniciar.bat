@@ -1,72 +1,107 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-title Iniciando Ecosistema IRI
+:: Tema Retro: Verde brillante sobre fondo negro
+color 0A
+title BOOT SEQUENCE - IRI SYSTEM
 
-set "ARCHIVO_ENV=.env"
-set "ARCHIVO_TEMP=.env.tmp"
+cls
+echo.
+echo    ====================================================
+echo.
+echo       ___  ____  ___ 
+echo      ^|_ _^|^|  _ \^|_ _^|
+echo       ^| ^| ^| ^|_) ^|^| ^| 
+echo       ^| ^| ^|  _ ^< ^| ^| 
+echo      ^|___^|^|_^| \_\___^|
+echo.
+echo      INTEGRACION REGIONAL DE INGRESOS
+echo      SYSTEM KERNEL v1.0.4
+echo.
+echo    ====================================================
+echo.
 
-echo Buscando IP local principal...
+:: Simular chequeo de memoria inicial (1 segundo)
+echo [SYS] INITIATING BOOT SEQUENCE...
+ping -n 2 127.0.0.1 >nul
 
 :: ==========================================
-:: 1. OBTENER LA IP (Truco del Ping)
+:: 1. OBTENER LA IP (Red)
 :: ==========================================
+echo [SYS] SCANNING NETWORK INTERFACES...
+ping -n 2 127.0.0.1 >nul
+
 for /f "tokens=2 delims=[]" %%i in ('ping -4 -n 1 %COMPUTERNAME%') do set "IP_LOCAL=%%i"
 
 if "%IP_LOCAL%"=="" (
-    echo [ERROR] No se pudo obtener la IP.
+    color 0C
+    echo [FATAL] CRITICAL NETWORK FAILURE. NO IPV4 DETECTED.
+    echo [FATAL] SYSTEM HALTED.
     pause
     exit /b
 )
 
-echo [OK] IP detectada: %IP_LOCAL%
+echo [ OK ] IPV4 ADDRESS DETECTED: %IP_LOCAL%
+ping -n 2 127.0.0.1 >nul
 
 :: ==========================================
 :: 2. ACTUALIZAR EL ARCHIVO .ENV
 :: ==========================================
+set "ARCHIVO_ENV=.env"
+set "ARCHIVO_TEMP=.env.tmp"
+
+echo [SYS] LOCATING CONFIGURATION FILE (.env)...
+ping -n 2 127.0.0.1 >nul
+
 if not exist "%ARCHIVO_ENV%" (
-    echo [ERROR] No se encontro el archivo %ARCHIVO_ENV% en esta carpeta.
+    color 0C
+    echo [FATAL] CONFIG FILE NOT FOUND. SYSTEM HALTED.
     pause
     exit /b
 )
 
-echo Actualizando variables DB_HOST y O365_REDIRECT_URI...
+echo [ OK ] FILE LOCATED.
+echo [SYS] INITIATING HEX-PATCH ON VARIABLES...
 
 if exist "%ARCHIVO_TEMP%" del "%ARCHIVO_TEMP%"
 
-:: Leer linea por linea asegurando no borrar lineas vacias
+:: Lógica real de reemplazo
 for /f "tokens=1* delims=:" %%X in ('findstr /n "^" "%ARCHIVO_ENV%"') do (
     set "LINEA=%%Y"
     if "!LINEA!"=="" (
         echo.>>"%ARCHIVO_TEMP%"
     ) else (
-        :: Partir la linea por el signo "=" para ver que variable es
         for /f "tokens=1* delims==" %%A in ("!LINEA!") do (
             if "%%A"=="DB_HOST" (
-                :: Inyecta la IP limpia
                 echo DB_HOST=%IP_LOCAL%>>"%ARCHIVO_TEMP%"
             ) else if "%%A"=="O365_REDIRECT_URI" (
-                :: Inyecta la IP respetando el formato https y el puerto 4435
                 echo O365_REDIRECT_URI=https://%IP_LOCAL%:4435/callback.php>>"%ARCHIVO_TEMP%"
             ) else (
-                :: Si es cualquier otra variable, la deja exactamente igual (incluyendo contraseñas)
                 echo !LINEA!>>"%ARCHIVO_TEMP%"
             )
         )
     )
 )
 
-:: Reemplazar el archivo viejo con el nuevo modificado
 move /y "%ARCHIVO_TEMP%" "%ARCHIVO_ENV%" >nul
-echo [OK] Archivo .env actualizado correctamente.
+
+ping -n 2 127.0.0.1 >nul
+echo [ OK ] DB_HOST OVERWRITTEN.
+echo [ OK ] O365_REDIRECT_URI OVERWRITTEN.
+ping -n 2 127.0.0.1 >nul
 
 :: ==========================================
 :: 3. LEVANTAR DOCKER
 :: ==========================================
-echo.
-echo Levantando contenedores Docker...
+echo [SYS] MOUNTING DOCKER ENGINE IMAGES...
+ping -n 2 127.0.0.1 >nul
+
+:: Ejecutamos docker
 docker-compose up -d
 
 echo.
-echo ¡Proceso finalizado con exito!
+echo    ====================================================
+echo      [ OK ] SYSTEM ONLINE. WELCOME.
+echo    ====================================================
+echo.
 pause

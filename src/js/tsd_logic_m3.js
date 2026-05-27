@@ -21,7 +21,7 @@ window.TSDLogic = {
 
         // 1. Validar Tipo
         if (tipo === 'tarjetas') {
-            return window.SysUI.alert("Estructura de columnas pendiente para este formato.", "En desarrollo", "info");
+            return this.generateCargadorMaestroTarjetas();
         }
 
         // 2. Pedir Asiento al Usuario (Asíncrono)
@@ -45,6 +45,223 @@ window.TSDLogic = {
             window.SysUI.alert("El archivo Excel ha sido generado y descargado con éxito.", "Cargador Creado", "success");
         } catch (error) {
             window.SysUI.alert("Error al generar cargador: " + error.message, "Fallo", "error");
+        } finally {
+            document.body.classList.remove('cursor-wait');
+        }
+    },
+
+    generateCargadorMaestroTarjetas: async function() {
+        if (!this.lastTSD.length || !this.lastBancos.length) {
+            return window.SysUI.alert("No hay datos cargados en memoria. Ejecute el cruce primero.", "Sin datos", "warning");
+        }
+
+        const dateVal = document.getElementById('tsd-date-picker').value;
+        if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
+        const startDate = dateVal.includes(' a ') ? dateVal.split(' a ')[0] : dateVal;
+
+        const asientoId = await window.SysUI.prompt("Ingrese el ID del Asiento Contable (Ej: IN12345678):", "Cargador Maestro Tarjetas", "IN");
+        if (!asientoId) return;
+
+        document.body.classList.add('cursor-wait');
+
+        try {
+            // 1. OBTENER CENTROS DE COSTO (CRM API)
+            const ccRes = await fetch('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php');
+            const ccJson = await ccRes.json();
+            const mapaCC = {};
+            if (ccJson.ok && ccJson.data) {
+                // Guardamos los códigos en mayúsculas y sin espacios para evitar fallos de tipeo
+                ccJson.data.forEach(item => { 
+                    mapaCC[String(item.Codigo).trim().toUpperCase()] = String(item.Centro_Costo).trim(); 
+                });
+            }
+
+            // 2. CÁLCULO DEL TIPO DE CAMBIO (Promedio de TSD)
+            const validTCs = this.lastTSD.filter(t => t.TC > 0).map(t => parseFloat(t.TC));
+            const avgTC = validTCs.length > 0 ? validTCs.reduce((a, b) => a + b, 0) / validTCs.length : 1;
+
+            // 3. ACUMULADORES GLOBALES
+            let tBacNeto = 0, tBacAci = 0, tDaviNeto = 0, tTsdCRC = 0;
+            let retRenta176 = 0, retVentas531 = 0;
+
+            this.lastBancos.forEach(b => {
+                const isBac = b.Banco === 'BAC';
+                if (isBac) {
+                    tBacNeto += parseFloat(b.Monto_Neto) || 0;
+                    tBacAci += parseFloat(b.ACI) || 0;
+                    retRenta176 += parseFloat(b.Retencion_Renta) || 0;
+                    retVentas531 += parseFloat(b.Retencion_Ventas) || 0;
+                } else {
+                    tDaviNeto += parseFloat(b.Monto_Neto) || 0;
+                    retRenta176 += parseFloat(b.Retencion_Renta) || 0; 
+                    retVentas531 += parseFloat(b.Retencion_Ventas) || 0; 
+                }
+            });
+
+            this.lastTSD.forEach(t => tTsdCRC += parseFloat(t.MontoCRC) || 0);
+
+            // 4. MAPEO DE COMISIONES CON JERARQUÍA ESTRICTA (CC -> Sucursal -> Afiliado)
+            const comisionesPorCC = {};
+            
+            // PASO A: Construir el árbol de CC -> [Sucursales] desde la API
+            const ccToSucursales = {};
+            if (ccJson.ok && ccJson.data) {
+                ccJson.data.forEach(item => {
+                    const cc = String(item.Centro_Costo).trim();
+                    const suc = String(item.Codigo).trim().toUpperCase();
+                    if (!ccToSucursales[cc]) ccToSucursales[cc] = new Set();
+                    ccToSucursales[cc].add(suc);
+                });
+            }
+
+            // PASO B: Extraer relación Sucursal -> [Afiliados] desde los cruces de hoy
+            const sucursalToAfiliados = {};
+            if (this.currentMatchedData) {
+                this.currentMatchedData.forEach(row => {
+                    const arrT = Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw];
+                    const arrB = Array.isArray(row._bancoRaw) ? row._bancoRaw : [row._bancoRaw];
+                    
+                    arrT.forEach(t => {
+                        if (t && t.Contrato) {
+                            const suc = String(t.Contrato).split('-')[0].trim().toUpperCase();
+                            if (!sucursalToAfiliados[suc]) sucursalToAfiliados[suc] = new Set();
+                            
+                            arrB.forEach(b => {
+                                if (b && b.Afiliado_MerID) {
+                                    sucursalToAfiliados[suc].add(String(b.Afiliado_MerID).trim().toUpperCase());
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+
+            // PASO C: Construir el diccionario inverso final (Afiliado -> CC) heredando la jerarquía
+            const afiliadoToCC = {};
+            Object.keys(ccToSucursales).forEach(cc => {
+                ccToSucursales[cc].forEach(suc => {
+                    if (sucursalToAfiliados[suc]) {
+                        sucursalToAfiliados[suc].forEach(af => {
+                            afiliadoToCC[af] = cc;
+                        });
+                    }
+                });
+            });
+
+            // PASO D: Sumar comisiones de todos los bancos agrupando por el CC asignado
+            this.lastBancos.forEach(b => {
+                const afiliado = String(b.Afiliado_MerID || '').trim().toUpperCase();
+                const cc = afiliadoToCC[afiliado] || '00-00-00'; // Default si el afiliado quedó huérfano
+                
+                if (!comisionesPorCC[cc]) comisionesPorCC[cc] = 0;
+                
+                // NOTA: 'b.Comision' ya viene unificado de la base de datos tanto para BAC como Davibank
+                comisionesPorCC[cc] += parseFloat(b.Comision) || 0; 
+            });
+
+            // 5. CONSTRUCTOR DE FILAS SOFTLAND
+            const fmtS = (num) => Number(num).toFixed(2).replace('.', ',');
+            const dParts = startDate.split('-'); 
+            const fechaAsiento = `${parseInt(dParts[2])}/${parseInt(dParts[1])}/${dParts[0]}`; 
+            const fuenteVal = `T${dParts[2]}${dParts[1]}${dParts[0]}`; 
+
+            const ws1Data = [
+                ["Asiento", "Paquete", "Tipo Asiento", "Fecha", "Contabilidad"],
+                [asientoId, "IN", "IN", fechaAsiento, "A"]
+            ];
+
+            const ws2Data = [
+                ["Asiento", "Consecutivo", "Nit", "Centro de Costos", "Cuenta Contable", "Fuente", "Referencia", "Debito Colon", "Credito Colon", "Debito Dolar", "Credito Dolar", "TC"]
+            ];
+
+            let consecutivo = 1;
+            let sumDebitoGlobal = 0, sumCreditoGlobal = 0;
+            let tcInyectado = false; // El TC va solo en la primera fila
+
+            const addRow = (cc, cuenta, ref, debito, credito) => {
+                // Redondeo seguro para evitar bugs de coma flotante en Javascript
+                const dCRC = Math.round((parseFloat(debito) || 0) * 100) / 100;
+                const cCRC = Math.round((parseFloat(credito) || 0) * 100) / 100;
+                const dUSD = dCRC > 0 ? dCRC / avgTC : 0;
+                const cUSD = cCRC > 0 ? cCRC / avgTC : 0;
+
+                sumDebitoGlobal += dCRC;
+                sumCreditoGlobal += cCRC;
+
+                ws2Data.push([
+                    asientoId, consecutivo++, "", `'${cc}`, cuenta, fuenteVal, ref,
+                    dCRC > 0 ? fmtS(dCRC) : "", cCRC > 0 ? fmtS(cCRC) : "",
+                    dUSD > 0 ? fmtS(dUSD) : "", cUSD > 0 ? fmtS(cUSD) : "",
+                    !tcInyectado ? Number(avgTC).toFixed(4).replace('.', ',') : ""
+                ]);
+                tcInyectado = true;
+            };
+
+            // Fila 1: BAC Neto - ACI
+            addRow('00-00-00', '101-004-003-000-000-000', 'Dinero ingresado en BAC', tBacNeto - tBacAci, 0);
+
+            // Fila 2: Davibank Neto
+            addRow('00-00-00', '101-004-003-000-000-000', 'Dinero ingresado en el Davibank', tDaviNeto, 0);
+
+            // Fila 3: Total Tarjetas TSD
+            addRow('00-00-00', '101-004-003-000-000-000', 'TARJETAS', 0, tTsdCRC);
+
+            // Filas 4+: Comisiones Agrupadas por Centro de Costo real
+            Object.keys(comisionesPorCC).forEach(cc => {
+                if (Math.abs(comisionesPorCC[cc]) > 0.01) {
+                    addRow(cc, '520-005-002-000-000-000', 'DESCUENTO DE TARJETA', comisionesPorCC[cc], 0);
+                }
+            });
+
+            // Fila Retención Renta (1.76%)
+            if (Math.abs(retRenta176) > 0.01) {
+                addRow('00-00-00', '101-004-003-000-000-000', 'RETENCION DE TARJETAS 1.76%', retRenta176, 0);
+            }
+
+            // Fila Retención Ventas (5.31%)
+            if (Math.abs(retVentas531) > 0.01) {
+                addRow('00-00-00', '101-004-003-000-000-000', 'RETENCION DE TARJETAS 5.31%', retVentas531, 0);
+            }
+
+            // Filas TSD Detallado
+            this.lastTSD.forEach(t => {
+                const tarj = t.Tarjeta_Ultimos4 ? `TarjetaXXXXXXXX${t.Tarjeta_Ultimos4}` : 'TarjetaXXXXXXXX';
+                const ref = `${t.Contrato||''} ${t.Sucursal||''} Aut ${t.Autorizacion||''} ${tarj}`.substring(0, 100);
+                addRow('00-00-00', '101-004-003-000-000-000', ref, parseFloat(t.MontoCRC) || 0, 0);
+            });
+
+            // Filas Bancos Detallado
+            this.lastBancos.forEach(b => {
+                const isBac = b.Banco === 'BAC';
+                const ref = `${b.Afiliado_MerID||''} ${b.Nombre_Sucursal_Comercio||''} AUT ${b.Numero_Autorizacion||''} TARJETA ${b.Tarjeta_Ultimos4||''}`.substring(0, 100);
+                addRow('00-00-00', '101-004-003-000-000-000', ref, 0, parseFloat(b.Monto_Venta_Original) || 0);
+            });
+
+            // FILA FINAL: Diferencial Cambiario (Cuadratura Matemática Estricta)
+            const diff = Math.round((sumDebitoGlobal - sumCreditoGlobal) * 100) / 100;
+            if (Math.abs(diff) > 0.01) {
+                // Si la diferencia es NEGATIVA (Créditos > Débitos), falta un Débito.
+                if (diff < 0) addRow('00-00-00', '560-005-001-001-000-000', 'Diferencial cambiario', Math.abs(diff), 0);
+                // Si la diferencia es POSITIVA (Débitos > Débitos), falta un Crédito.
+                else addRow('00-00-00', '420-010-001-000-000-000', 'Diferencial cambiario', 0, Math.abs(diff));
+            }
+
+            // 6. ENSAMBLAJE FINAL SHEETJS
+            const wb = XLSX.utils.book_new();
+            const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+            const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+            
+            // Auto-ajustar columnas en Excel
+            ws2['!cols'] = ws2Data[0].map(h => ({wch: Math.max(15, h.length + 5)}));
+
+            XLSX.utils.book_append_sheet(wb, ws1, "Asiento");
+            XLSX.utils.book_append_sheet(wb, ws2, "Desglose");
+
+            XLSX.writeFile(wb, `Cargador_Tarjetas_${asientoId}.xlsx`);
+            window.SysUI.alert("El archivo Excel del asiento de tarjetas se generó correctamente con cuadratura automática.", "Cargador Creado", "success");
+
+        } catch (e) {
+            window.SysUI.alert("Error al generar el cargador: " + e.message, "Fallo de Sistema", "error");
         } finally {
             document.body.classList.remove('cursor-wait');
         }
