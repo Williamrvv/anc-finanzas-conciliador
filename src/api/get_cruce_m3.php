@@ -66,9 +66,36 @@ try {
     $dataTSD = $stmtTSD->fetchAll();
 
     // ==========================================
-    // 1.5 MERGE EN PHP: Agregar Tarjetas al array TSD
+    // 1.5 MERGE EN PHP: Agregar Tarjetas y Centro de Costo al array TSD
     // ==========================================
+    // A. Extraer Tarjetas
     $stmtTarjetas = $pdoBancos->query("SELECT NumeroContrato, Tarjeta_Ultimos4 FROM Tbl_Historial_Tarjetas");
+    $tarjetasRows = $stmtTarjetas->fetchAll(PDO::FETCH_ASSOC);
+    $mapaTarjetas = [];
+    foreach($tarjetasRows as $t) { $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']); }
+
+    // B. Consumir API del CRM para obtener Centros de Costo
+    $mapaCC = [];
+    $crmContext = stream_context_create(['http' => ['timeout' => 3]]); // Timeout de 3s para no bloquear si CRM cae
+    $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $crmContext);
+    if ($crmJson) {
+        $crmData = json_decode($crmJson, true);
+        if (isset($crmData['ok']) && $crmData['ok']) {
+            foreach ($crmData['data'] as $item) {
+                $mapaCC[strtoupper(trim($item['Codigo']))] = trim($item['Centro_Costo']);
+            }
+        }
+    }
+
+    // C. Inyectar al array de TSD en memoria
+    foreach ($dataTSD as &$row) {
+        $contrato = trim($row['Contrato']);
+        $sucursal = strtoupper(trim($row['SucursalCod']));
+        
+        $row['Tarjeta_Ultimos4'] = $mapaTarjetas[$contrato] ?? '';
+        $row['CentroCosto'] = $mapaCC[$sucursal] ?? '00-00-00';
+    }
+    unset($row);
     $tarjetasRows = $stmtTarjetas->fetchAll(PDO::FETCH_ASSOC);
     
     // Crear un diccionario rápido [Contrato => Tarjeta]

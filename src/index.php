@@ -204,6 +204,18 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
                 <p class="text-indigo-200 text-xs mt-1">Debe establecer una contraseña privada</p>
             </div>
             <form id="form-force-pass" class="p-6 space-y-4">
+                
+                <!-- Guía Visual de Requisitos -->
+                <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 mb-4">
+                    <span class="block text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Tu contraseña debe incluir:</span>
+                    <ul class="text-[11px] text-slate-600 dark:text-slate-400 space-y-0.5 ml-1">
+                        <li>✔️ Mínimo 8 caracteres.</li>
+                        <li>✔️ Al menos una letra <b class="text-slate-800 dark:text-white">Mayúscula</b>.</li>
+                        <li>✔️ Al menos un <b class="text-slate-800 dark:text-white">número</b> (0-9).</li>
+                        <li>✔️ Un carácter especial <b class="text-slate-800 dark:text-white">(!, @, #, $, %)</b>.</li>
+                    </ul>
+                </div>
+
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nueva Contraseña</label>
                     <input type="password" id="fp-pass1" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
@@ -213,12 +225,13 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
                     <input type="password" id="fp-pass2" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
                     <p id="fp-error" class="text-xs text-red-500 font-bold mt-2 hidden">Las contraseñas no coinciden.</p>
                 </div>
+                
                 <button type="submit" id="fp-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all mt-4 mb-2 hover:-translate-y-0.5">
                     Guardar Contraseña
                 </button>
                 <div class="text-center mt-2 border-t border-slate-100 dark:border-slate-700 pt-3">
                     <a href="logout.php" class="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors">
-                        Cancelar y Cerrar Sesión
+                        Regresar
                     </a>
                 </div>
             </form>

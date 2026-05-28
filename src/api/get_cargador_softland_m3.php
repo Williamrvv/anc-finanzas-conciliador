@@ -17,29 +17,65 @@ try {
     $pdoTSD = TSDDatabase::connect();
     $pdoBancos = Database::connect();
 
-    // 1. Obtener Promedio de Tipo de Cambio Seguro desde TSD (Evita Fines de Semana o Nulos)
-    $sqlTC = "
+    // 1. CÁLCULO DE TIPO DE CAMBIO PROMEDIO PONDERADO (Matemática Exacta por Volumen)
+    
+    // A. Identificar a qué banco le estamos sacando el cargador
+    $isBac = (strpos($type, 'bac_') === 0);
+    $table = $isBac ? 'Tbl_Detalle_BAC' : 'Tbl_Detalle_Scotia';
+    $dateCol = $isBac ? 'FECHA_PAGO' : 'Fecha_Pago';
+
+    // B. Obtener cantidad de transacciones agrupadas por fecha (Solo las pendientes de cruzar)
+    $sqlFechas = "
         SELECT 
-            CASE 
-                WHEN AVG(Sell) IS NULL OR AVG(Sell) < 300 THEN (
-                    SELECT TOP (1) E2.Sell
-                    FROM dbo.Exchange AS E2
-                    WHERE E2.CurrencyCode = 'CRC'
-                      AND E2.Sell > 300
-                      AND E2.AsOf <= :endFallback
-                    ORDER BY E2.AsOf DESC
-                )
-                ELSE AVG(Sell) 
-            END AS PromedioTC
-        FROM dbo.Exchange
-        WHERE AsOf BETWEEN :start AND :end
-          AND CurrencyCode = 'CRC';
+            -- Convertimos a DATE para asegurar compatibilidad con TSD (formatos 103 o 120)
+            COALESCE(TRY_CONVERT(DATE, d.{$dateCol}, 103), TRY_CONVERT(DATE, d.{$dateCol}, 120)) AS FechaTransaccion, 
+            COUNT(d.IdTransaccion) AS Cantidad
+        FROM {$table} d
+        INNER JOIN Tbl_Conciliacion_Cierres c ON d.IdCierre = c.IdCierre
+        WHERE c.ConsolidadoTSD IS NULL
+          AND COALESCE(TRY_CONVERT(DATE, d.{$dateCol}, 103), TRY_CONVERT(DATE, d.{$dateCol}, 120)) IS NOT NULL
+        GROUP BY COALESCE(TRY_CONVERT(DATE, d.{$dateCol}, 103), TRY_CONVERT(DATE, d.{$dateCol}, 120))
     ";
-    $stmtTC = $pdoTSD->prepare($sqlTC);
-    // Le pasamos :endFallback (que es el mismo $end) para que el subquery busque hacia atrás desde la última fecha
-    $stmtTC->execute([':start' => $start, ':end' => $end, ':endFallback' => $end]);
-    $tcRow = $stmtTC->fetch();
-    $tcPromedio = $tcRow['PromedioTC'] ? (float)$tcRow['PromedioTC'] : 1; // Respaldo matemático final
+    $fechasBancos = $pdoBancos->query($sqlFechas)->fetchAll(PDO::FETCH_ASSOC);
+
+    $sumProduct = 0;
+    $totalTransacciones = 0;
+    $tcPromedio = 1; // Respaldo de seguridad
+
+    // C. Preparar consulta rápida a TSD para buscar el TC igual o anterior más cercano
+    $stmtTC = $pdoTSD->prepare("
+        SELECT TOP (1) Ex.Sell
+        FROM dbo.Exchange AS Ex
+        WHERE Ex.CurrencyCode = 'CRC'
+          AND CAST(Ex.AsOf AS DATE) <= :fecha
+          AND Ex.Sell > 300 -- Seguro contra días con TC en 0 o errores de captura
+        ORDER BY Ex.AsOf DESC
+    ");
+
+    if (count($fechasBancos) > 0) {
+        // D. Iterar fechas, multiplicar (TC * Volumen) e ir sumando al gran total
+        foreach ($fechasBancos as $fb) {
+            $fecha = $fb['FechaTransaccion'];
+            $cantidad = (int)$fb['Cantidad'];
+
+            $stmtTC->execute([':fecha' => $fecha]);
+            $tcRow = $stmtTC->fetch();
+            $tcDia = $tcRow ? (float)$tcRow['Sell'] : 1;
+
+            $sumProduct += ($tcDia * $cantidad);
+            $totalTransacciones += $cantidad;
+        }
+        
+        // E. Ecuación Final del Promedio Ponderado
+        if ($totalTransacciones > 0) {
+            $tcPromedio = $sumProduct / $totalTransacciones;
+        }
+    } else {
+        // Fallback: Si no hay datos pendientes (tabla vacía), devolvemos el TC del final del rango
+        $stmtTC->execute([':fecha' => $end]);
+        $tcRow = $stmtTC->fetch();
+        $tcPromedio = $tcRow ? (float)$tcRow['Sell'] : 1;
+    }
 
     $data = [];
  

@@ -34,6 +34,35 @@ try {
     $pdo = Database::connect();
     $pdo->beginTransaction();
 
+    // =========================================================================
+    // INTEGRACIÓN CRM: DESCARGAR ÁRBOL DE CENTROS DE COSTO
+    // =========================================================================
+    $mapaCrmCC = [];
+    $crmContext = stream_context_create(['http' => ['timeout' => 5]]); // Evitar cuelgues si el ERP no responde
+    $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $crmContext);
+    
+    if ($crmJson) {
+        $crmData = json_decode($crmJson, true);
+        if (!empty($crmData['ok']) && !empty($crmData['data'])) {
+            foreach ($crmData['data'] as $item) {
+                // Guardamos: [ 'ACOC01' => '01-06-18' ]
+                $mapaCrmCC[strtoupper(trim($item['Codigo']))] = trim($item['Centro_Costo']);
+            }
+        }
+    } else {
+        throw new \Exception("Error Crítico: No se pudo contactar al ERP para validar los Centros de Costo. Abortando guardado.");
+    }
+
+    // =========================================================================
+    // DICCIONARIO MAESTRO: AFILIADO -> SUCURSAL
+    // =========================================================================
+    // AQUI debes colocar la información con la que "ya cuentan". 
+    // Si la tienes en una tabla SQL, podemos hacer un $pdo->query() para poblar este arreglo dinámicamente.
+    $mapaAfiliadoSucursal = [
+        '123456789' => 'ACOC01',  // Ejemplo de Banco -> Sucursal
+        '987654321' => 'LIOC71',
+    ];
+
     // 1. Calcular totales reales agrupados por Banco en el Servidor
     $totalesPorBanco = [];
     foreach ($transacciones as $t) {
@@ -61,10 +90,10 @@ try {
         (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-    $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, IdCierre, NUMERO_AFILIADO, NOMBRECOMERCIO, FECHA_TRANSACCION, FECHA_CIERRE_DATAFONO, FECHA_PAGO, NUMERO_DE_TARJETA, AUTORIZACION, TERMINAL, MONTO_VENTA, COMISION, RETENCION_VENTAS, RETENCION_RENTA, MONTONETO, NUMERO_LIQUIDACION, NUMERO_CUENTA, TIPO_CAMBIO, AJUSTE_COMISION_INTERNACIONAL, TIPO_TARJETA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, IdCierre, NUMERO_AFILIADO, NOMBRECOMERCIO, FECHA_TRANSACCION, FECHA_CIERRE_DATAFONO, FECHA_PAGO, NUMERO_DE_TARJETA, AUTORIZACION, TERMINAL, MONTO_VENTA, COMISION, RETENCION_VENTAS, RETENCION_RENTA, MONTONETO, NUMERO_LIQUIDACION, NUMERO_CUENTA, TIPO_CAMBIO, AJUSTE_COMISION_INTERNACIONAL, TIPO_TARJETA, CentroCosto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
-    // TABLA SCOTIA - EXACTAMENTE 26 COLUMNAS AHORA (Con IdCierre)
-    $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, IdCierre, Fuente, Fecha_Pago, Moneda, Transaccion, Razon_Social, MerID, Nombre, Fecha_Lote_Ajuste, Numero_Lote_Ajuste, Terminal, Numero_Pago, Numero_Autorizacion, Numero_Tarjeta, Monto_Orig, Monto_Bruto, Monto_Comision_Total, Porc_Comision_Total, Monto_Comision_Int, Porc_Comision_Int, Monto_Retencion_IVA, Porc_Retencion_IVA, Monto_Retencion_ISR, Monto_Neto, Estatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // TABLA SCOTIA - EXACTAMENTE 27 COLUMNAS AHORA (Con IdCierre y CentroCosto)
+    $stmtScotia = $pdo->prepare("INSERT INTO Tbl_Detalle_Scotia (IdTransaccion, IdCierre, Fuente, Fecha_Pago, Moneda, Transaccion, Razon_Social, MerID, Nombre, Fecha_Lote_Ajuste, Numero_Lote_Ajuste, Terminal, Numero_Pago, Numero_Autorizacion, Numero_Tarjeta, Monto_Orig, Monto_Bruto, Monto_Comision_Total, Porc_Comision_Total, Monto_Comision_Int, Porc_Comision_Int, Monto_Retencion_IVA, Porc_Retencion_IVA, Monto_Retencion_ISR, Monto_Neto, Estatus, CentroCosto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
     $stmtPagadoBAC = $pdo->prepare("INSERT INTO Tbl_Pagado_BAC (IdTransaccion, IdCierre, Fecha, Referencia, Codigo, Descripcion, Debitos, Creditos, Balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmtPagadoScotia = $pdo->prepare("INSERT INTO Tbl_Pagado_Scotia (IdTransaccion, IdCierre, Numero_Referencia, Fecha_Movimiento, Descripcion, Monto, Saldo, Credito_Debito) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -109,8 +138,35 @@ try {
             // Traducción para la Base de Datos
             $bancoParaBD = (($t['Banco'] ?? '') === 'SCOTIA') ? 'DAVIBANK' : ($t['Banco'] ?? 'DESC');
             
+            // =========================================================================
+            // VALIDACIÓN IMPLACABLE DEL CENTRO DE COSTO
+            // =========================================================================
+            $centroCostoValidado = null;
+            $esDetallado = ($t['Origen'] ?? '') !== 'PAGADO' && ($t['Origen'] ?? '') !== 'AJUSTE';
+            
+            if ($esDetallado) {
+                $afiliado = ($bancoParaBD === 'BAC') ? trim($t['RawBAC']['NUMERO_AFILIADO'] ?? '') : trim($t['RawScotia']['MerID'] ?? '');
+                
+                if (empty($afiliado)) {
+                    throw new \Exception("Error de Integridad: Una transacción de {$bancoParaBD} no tiene número de Afiliado/MerID.");
+                }
+
+                $codigoSucursal = $mapaAfiliadoSucursal[$afiliado] ?? null;
+                
+                if (!$codigoSucursal) {
+                    throw new \Exception("ALERTA DE DICCIONARIO: El Afiliado/MerID '{$afiliado}' no está enlazado a ninguna Sucursal en el código. No se puede determinar su Centro de Costo.");
+                }
+
+                $centroCostoValidado = $mapaCrmCC[strtoupper($codigoSucursal)] ?? null;
+
+                if (empty($centroCostoValidado)) {
+                    throw new \Exception("ALERTA ERP: La sucursal '{$codigoSucursal}' (Afiliado: {$afiliado}) NO TIENE un Centro de Costo asignado en Softland. Por favor, créelo en el ERP antes de guardar esta conciliación.");
+                }
+            }
+            // =========================================================================
+            
             $stmtInsert->execute([
-                $idTrans, $idCierre, $bancoParaBD, $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, 
+                $idTrans, $idCierre, $bancoParaBD, $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null,
                 $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico
             ]);
 
@@ -121,19 +177,19 @@ try {
                     $b['FECHA_CIERRE_DATAFONO'] ?? null, $b['FECHA_PAGO'] ?? null, $b['NUMERO_DE_TARJETA'] ?? null, $b['AUTORIZACION'] ?? null,
                     $b['TERMINAL'] ?? null, $b['MONTO_VENTA'] ?? 0, $b['COMISION'] ?? 0, $b['RETENCION_VENTAS'] ?? 0,
                     $b['RETENCION_RENTA'] ?? 0, $b['MONTONETO'] ?? 0, $b['NUMERO_LIQUIDACION'] ?? null, $b['NUMERO_CUENTA'] ?? null,
-                    $b['TIPO_CAMBIO'] ?? 0, $b['AJUSTE_COMISION_INTERNACIONAL'] ?? 0, $b['TIPO_TARJETA'] ?? null
+                    $b['TIPO_CAMBIO'] ?? 0, $b['AJUSTE_COMISION_INTERNACIONAL'] ?? 0, $b['TIPO_TARJETA'] ?? null, $centroCostoValidado
                 ]);
-            } 
+            }
             else if (($t['Banco'] ?? '') === 'SCOTIA' && ($t['Origen'] ?? '') !== 'PAGADO') {
                 $s = $t['RawScotia'] ?? [];
-                // EXACTAMENTE 26 PARÁMETROS EN EL EXECUTE AHORA
+                // EXACTAMENTE 27 PARÁMETROS EN EL EXECUTE AHORA
                 $stmtScotia->execute([
                     $idTrans, $idCierre, $s['Fuente'] ?? null, $s['Fecha_Pago'] ?? null, $s['Moneda'] ?? null, $s['Transaccion'] ?? null,
                     $s['Razon_Social'] ?? null, $s['MerID'] ?? null, $s['Nombre'] ?? null,
                     $s['Fecha_Lote_Ajuste'] ?? null, $s['Numero_Lote_Ajuste'] ?? null, $s['Terminal'] ?? null, $s['Numero_Pago'] ?? null,
                     $s['Numero_Autorizacion'] ?? null, $s['Numero_Tarjeta'] ?? null, $s['Monto_Orig'] ?? 0, $s['Monto_Bruto'] ?? 0,
                     $s['Monto_Comision_Total'] ?? 0, $s['Porc_Comision_Total'] ?? 0, $s['Monto_Comision_Int'] ?? 0, $s['Porc_Comision_Int'] ?? 0,
-                    $s['Monto_Retencion_IVA'] ?? 0, $s['Porc_Retencion_IVA'] ?? 0, $s['Monto_Retencion_ISR'] ?? 0, $s['Monto_Neto'] ?? 0, $s['Estatus'] ?? null
+                    $s['Monto_Retencion_IVA'] ?? 0, $s['Porc_Retencion_IVA'] ?? 0, $s['Monto_Retencion_ISR'] ?? 0, $s['Monto_Neto'] ?? 0, $s['Estatus'] ?? null, $centroCostoValidado
                 ]);
             }
             else if (($t['Banco'] ?? '') === 'BAC' && ($t['Origen'] ?? '') === 'PAGADO') {
