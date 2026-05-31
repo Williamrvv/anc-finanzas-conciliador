@@ -82,7 +82,7 @@ for /f "tokens=1* delims=:" %%X in ('findstr /n "^" "%ARCHIVO_ENV%"') do (
         )
     )
 )
-
+ 
 move /y "%ARCHIVO_TEMP%" "%ARCHIVO_ENV%" >nul
 
 ping -n 2 127.0.0.1 >nul
