@@ -144,9 +144,9 @@
                     </div>
                 </div>
 
-                <!-- CONTENEDOR MULTI-SELECT SUCURSALES (Solo visible para Jefes) -->
+                <!-- CONTENEDOR MULTI-SELECT SUCURSALES (Dinámico según rol) -->
                 <div id="u-sucursales-container" class="hidden bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 flex flex-col overflow-visible">
-                    <label class="block text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase mb-2">Sucursales Asignadas a la Jefatura <span class="text-red-500">*</span></label>
+                    <label class="block text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase mb-2">Sucursales Asignadas <span class="text-red-500">*</span></label>
                     
                     <!-- Píldoras Seleccionadas -->
                     <div id="u-selected-branches" class="flex flex-wrap gap-2 mb-3 empty:hidden"></div>

@@ -75,7 +75,9 @@ try {
         $gruposPorJefe[$emailJefe]['casos'][] = [
             'id_caso' => $idC,
             'motivo' => $inputCaso['motivo'],
-            'accion' => $inputCaso['accion'] ?? 'ESCALAR', 
+            'accion' => $inputCaso['accion'] ?? 'ESCALAR',
+            'id_justificacion' => $inputCaso['id_justificacion'] ?? null,
+            'texto_visor' => $inputCaso['texto_visor'] ?? 'Cierre',
             'datos_bd' => $r
         ];
     }
@@ -85,11 +87,11 @@ try {
     
     // Cambiamos el estado unificado a PENDIENTE_RESOLUCION
     // Queries preparadas para ambos flujos
-    $sqlEscalar = "UPDATE Tbl_Casos_TSD SET Estado = 'PENDIENTE_RESOLUCION', MotivoAgente = ?, TokenAprobacionJefe = ?, TokenResolucionCS = ? WHERE IdCaso = ?";
+    $sqlEscalar = "UPDATE Tbl_Casos_TSD SET Estado = 'PENDIENTE_VISTO_BUENO', MotivoAgente = ?, TokenAprobacionJefe = ?, TokenResolucionCS = ?, IdJustificacion = ? WHERE IdCaso = ?";
     $stmtEscalar = $pdo->prepare($sqlEscalar);
 
     // Cierre Absoluto (Solo cambia el estado y el motivo)
-    $sqlCerrar = "UPDATE Tbl_Casos_TSD SET Estado = 'CERRADO', MotivoAgente = ? WHERE IdCaso = ?";
+    $sqlCerrar = "UPDATE Tbl_Casos_TSD SET Estado = 'CERRADO', MotivoAgente = ?, IdJustificacion = ? WHERE IdCaso = ?";
     $stmtCerrar = $pdo->prepare($sqlCerrar);
 
     $sqlHist = "INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, ?, ?, ?)";
@@ -104,39 +106,35 @@ try {
         foreach ($grupo['casos'] as $item) {
             $idC = $item['id_caso'];
             $motivo = $item['motivo'];
-            $accion = $item['accion'] ?? 'ESCALAR'; // Si el frontend no manda acción, escala por defecto
+            $accion = $item['accion'] ?? 'ESCALAR'; // Ahora puede ser ESCALAR o CERRAR dictado por BD
+            $idJustificacion = $item['id_justificacion'];
+            $textoVisor = $item['texto_visor'];
             $r = $item['datos_bd'];
             
             $montoFmt = number_format((float)$r['MontoCRC'], 2, '.', ',');
             
-            // Verificamos explícitamente si es un cierre directo
-            if ($accion === 'CONTRACARGO' || $accion === 'DEVOLUCION' || $accion === 'OTRO_CONTRATO' || $accion === 'CAMBIO_RAZON_SOCIAL') {
+            // Verificamos la acción basada en el Catálogo Dinámico
+            if ($accion === 'CERRAR') {
                 
                 // CIERRE DIRECTO (AR es autónomo)
-                $motivoCompleto = "[$accion] " . $motivo;
-                $stmtCerrar->execute([$motivoCompleto, $idC]);
-                $stmtHist->execute([$idC, 'ESTADO_CERRADO', $emailUsuario, "Cerrado directamente por el Agente. Motivo: $accion. Nota: $motivo"]);
+                $motivoCompleto = "[$textoVisor] " . $motivo;
+                $stmtCerrar->execute([$motivoCompleto, $idJustificacion, $idC]);
+                $stmtHist->execute([$idC, 'ESTADO_CERRADO', $emailUsuario, "Cerrado directamente por el Agente. Motivo: $textoVisor. Nota: $motivo"]);
                 
                 // Tarjeta HTML Informativa para el Jefe (Sin botón de resolver)
                 $btnHtml = "";
-                $etiquetaHtml = "<span style='font-size: 11px; background-color: #d1fae5; color: #047857; padding: 2px 6px; border-radius: 4px; font-weight: bold;'>✅ CERRADO INFORMATIVO ($accion)</span>";
+                $etiquetaHtml = "<span style='font-size: 11px; background-color: #d1fae5; color: #047857; padding: 2px 6px; border-radius: 4px; font-weight: bold;'>✅ CERRADO INFORMATIVO ($textoVisor)</span>";
                 $motivoParaCorreo = $motivoCompleto; 
                 $colorBorde = '#10b981';
 
             } else {
                 
-                // FLUJO NORMAL (Escalar a SC y Jefe)
+                // FLUJO VISTO BUENO (Escalar SOLO a Jefe)
                 $tokenJefe = bin2hex(random_bytes(16)); 
-                $tokenCS = bin2hex(random_bytes(16));
+                $tokenCS = bin2hex(random_bytes(16)); // Lo creamos por adelantado para no perder la relación
                 
-                $stmtEscalar->execute([$motivo, $tokenJefe, $tokenCS, $idC]);
-                $stmtHist->execute([$idC, 'ENVIADO_RESOLUCION', $emailUsuario, 'Caso escalado a Jefatura y SC para corrección.']);
-                
-                $todosLosCasosParaCS[] = [
-                    'datos' => $r,
-                    'motivo' => $motivo,
-                    'token' => $tokenCS
-                ];
+                $stmtEscalar->execute([$motivo, $tokenJefe, $tokenCS, $idJustificacion, $idC]);
+                $stmtHist->execute([$idC, 'ENVIADO_JEFATURA', $emailUsuario, 'Caso escalado a Jefatura pendiente de respuesta.']);
 
                 $btnHtml = "<div style='text-align: center; margin-top: 10px;'>
                                 <a href='https://$dominioLocal/resolver_caso_cc.php?token=$tokenJefe&actor=" . urlencode($emailDestino) . "' style='display: block; width: 100%; background-color: #10b981; color: #ffffff; text-decoration: none; padding: 12px 0; border-radius: 6px; font-weight: bold; font-size: 14px;'>Resolver Caso</a>
@@ -192,70 +190,6 @@ try {
         }
     } // Fin del foreach de Jefes
 
-    // --- 4. ENVIAR CORREO PARALELO A SERVICIO AL CLIENTE (CS) ---
-    if (!empty($todosLosCasosParaCS) && class_exists('Mailer')) {
-        $csHtmlBody = "";
-        
-        // Extraer TODOS los correos de los usuarios activos con rol Servicio al Cliente
-        $stmtCS = $pdo->prepare("
-            SELECT U.Email 
-            FROM Tbl_Usuarios U
-            INNER JOIN Tbl_Roles R ON U.Id_Rol = R.Id_Rol
-            WHERE R.Nombre_Rol = 'servicio_cliente' AND U.Activo = 1
-        ");
-        $stmtCS->execute();
-        $listaCorreosCS = $stmtCS->fetchAll(PDO::FETCH_COLUMN);
-
-        // Si hay usuarios, los unimos por coma. Si no, usamos un Fallback.
-        if (count($listaCorreosCS) > 0) {
-            $csEmail = implode(',', $listaCorreosCS); 
-        } else {
-            $csEmail = 'soporte.tsdiri@rentascorporativascr.com';
-        }
-
-        foreach ($todosLosCasosParaCS as $c) {
-            $r = $c['datos'];
-            $montoFmt = number_format((float)$r['MontoCRC'], 2, '.', ',');
-            $urlResolucion = "https://$dominioLocal/resolver_caso_cc.php?token={$c['token']}&actor=" . urlencode('Servicio Al Cliente');
-
-            $csHtmlBody .= "
-                <div style='background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
-                    <div style='display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;'>
-                        <div>
-                            <span style='color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: bold;'>Contrato</span>
-                            <div style='color: #0f172a; font-size: 16px; font-weight: bold;'>{$r['NumeroContrato']}</div>
-                        </div>
-                        <div style='text-align: right;'>
-                            <span style='color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: bold;'>Monto Afectado</span>
-                            <div style='color: #ef4444; font-size: 16px; font-weight: bold; font-family: monospace;'>₡$montoFmt</div>
-                        </div>
-                    </div>
-                    <div style='font-size: 13px; color: #475569; margin-bottom: 15px;'>
-                        <b>Sucursal:</b> {$r['Sucursal_Relacionada']}<br>
-                        <b>Cliente:</b> {$r['NombreCliente']}<br>
-                        <b>Agente:</b> $nombreReal
-                    </div>
-                    <div style='background-color: #fff; padding: 12px; border-left: 3px solid #3b82f6; font-size: 13px; color: #334155; margin-bottom: 15px;'>
-                        <i>\"{$c['motivo']}\"</i>
-                    </div>
-                    <a href='$urlResolucion' style='display: block; width: 100%; text-align: center; background-color: #10b981; color: white; text-decoration: none; padding: 12px 0; border-radius: 6px; font-weight: bold; font-size: 14px;'>Resolver Caso</a>
-                </div>";
-        }
-
-        $csBodyFinal = "
-        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-            <div style='text-align: center; padding: 20px 0;'>
-                <h2 style='color: #0f172a; margin: 0;'>Reporte TSD - Servicio al Cliente</h2>
-                <p style='color: #64748b; font-size: 14px; margin-top: 5px;'>Se han reportado nuevas inconsistencias en cajas.</p>
-            </div>
-            $csHtmlBody
-            <div style='text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;'>
-                <a href='https://$dominioLocal/' style='color: #3b82f6; text-decoration: none; font-size: 13px; font-weight: bold;'>Ver todos los casos en IRI &rarr;</a>
-            </div>
-        </div>";
-
-        Mailer::send($csEmail, "Alerta SC: " . count($todosLosCasosParaCS) . " casos reportados por $nombreReal", $csBodyFinal);
-    }
 
     $pdo->commit();
     echo json_encode(['success' => true]);

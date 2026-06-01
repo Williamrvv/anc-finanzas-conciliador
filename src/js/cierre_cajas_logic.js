@@ -3,8 +3,37 @@ window.CierreCajasLogic = {
     headerData: null,
     transacciones: [],
     pendientesData: [],
+    justificacionesCatalogo: [], // <-- Almacena las opciones de la BD
     casosResueltosInfo: {}, // <-- Almacena los tickets listos para cerrar
     currentUser: window.CURRENT_USER_NAME || 'Analista',
+
+    buildJustificacionesOptions: function() {
+        return `<option value="" disabled selected>-- Seleccione una acción --</option>` + 
+            this.justificacionesCatalogo.map(j => 
+            `<option value="${j.IdJustificacion}" data-accion="${j.TipoAccion}" data-req="${j.RequiereComentario}" data-text="${j.TextoVisor}">${j.TextoVisor}</option>`
+        ).join('');
+    },
+
+    // Motor UX: Cambia el placeholder y quita errores según lo que diga la BD
+    toggleMotivoReq: function(selectEl, inputId) {
+        selectEl.classList.remove('ring-2', 'ring-red-500'); // Quitar error del select
+        
+        const inputEl = document.getElementById(inputId);
+        if (!inputEl) return;
+        
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        if (!selectedOpt.value) return; // Es el placeholder default
+
+        const reqComentario = selectedOpt.getAttribute('data-req') === '1';
+        
+        if (reqComentario) {
+            inputEl.placeholder = "Justifique detalladamente el motivo (Obligatorio)...";
+        } else {
+            inputEl.placeholder = "Comentario adicional (Opcional)...";
+            // Como es opcional, si estaba marcado en rojo, se lo quitamos de inmediato
+            inputEl.classList.remove('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
+        }
+    },
     
     // Función getter dinámica para el borrador (asegura que la llave sea única y limpia)
     getDraftKey: function() {
@@ -56,6 +85,9 @@ window.CierreCajasLogic = {
             
             if (json.success) {
                 this.pendientesData = json.data;
+                if (json.catalogo_justificaciones) {
+                    this.justificacionesCatalogo = json.catalogo_justificaciones;
+                }
                 
                 // Pintar mis sucursales en el Home (Panel Central) si venimos de la carga inicial
                 if (!sucursalCode && json.mis_sucursales) {
@@ -124,14 +156,10 @@ window.CierreCajasLogic = {
 
                 // Select de Acción e Input Reactivo
                 let motivoHtml = `
-                    <select id="accion-home-${c.IdCaso}" class="cc-accion-select-home w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors">
-                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente y Jefatura</option>
-                        <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
-                        <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
-                        <option value="OTRO_CONTRATO">✅ Cerrar: Va para otro contrato</option>
-                        <option value="CAMBIO_RAZON_SOCIAL">✅ Cerrar: Cambio de Razón Social</option>
+                    <select id="accion-home-${c.IdCaso}" class="cc-accion-select-home w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors" onchange="window.CierreCajasLogic.toggleMotivoReq(this, 'motivo-home-${c.IdCaso}')">
+                        ${window.CierreCajasLogic.buildJustificacionesOptions()}
                     </select>
-                    <textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Justifique detalladamente el motivo..." oninput="this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>
+                    <textarea id="motivo-home-${c.IdCaso}" class="cc-motivo-input-home w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none placeholder:text-slate-400 transition-colors resize-none h-16" placeholder="Justifique detalladamente el motivo..." oninput="this.classList.remove('border-red-500', 'bg-red-50', 'dark:bg-red-900/20'); this.classList.toggle('border-indigo-500', this.value.trim()!==''); this.classList.toggle('bg-indigo-50', this.value.trim()!=='')">${c.MotivoAgente || ''}</textarea>
                 `;
 
                 return `
@@ -217,14 +245,10 @@ window.CierreCajasLogic = {
                         <span>ICD: <span class="font-mono text-slate-700 dark:text-slate-300">${c.ICD_Relacionado}</span></span>
                         <span class="text-amber-700 dark:text-amber-500">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                     </div>
-                    <select id="accion-suc-${c.IdCaso}" class="cc-accion-select-suc w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 font-bold transition-colors">
-                        <option value="ESCALAR">⚠️ Escalar a SC y Jefatura</option>
-                        <option value="CONTRACARGO">✅ Cerrar: Contracargo</option>
-                        <option value="DEVOLUCION">✅ Cerrar: Devolución</option>
-                        <option value="OTRO_CONTRATO">✅ Cerrar: Otro contrato</option>
-                        <option value="CAMBIO_RAZON_SOCIAL">✅ Cerrar: Cambio de Razón Social</option>
+                    <select id="accion-suc-${c.IdCaso}" class="cc-accion-select-suc w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 font-bold transition-colors" onchange="window.CierreCajasLogic.toggleMotivoReq(this, 'motivo-suc-${c.IdCaso}')">
+                        ${window.CierreCajasLogic.buildJustificacionesOptions()}
                     </select>
-                    <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-white rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Justifique el motivo..." value="${c.MotivoAgente || ''}">
+                    <input type="text" id="motivo-suc-${c.IdCaso}" class="cc-motivo-input-suc w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-800 dark:text-white rounded-lg outline-none placeholder:text-amber-300 dark:placeholder:text-amber-700 focus:ring-2 focus:ring-amber-400 transition-colors" placeholder="Justifique el motivo..." value="${c.MotivoAgente || ''}" oninput="this.classList.remove('border-red-500', 'bg-red-50', 'dark:bg-red-900/20')">
                 </div>
             `).join('');
             
@@ -247,21 +271,36 @@ window.CierreCajasLogic = {
             const parts = input.id.split('-');
             const idCaso = parts[parts.length - 1];
             
-            // Aseguramos capturar bien el Select usando el ID dinámico
             const selectId = origen === 'home' ? `accion-home-${idCaso}` : `accion-suc-${idCaso}`;
             const selectElement = document.getElementById(selectId);
-            const accionValue = selectElement ? selectElement.value : 'ESCALAR';
             
-            // Intención de procesar: El usuario escribió algo O cambió la opción por defecto (ESCALAR)
-            if (motivo !== '' || accionValue !== 'ESCALAR') {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            const idJustificacion = selectedOption.value; // Será "" si es el placeholder
+            const accionValue = selectedOption.getAttribute('data-accion');
+            const reqComentario = selectedOption.getAttribute('data-req') === '1';
+            const textoVisor = selectedOption.getAttribute('data-text');
+            
+            // Intención de procesar: Seleccionó una acción o escribió un motivo
+            if (idJustificacion !== '' || motivo !== '') {
                 
-                // VALIDACIÓN ESTRICTA: Estas 3 opciones EXIGEN texto obligatorio
-                if ((accionValue === 'ESCALAR' || accionValue === 'OTRO_CONTRATO' || accionValue === 'CAMBIO_RAZON_SOCIAL') && motivo === '') {
+                if (idJustificacion === '') {
+                    // Escribió motivo pero no seleccionó acción
+                    selectElement.classList.add('ring-2', 'ring-red-500');
+                    hasErrors = true;
+                } 
+                else if (reqComentario && motivo === '') {
+                    // Seleccionó acción que requiere motivo, pero está vacío
                     input.classList.add('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
                     hasErrors = true;
-                } else {
-                    input.classList.remove('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
-                    casosData.push({ id_caso: idCaso, motivo: motivo, accion: accionValue });
+                } 
+                else {
+                    casosData.push({ 
+                        id_caso: idCaso, 
+                        motivo: motivo, 
+                        accion: accionValue,
+                        id_justificacion: idJustificacion,
+                        texto_visor: textoVisor
+                    });
 
                     const casoBd = this.pendientesData.find(c => c.IdCaso == idCaso);
                     if (casoBd) {
@@ -274,7 +313,7 @@ window.CierreCajasLogic = {
         });
 
         if (hasErrors) {
-            return SysUI.alert("Las acciones de Escalamiento, Cambio de Razón Social u Otro Contrato exigen una justificación obligatoria. Por favor, revise los campos resaltados en rojo.", "Justificación Requerida", "warning");
+            return SysUI.alert("Falta información. Revise que haya seleccionado una acción y proporcionado una justificación para las opciones que lo requieran (resaltado en rojo).", "Información Requerida", "warning");
         }
 
         if (casosData.length === 0) {
@@ -409,7 +448,7 @@ window.CierreCajasLogic = {
     // =====================================================================
     // LÓGICA DEL ESCÁNER Y CIERRE TSD
     // =====================================================================
-    loadFacturacion: async function() {
+    loadFacturacion: async function(manualDates = null) {
         this.resetView();
 
         // UI Loading
@@ -419,13 +458,29 @@ window.CierreCajasLogic = {
         document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            const res = await fetch(`api/get_facturacion_cc.php`);
+            const payload = manualDates ? { manual_dates: manualDates } : {};
+            const res = await fetch(`api/get_facturacion_cc.php`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
             const data = await res.json();
 
             document.getElementById('cc-loading').classList.add('hidden');
             document.getElementById('cc-loading').classList.remove('flex');
 
             if (!data.success) {
+                if (data.requires_init) {
+                    const fechas = await this.showInitializationModal(data.pending);
+                    if (fechas) {
+                        return this.loadFacturacion(fechas); // Reintentar recursivamente
+                    } else {
+                        // Usuario canceló
+                        document.getElementById('cc-search-section').classList.remove('hidden');
+                        document.getElementById('cc-home-view').classList.remove('hidden');
+                        return;
+                    }
+                }
                 document.getElementById('cc-search-section').classList.remove('hidden');
                 document.getElementById('cc-home-view').classList.remove('hidden');
                 return SysUI.alert(data.error, "Atención", "warning");
@@ -1094,7 +1149,8 @@ window.CierreCajasLogic = {
         let colorBadge = 'bg-slate-100 text-slate-600';
         
         if(c.Estado === 'NO_REPORTADO') { colorBorder = 'border-red-300'; colorBadge = 'bg-red-100 text-red-700'; }
-        if(c.Estado === 'PENDIENTE_CORRECCION_TSD') { colorBorder = 'border-amber-300'; colorBadge = 'bg-amber-100 text-amber-700'; }
+        if(c.Estado === 'PENDIENTE_VISTO_BUENO') { colorBorder = 'border-purple-300 border-l-4'; colorBadge = 'bg-purple-100 text-purple-700'; }
+        if(c.Estado === 'PENDIENTE_RESOLUCION') { colorBorder = 'border-amber-300'; colorBadge = 'bg-amber-100 text-amber-700'; }
         if(c.Estado === 'RESUELTO') { colorBorder = 'border-blue-300 border-l-4'; colorBadge = 'bg-blue-100 text-blue-700'; }
 
         const monto = parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2});
@@ -1102,7 +1158,7 @@ window.CierreCajasLogic = {
         return `
         <div onclick="window.CierreCajasLogic.showTimeline(${c.IdCaso})" class="bg-white dark:bg-slate-800 rounded-xl p-4 shadow-sm hover:shadow-md cursor-pointer transition-all border ${colorBorder} flex flex-col h-full group animate-fade-in-up">
             <div class="flex justify-between items-start mb-3">
-                <span class="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ${colorBadge}">${c.Estado.replace(/_/g, ' ')}</span>
+                <span class="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-widest ${colorBadge}">${c.Estado === 'PENDIENTE_VISTO_BUENO' ? 'ESCALADO A JEFATURA' : c.Estado.replace(/_/g, ' ')}</span>
                 <span class="text-[10px] text-slate-400 font-bold">${c.DiasAtraso > 0 ? c.DiasAtraso + 'd' : 'Hoy'}</span>
             </div>
             <h4 class="text-sm font-black text-slate-800 dark:text-white leading-tight mb-1 truncate" title="${c.NombreCliente}">${c.NombreCliente}</h4>
@@ -1147,6 +1203,10 @@ window.CierreCajasLogic = {
             document.getElementById('tl-monto').innerText = `₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('tl-usd').innerText = `$${parseFloat(c.MontoUSD).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
 
+            if (data.catalogo_justificaciones) {
+                this.justificacionesCatalogo = data.catalogo_justificaciones;
+            }
+
             // 1. DIBUJAR HISTORIAL
             eventContainer.innerHTML = data.historial.map(h => {
                 const dateObj = new Date(h.FechaAccion);
@@ -1178,12 +1238,8 @@ window.CierreCajasLogic = {
             if (c.Estado === 'NO_REPORTADO' && (role === 'agente' || role === 'jefe' || role === 'admin')) {
                 actionHtml = `
                     <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Acción sobre la Inconsistencia</label>
-                    <select id="tl-select-accion" class="w-full text-sm px-3 py-2 mb-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors">
-                        <option value="ESCALAR">⚠️ Escalar a Servicio al Cliente y Jefatura</option>
-                        <option value="CONTRACARGO">✅ Cerrar Directamente: Contracargo</option>
-                        <option value="DEVOLUCION">✅ Cerrar Directamente: Devolución</option>
-                        <option value="OTRO_CONTRATO">✅ Cerrar Directamente: Va para otro contrato</option>
-                        <option value="CAMBIO_RAZON_SOCIAL">✅ Cerrar Directamente: Cambio de Razón Social</option>
+                    <select id="tl-select-accion" class="w-full text-sm px-3 py-2 mb-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors" onchange="window.CierreCajasLogic.toggleMotivoReq(this, 'tl-input-action')">
+                        ${window.CierreCajasLogic.buildJustificacionesOptions()}
                     </select>
                     <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 resize-none mb-3" placeholder="Justifique el motivo..."></textarea>
                     <div class="flex justify-end">
@@ -1193,7 +1249,23 @@ window.CierreCajasLogic = {
                     </div>
                 `;
             }
-            else if (c.Estado === 'PENDIENTE_CORRECCION_TSD' && (role === 'jefe' || role === 'servicio_cliente' || role === 'admin')) {
+            else if (c.Estado === 'PENDIENTE_VISTO_BUENO' && (role === 'jefe' || role === 'admin')) {
+                actionHtml = `
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Nota de Jefatura (Opcional)</label>
+                            <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="Escriba alguna nota para Servicio al Cliente..."></textarea>
+                        </div>
+                        <div class="flex justify-between items-center mt-2">
+                            <button onclick="window.CierreCajasLogic.executeTimelineAction('REVERTIR')" class="text-xs text-slate-400 hover:text-red-500 font-bold underline transition-colors">Rechazar (Volver a Agente)</button>
+                            <button onclick="window.CierreCajasLogic.executeTimelineAction('ESCALAR_SC')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors">
+                                Escalar a SC
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            else if (c.Estado === 'PENDIENTE_RESOLUCION' && (role === 'servicio_cliente' || role === 'admin')) {
                 actionHtml = `
                     <div class="flex flex-col gap-3">
                         <div>
@@ -1201,8 +1273,8 @@ window.CierreCajasLogic = {
                             <textarea id="tl-input-action" rows="2" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 resize-none" placeholder="Escriba la acción correctiva realizada..."></textarea>
                         </div>
                         <div class="flex justify-between items-center mt-2">
-                            ${role === 'jefe' || role === 'admin' ? `<button onclick="window.CierreCajasLogic.executeTimelineAction('REVERTIR')" class="text-xs text-slate-400 hover:text-red-500 font-bold underline transition-colors">Revertir a No Reportado</button>` : '<div></div>'}
-                            <button onclick="window.CierreCajasLogic.executeTimelineAction('RESOLVER')" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors">
+                            <div></div>
+                            <button onclick="window.CierreCajasLogic.executeTimelineAction('RESOLVER')" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm shadow transition-colors">
                                 Marcar como Resuelto
                             </button>
                         </div>
@@ -1226,30 +1298,44 @@ window.CierreCajasLogic = {
         
         let accionFinal = actionType;
         let isReporteDinamico = false;
+        let idJustificacion = null;
+        let textoVisor = '';
+        let confirmMsg = "¿Está seguro de continuar con esta acción?";
 
         // Si viene del Modal en estado NO_REPORTADO, leemos el Select
         if (actionType === 'REPORTAR_DINAMICO') {
             isReporteDinamico = true;
             const selectEl = document.getElementById('tl-select-accion');
-            accionFinal = selectEl ? selectEl.value : 'ESCALAR';
-        }
-        
-        // Validación Estricta
-        if ((accionFinal === 'ESCALAR' || accionFinal === 'RESOLVER' || accionFinal === 'OTRO_CONTRATO' || accionFinal === 'CAMBIO_RAZON_SOCIAL') && !comentario) {
-            return SysUI.alert("Debe escribir un comentario/justificación obligatoria para proceder con esta acción.", "Campo requerido", "warning");
-        }
+            const selectedOpt = selectEl.options[selectEl.selectedIndex];
+            
+            if (!selectedOpt.value) {
+                selectEl.classList.add('ring-2', 'ring-red-500');
+                return SysUI.alert("Debe seleccionar una acción de la lista.", "Acción Requerida", "warning");
+            }
+            
+            accionFinal = selectedOpt.getAttribute('data-accion');
+            idJustificacion = selectedOpt.value;
+            textoVisor = selectedOpt.getAttribute('data-text');
+            const reqComentario = selectedOpt.getAttribute('data-req') === '1';
 
-        const msgs = {
-            'ESCALAR': "¿Enviar este caso a Servicio al Cliente y Jefatura para su corrección en TSD?",
-            'CONTRACARGO': "¿Confirmar el cierre directo del caso por motivo de Contracargo?",
-            'DEVOLUCION': "¿Confirmar el cierre directo del caso por motivo de Devolución?",
-            'OTRO_CONTRATO': "¿Confirmar el cierre directo indicando que pertenece a otro contrato?",
-            'CAMBIO_RAZON_SOCIAL': "¿Confirmar el cierre directo por Cambio de Razón Social?",
-            'RESOLVER': "¿Confirmar que el caso ha sido corregido en TSD y marcar como resuelto?",
-            'REVERTIR': "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado."
-        };
+            if (reqComentario && !comentario) {
+                document.getElementById('tl-input-action').focus();
+                return SysUI.alert("Esta acción requiere un comentario/justificación obligatoria.", "Campo requerido", "warning");
+            }
 
-        const confirmMsg = msgs[accionFinal] || "¿Está seguro de continuar con esta acción?";
+            confirmMsg = accionFinal === 'CERRAR' 
+                ? `¿Confirmar el cierre directo del caso por el motivo: ${textoVisor}?` 
+                : "¿Enviar este caso a Jefatura para su visto bueno?";
+                
+        } else {
+            // Validaciones para RESOLVER / REVERTIR / ESCALAR_SC
+            if (accionFinal === 'RESOLVER' && !comentario) {
+                return SysUI.alert("Debe escribir un comentario sobre la corrección realizada.", "Campo requerido", "warning");
+            }
+            if (accionFinal === 'RESOLVER') confirmMsg = "¿Confirmar que el caso ha sido corregido en TSD y marcar como resuelto?";
+            if (accionFinal === 'REVERTIR') confirmMsg = "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado.";
+            if (accionFinal === 'ESCALAR_SC') confirmMsg = "¿Escalar este caso y enviarlo a Servicio al Cliente para su resolución?";
+        }
         const confirm = await SysUI.confirm(confirmMsg, "Confirmar Acción", "info");
         if (!confirm) return;
 
@@ -1269,7 +1355,9 @@ window.CierreCajasLogic = {
                     casos: [{
                         id_caso: this.activeTimelineId,
                         motivo: comentario,
-                        accion: accionFinal
+                        accion: accionFinal,
+                        id_justificacion: idJustificacion,
+                        texto_visor: textoVisor
                     }]
                 };
             }
@@ -1442,4 +1530,105 @@ window.rev = function(busqueda = '') {
 
     // Imprimimos la tabla formateada nativamente en la consola
     console.table(datosOcultos);
+};
+
+// -----------------------------------------------------------
+// EXPERIENCIA DE USUARIO (UX): PUNTO DE CORTE EN FRÍO
+// -----------------------------------------------------------
+window.CierreCajasLogic.showInitializationModal = function(pendingBranches) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[999999] flex items-center justify-center p-4 opacity-0 transition-opacity duration-300 select-none';
+        
+        // Calculamos la fecha/hora actual en formato local para limitar el selector
+        const nowLocal = new Date();
+        nowLocal.setMinutes(nowLocal.getMinutes() - nowLocal.getTimezoneOffset());
+        const maxDateTime = nowLocal.toISOString().slice(0, 16);
+
+        let inputsHtml = pendingBranches.map(b => `
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mb-3 transition-colors">
+                <h4 class="text-sm font-black text-indigo-700 dark:text-indigo-400 mb-3 flex items-center gap-2">
+                    <span class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 px-2 py-1 rounded-md text-[10px] uppercase border border-indigo-200 dark:border-indigo-800">Sucursal</span>
+                    ${b.codigo} - ${b.nombre}
+                </h4>
+                <div class="w-full relative">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha y Hora del último cierre</label>
+                    <input type="datetime-local" data-code="${b.codigo}" class="init-datetime w-full px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-white transition-shadow [color-scheme:light] dark:[color-scheme:dark]" max="${maxDateTime}">
+                </div>
+            </div>
+        `).join('');
+
+        overlay.innerHTML = `
+            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-xl overflow-hidden transform scale-95 transition-transform duration-300 flex flex-col max-h-[90vh]">
+                <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-indigo-600 shrink-0">
+                    <h3 class="text-lg font-black text-white flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Punto de Corte Inicial
+                    </h3>
+                </div>
+                <div class="px-6 py-5 overflow-y-auto custom-scrollbar flex-grow bg-white dark:bg-slate-800">
+                    <div class="mb-5 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800">
+                        <p class="text-sm text-blue-800 dark:text-blue-300 leading-relaxed font-medium">Se ha detectado que algunas sucursales <b>no tienen historial</b> de cortes en este sistema.</p>
+                        <p class="text-sm text-blue-800 dark:text-blue-300 mt-2 leading-relaxed font-medium">Para evitar transacciones duplicadas, indique la <b>fecha y hora exacta</b> del último cierre físico realizado. El sistema buscará a partir de ese momento.</p>
+                    </div>
+                    ${inputsHtml}
+                    <div id="init-error" class="hidden mt-2 text-xs font-bold text-red-600 bg-red-50 dark:bg-red-900/30 p-3 rounded-lg border border-red-200 dark:border-red-800 animate-shake">
+                        ⚠️ Debe completar la fecha y la hora para todas las sucursales listadas antes de continuar.
+                    </div>
+                </div>
+                <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/80 flex flex-col-reverse sm:flex-row justify-end gap-3 border-t border-slate-100 dark:border-slate-700 shrink-0">
+                    <button id="init-btn-cancel" class="w-full sm:w-auto bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-5 py-2.5 rounded-xl font-bold transition-colors">Cancelar</button>
+                    <button id="init-btn-save" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-md shadow-indigo-500/30 transition-all flex items-center justify-center gap-2">
+                        Extraer Facturación
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        // Animación suave de entrada
+        requestAnimationFrame(() => {
+            overlay.classList.remove('opacity-0');
+            overlay.children[0].classList.remove('scale-95');
+        });
+
+        const close = () => {
+            overlay.classList.add('opacity-0');
+            overlay.children[0].classList.add('scale-95');
+            setTimeout(() => overlay.remove(), 300);
+        };
+
+        document.getElementById('init-btn-cancel').onclick = () => {
+            close();
+            resolve(null);
+        };
+
+        document.getElementById('init-btn-save').onclick = () => {
+            const datetimes = document.querySelectorAll('.init-datetime');
+            let manualDates = {};
+            let hasErrors = false;
+
+            datetimes.forEach(dt => {
+                dt.classList.remove('ring-2', 'ring-red-500');
+
+                if (!dt.value) {
+                    dt.classList.add('ring-2', 'ring-red-500');
+                    hasErrors = true;
+                } else {
+                    // El valor viene como "2026-05-31T15:30", lo convertimos a formato SQL "2026-05-31 15:30:00"
+                    manualDates[dt.getAttribute('data-code')] = dt.value.replace('T', ' ') + ':00';
+                }
+            });
+
+            if (hasErrors) {
+                document.getElementById('init-error').innerText = '⚠️ Debe completar la fecha y hora para todas las sucursales listadas antes de continuar.';
+                document.getElementById('init-error').classList.remove('hidden');
+            } else {
+                close();
+                resolve(manualDates); // Retorna las fechas al método loadFacturacion
+            }
+        };
+    });
 };

@@ -18,21 +18,16 @@ require_once 'tsd_db.php';
 
 $emailUsuario = $_SESSION['user']['email'] ?? '';
 
-// Usamos formato seguro YYYYMMDD para evitar choques de cultura de SQL
-$hoySeguro = date('Ymd'); 
-
-// ========================================================
-// MODO PRUEBAS UAT: Forzar hora de inicio (Eliminar en Prod)
-// ========================================================
-$FORZAR_PRUEBA = true; // <-- Cambia a false para apagarlo
-$HORA_PRUEBA = "06:30:00"; // La hora de inicio simulada
-// ========================================================
+// Leer los datos que provienen de la solicitud POST
+$inputJSON = file_get_contents('php://input');
+$requestData = json_decode($inputJSON, true) ?: [];
+$manualDates = $requestData['manual_dates'] ?? [];
 
 try {
     $pdoLocal = Database::connect();
     $pdoTsd = TSDDatabase::connect();
 
-    // 1. Obtener sucursales asignadas según el Rol del Usuario
+    // 1. Obtener sucursales asignadas
     $rolUsuario = $_SESSION['user']['role'] ?? '';
     if ($rolUsuario === 'agente') {
         $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion WHERE EmailAgente = ? AND Activo = 1");
@@ -50,38 +45,55 @@ try {
     // 2. Calcular la fecha/hora de inicio por cada sucursal
     $whereConditions = [];
     $infoMetadatos = [];
+    $sucursalesPendientes = []; // Para enviar al FrontEnd si requieren inicialización
 
     foreach ($sucursales as $suc) {
         $codigo = $suc['CodigoSucursal'];
         
+        // BUSCAMOS EL ÚLTIMO REGISTRO HISTÓRICO ABSOLUTO (Sin importar el día)
         $stmtLast = $pdoLocal->prepare("
             SELECT MAX(D.Fecha_Transaccion) 
             FROM Tbl_CierreCaja_Detalle D
             INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
-            WHERE H.Sucursal LIKE ? AND CONVERT(varchar(8), D.Fecha_Transaccion, 112) = ?
+            WHERE H.Sucursal LIKE ?
         ");
-        $stmtLast->execute(["%$codigo%", $hoySeguro]);
+        $stmtLast->execute(["%$codigo%"]);
         $lastDate = $stmtLast->fetchColumn();
 
         if ($lastDate) {
-            $timestampSeguro = strtotime($lastDate) - 60; 
+            $timestampSeguro = strtotime($lastDate) - 60; // Margen de 1 minuto
             $fechaInicio = date('Ymd H:i:s', $timestampSeguro);
         } else {
-            $fechaInicio = "$hoySeguro 00:00:00";
+            // NO EXISTE HISTORIAL - Verificamos si el usuario envió las fechas manuales
+            if (!empty($manualDates[$codigo])) {
+                $fechaInicio = date('Ymd H:i:s', strtotime($manualDates[$codigo]));
+            } else {
+                // Almacenamos la sucursal para disparar el UI Modal
+                $sucursalesPendientes[] = [
+                    'codigo' => $codigo,
+                    'nombre' => $suc['NombreSucursal']
+                ];
+                continue;
+            }
         }
         
-        if ($FORZAR_PRUEBA) {
-            $fechaInicio = "$hoySeguro $HORA_PRUEBA";
-        }
-        
-        // La consulta a la BD
         $whereConditions[] = "(P.LOC_CODE = '$codigo' AND P.Pay_Date >= '$fechaInicio')";
         
         $infoMetadatos[] = [
             'sucursal' => $codigo,
             'nombre' => $suc['NombreSucursal'],
-            'desde' => date('d/m/Y H:i:s', strtotime($fechaInicio)) . ($FORZAR_PRUEBA ? " (MODO PRUEBA UAT)" : "")
+            'desde' => date('d/m/Y H:i:s', strtotime($fechaInicio))
         ];
+    }
+
+    // Si hay sucursales sin historia, detenemos el backend y avisamos al frontend
+    if (!empty($sucursalesPendientes)) {
+        echo json_encode([
+            'success' => false,
+            'requires_init' => true,
+            'pending' => $sucursalesPendientes
+        ]);
+        exit;
     }
 
     $dynamicWhere = implode(' OR ', $whereConditions);
@@ -131,17 +143,18 @@ try {
     if (!empty($contratosTSD)) {
         $inClause = str_repeat('?,', count($contratosTSD) - 1) . '?';
         
+        // Eliminamos el filtro de "hoy" para que evalúe si ese contrato ya se procesó alguna vez en el tiempo
         $stmtCerrados = $pdoLocal->prepare("
             SELECT Numero_Contrato 
             FROM Tbl_CierreCaja_Detalle 
-            WHERE Numero_Contrato IN ($inClause) AND CONVERT(varchar(8), Fecha_Transaccion, 112) = ?
+            WHERE Numero_Contrato IN ($inClause)
             UNION
             SELECT NumeroContrato
             FROM Tbl_Casos_TSD
-            WHERE NumeroContrato IN ($inClause) AND CONVERT(varchar(8), FechaCreacion, 112) = ?
+            WHERE NumeroContrato IN ($inClause)
         ");
         
-        $parametrosCheck = array_merge($contratosTSD, [$hoySeguro], $contratosTSD, [$hoySeguro]);
+        $parametrosCheck = array_merge($contratosTSD, $contratosTSD);
         $stmtCerrados->execute($parametrosCheck);
         $contratosYaCerrados = $stmtCerrados->fetchAll(PDO::FETCH_COLUMN);
 

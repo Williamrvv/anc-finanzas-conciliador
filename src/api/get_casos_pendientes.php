@@ -16,6 +16,10 @@ $sucursal = $_GET['sucursal'] ?? ''; // Leemos si nos mandan una sucursal
 try {
     $pdo = Database::connect();
     
+    // 1. Obtener Catálogo de Justificaciones
+    $stmtCat = $pdo->query("SELECT IdJustificacion, TextoVisor, TipoAccion, RequiereComentario FROM Tbl_Justificaciones_CC WHERE Activo = 1 ORDER BY IdJustificacion ASC");
+    $catalogoJustificaciones = $stmtCat->fetchAll(PDO::FETCH_ASSOC);
+
     // Consulta base a la tabla de Tickets
     $sql = "SELECT 
                 C.IdCaso, C.ICD_Relacionado, C.Sucursal_Relacionada, C.NumeroContrato, 
@@ -56,7 +60,7 @@ try {
             $sucursalesHome = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
         }
         
-        echo json_encode(['success' => true, 'data' => $stmt->fetchAll(), 'mis_sucursales' => $sucursalesHome]);
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll(), 'mis_sucursales' => $sucursalesHome, 'catalogo_justificaciones' => $catalogoJustificaciones]);
 
     } else {
         // VISTA COLABORATIVA: Traer los NO REPORTADOS de esa Sucursal (Míos o de otros)
@@ -64,7 +68,7 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$sucursal . '%']);
         
-        echo json_encode(['success' => true, 'data' => $stmt->fetchAll()]);
+        echo json_encode(['success' => true, 'data' => $stmt->fetchAll(), 'catalogo_justificaciones' => $catalogoJustificaciones]);
     }
 } catch (Throwable $e) {
     echo json_encode(['success' => false, 'error' => 'Error BD: ' . $e->getMessage()]);
