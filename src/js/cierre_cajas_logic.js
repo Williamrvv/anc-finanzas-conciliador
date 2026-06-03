@@ -4,8 +4,7 @@ window.CierreCajasLogic = {
     transacciones: [],
     pendientesData: [],
     justificacionesCatalogo: [], // <-- Almacena las opciones de la BD
-    casosResueltosInfo: {}, // <-- Almacena los tickets listos para cerrar
-    currentUser: window.CURRENT_USER_NAME || 'Analista',
+    currentUser: window.CURRENT_USER_NAME || 'Error usuario no detectado',
 
     buildJustificacionesOptions: function() {
         return `<option value="" disabled selected>-- Seleccione una acción --</option>` + 
@@ -238,7 +237,7 @@ window.CierreCajasLogic = {
                 <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
                     <div class="flex justify-between items-start mb-2">
                         <span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Contrato: ${c.NumeroContrato}</span>
-                        <span class="text-[9px] font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900 dark:text-indigo-300 px-1.5 py-0.5 rounded" title="Reportado por">👤 ${c.CreadoPor.split(' ')[0]}</span>
+                        <span class="text-[9px] font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900 dark:text-indigo-300 px-1.5 py-0.5 rounded truncate max-w-[45%]" title="Reportado por">👤 ${c.CreadoPor}</span>
                     </div>
                     <div class="text-sm font-black text-slate-800 dark:text-white leading-tight uppercase mb-1">${c.NombreCliente}</div>
                     <div class="flex justify-between items-center text-[10px] text-slate-500 font-bold mb-3 border-b border-amber-100 dark:border-amber-800/30 pb-2">
@@ -517,8 +516,6 @@ window.CierreCajasLogic = {
                 await SysUI.alert(msg, "Alerta de Cierre TSD", "warning");
             }
 
-            this.casosResueltosInfo = data.casos_resueltos || {}; // Guardar en RAM los tickets resueltos detectados
-            
             // Adaptamos _selected o matched dependiendo de cómo lo use tu renderTransacciones
             this.transacciones = data.transacciones.map(t => ({...t, matched: false, _selected: false}));
             
@@ -717,40 +714,9 @@ window.CierreCajasLogic = {
                     </div>
                 </div>`;
             
-            // ALERTA DE MATCH INTELIGENTE (Si el contrato tiene un caso resuelto)
-            const casoR = this.casosResueltosInfo[t.Numero_Contrato];
-            if (casoR && !isSel) {
-                div.innerHTML += `
-                <div class="w-full mt-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 animate-pulse shadow-sm">
-                    <div class="text-[10px] text-blue-700 dark:text-blue-300">
-                        <span class="font-black block mb-0.5">💡 MATCH DETECTADO: Ticket #${casoR.IdCaso} (Resuelto en TSD)</span>
-                        Monto Original Error: ₡${parseFloat(casoR.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}
-                    </div>
-                    <button onclick="window.CierreCajasLogic.matchConTicket(${t.originalIndex}, ${casoR.IdCaso})" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-[10px] font-bold shadow transition-colors shrink-0 whitespace-nowrap">
-                        Vincular y Cerrar Ciclo
-                    </button>
-                </div>`;
-            } else if (t._matchedTicket) {
-                div.innerHTML += `
-                <div class="w-full mt-3 bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700 rounded-lg p-2 text-center text-emerald-700 dark:text-emerald-400 text-[10px] font-black shadow-inner">
-                    ✅ VINCULADO AUTOMÁTICAMENTE CON TICKET #${t._matchedTicket}
-                </div>`;
-            }
-
             list.appendChild(div);
         });
         this.updateTotals();
-    },
-
-    // Función que se dispara al presionar el botón de Vincular
-    matchConTicket: function(originalIndex, idCaso) {
-        let tReal = this.transacciones[originalIndex];
-        if (tReal) {
-            tReal._selected = true;
-            tReal._matchTime = Date.now();
-            tReal._matchedTicket = idCaso; // Bandera para que el backend sepa que debe cerrarlo
-            this.renderTransacciones();
-        }
     },
 
     updateTotals: function() {
@@ -862,8 +828,7 @@ window.CierreCajasLogic = {
                 tc: parseFloat(t.Tipo_Cambio_Dia || 0),
                 monto_crc: parseFloat(t.Conversion || 0),
                 match_exitoso: t._selected ? 1 : 0,
-                fecha_pago: t.Pay_Date,
-                id_caso_cerrar: t._matchedTicket || null 
+                fecha_pago: t.Pay_Date
             }))
         };
 
@@ -1151,7 +1116,7 @@ window.CierreCajasLogic = {
         if(c.Estado === 'NO_REPORTADO') { colorBorder = 'border-red-300'; colorBadge = 'bg-red-100 text-red-700'; }
         if(c.Estado === 'PENDIENTE_VISTO_BUENO') { colorBorder = 'border-purple-300 border-l-4'; colorBadge = 'bg-purple-100 text-purple-700'; }
         if(c.Estado === 'PENDIENTE_RESOLUCION') { colorBorder = 'border-amber-300'; colorBadge = 'bg-amber-100 text-amber-700'; }
-        if(c.Estado === 'RESUELTO') { colorBorder = 'border-blue-300 border-l-4'; colorBadge = 'bg-blue-100 text-blue-700'; }
+        if(c.Estado === 'RESUELTO') { colorBorder = 'border-green-400 border-l-4'; colorBadge = 'bg-green-100 text-green-700'; }
 
         const monto = parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2});
 
@@ -1215,7 +1180,7 @@ window.CierreCajasLogic = {
                 let dotColor = 'bg-slate-300';
                 if(h.Accion.includes('CREADO')) dotColor = 'bg-slate-800 dark:bg-slate-100';
                 if(h.Accion.includes('REPORTADO') || h.Accion.includes('ENVIADO')) dotColor = 'bg-amber-500';
-                if(h.Accion.includes('RESUELTO')) dotColor = 'bg-blue-500 ring-4 ring-blue-100 dark:ring-blue-900';
+                if(h.Accion.includes('RESUELTO')) dotColor = 'bg-green-500 ring-4 ring-green-100 dark:ring-green-900';
 
                 return `
                 <div class="relative">
@@ -1395,18 +1360,121 @@ window.CierreCajasLogic = {
         this.loadForense();
     },
 
+    checkForenseFilters: function() {
+        const fDesde = document.getElementById('forense-desde').value;
+        const fHasta = document.getElementById('forense-hasta').value;
+        const fBuscar = document.getElementById('forense-buscar').value.trim();
+        const btnClear = document.getElementById('btn-clear-filters');
+        
+        if (!btnClear) return;
+
+        // Calcular fechas por defecto del sistema (Últimos 7 días)
+        const hoy = new Date();
+        const hace7 = new Date(hoy);
+        hace7.setDate(hoy.getDate() - 7);
+        const defHasta = hoy.toISOString().split('T')[0];
+        const defDesde = hace7.toISOString().split('T')[0];
+
+        // Revisar si algún checkbox de sucursal está desmarcado
+        const checkboxes = document.querySelectorAll('.cb-sucursal');
+        const algunDesmarcado = checkboxes.length > 0 && Array.from(checkboxes).some(cb => !cb.checked);
+
+        // Si hay cualquier cambio respecto al estado por defecto, mostramos el botón
+        if (fBuscar !== '' || algunDesmarcado || fDesde !== defDesde || fHasta !== defHasta) {
+            btnClear.classList.remove('hidden');
+        } else {
+            btnClear.classList.add('hidden');
+        }
+    },
+
+    clearForenseFilters: function() {
+        const hoy = new Date();
+        const hace7 = new Date(hoy);
+        hace7.setDate(hoy.getDate() - 7);
+        
+        document.getElementById('forense-hasta').value = hoy.toISOString().split('T')[0];
+        document.getElementById('forense-desde').value = hace7.toISOString().split('T')[0];
+        document.getElementById('forense-buscar').value = '';
+
+        // Marcar todas las sucursales
+        const checkboxes = document.querySelectorAll('.cb-sucursal');
+        checkboxes.forEach(cb => cb.checked = true);
+        
+        // Actualizar el checkbox maestro "Seleccionar Todas" si existe
+        const cbTodas = document.querySelector('input[onchange*="cbs.forEach"]');
+        if (cbTodas) cbTodas.checked = true;
+
+        this.updateMultiSelectUI();
+        this.checkForenseFilters();
+        this.resetAndLoadForense();
+    },
+
+    // Maneja la apertura, cierre y búsqueda del Dropdown Múltiple
+    toggleForenseDropdown: function(e) {
+        if(e) e.stopPropagation();
+        const dd = document.getElementById('forense-sucursal-dropdown');
+        
+        if (dd.classList.contains('hidden')) {
+            dd.classList.remove('hidden'); // Lo abre
+            
+            // Crea un "escuchador" temporal para detectar clics fuera del menú
+            const closeDropdown = (evt) => {
+                const btn = document.getElementById('forense-sucursal-btn-text').parentElement;
+                if (!dd.contains(evt.target) && !btn.contains(evt.target)) {
+                    dd.classList.add('hidden'); // Lo oculta
+                    document.removeEventListener('click', closeDropdown); // Se destruye a sí mismo
+                    window.CierreCajasLogic.resetAndLoadForense(); // Dispara la búsqueda oficial
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeDropdown), 10);
+        } else {
+            dd.classList.add('hidden');
+            window.CierreCajasLogic.resetAndLoadForense(); // Dispara la búsqueda si se cierra con el botón
+        }
+    },
+
+    // Función para manejar el texto del botón del Multi-Select
+    updateMultiSelectUI: function() {
+        const checkboxes = document.querySelectorAll('.cb-sucursal');
+        const seleccionados = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+        const btnText = document.getElementById('forense-sucursal-btn-text');
+        
+        if (seleccionados.length === 0 || seleccionados.length === checkboxes.length) {
+            btnText.innerText = "Todas las sucursales";
+            return "TODAS";
+        } else if (seleccionados.length === 1) {
+            btnText.innerText = seleccionados[0];
+            return seleccionados[0];
+        } else {
+            btnText.innerText = `${seleccionados.length} seleccionadas`;
+            return seleccionados.join(',');
+        }
+    },
+
     loadForense: async function() {
         const fDesde = document.getElementById('forense-desde').value;
         const fHasta = document.getElementById('forense-hasta').value;
         const fBuscar = document.getElementById('forense-buscar').value.trim();
+        
+        // Determinar qué sucursales consultar
+        let fSucursal = "TODAS";
+        if (document.querySelectorAll('.cb-sucursal').length > 0) {
+            fSucursal = this.updateMultiSelectUI();
+        }
 
         if(!fDesde || !fHasta) return SysUI.alert("Debe seleccionar un rango de fechas válido.", "Filtros", "warning");
+
+        this.checkForenseFilters(); // Mantiene sincronizado el estado del botón Limpiar
+
+        // Cerrar menú si estaba abierto
+        const dropdown = document.getElementById('forense-sucursal-dropdown');
+        if (dropdown && !dropdown.classList.contains('hidden')) dropdown.classList.add('hidden');
 
         document.getElementById('cc-loading').classList.remove('hidden');
         document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            const url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&page=${this.forensePage}`;
+            const url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&sucursal=${encodeURIComponent(fSucursal)}&page=${this.forensePage}`;
             const res = await fetch(url);
             const json = await res.json();
             
@@ -1415,13 +1483,7 @@ window.CierreCajasLogic = {
 
             if (!json.success) return SysUI.alert(json.error, "Error en Auditoría", "error");
 
-            // 1. Actualizar KPIs
-            document.getElementById('kpi-tx').innerText = json.kpis.total_tx;
-            document.getElementById('kpi-crc').innerText = `₡${parseFloat(json.kpis.total_crc).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('kpi-usd').innerText = `$${parseFloat(json.kpis.total_usd).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('kpi-tickets').innerText = json.kpis.total_tickets;
-
-            // 2. Formateadores para VanillaGrid
+            // 1. Formateadores para VanillaGrid
             const statusFormatter = (cell) => {
                 const val = cell.getValue() || 'LIMPIO (MATCH)';
                 let color = 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:border-slate-700';
@@ -1429,22 +1491,77 @@ window.CierreCajasLogic = {
                 if(val === 'LIMPIO (MATCH)') color = 'bg-emerald-100 text-emerald-700 border border-emerald-200 dark:border-emerald-800';
                 if(val === 'NO_REPORTADO') color = 'bg-red-100 text-red-700 border border-red-200 dark:border-red-800';
                 if(val.includes('PENDIENTE')) color = 'bg-amber-100 text-amber-700 border border-amber-200 dark:border-amber-800';
-                if(val === 'RESUELTO') color = 'bg-blue-100 text-blue-700 border border-blue-200 dark:border-blue-800';
+                if(val === 'RESUELTO') color = 'bg-green-100 text-green-700 border border-green-200 dark:border-green-800';
                 
                 return `<span class="px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest ${color}">${val.replace(/_/g, ' ')}</span>`;
             };
 
-            // 3. Definir Columnas
+            // 1. Llenar el Multi-Select de Sucursales (Solo la primera vez)
+            const ddContainer = document.getElementById('forense-sucursal-dropdown');
+            if (ddContainer.innerHTML.includes('Cargando...') && json.mis_sucursales) {
+                ddContainer.innerHTML = `
+                    <label class="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer rounded-lg border-b border-slate-100 dark:border-slate-700">
+                        <input type="checkbox" onchange="const cbs = document.querySelectorAll('.cb-sucursal'); cbs.forEach(cb => cb.checked = this.checked); window.CierreCajasLogic.updateMultiSelectUI();" checked class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500">
+                        <span class="text-sm font-bold text-slate-800 dark:text-white">Seleccionar Todas</span>
+                    </label>
+                ` + json.mis_sucursales.map(s => `
+                    <label class="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer rounded-lg">
+                        <input type="checkbox" value="${s.ID}" class="cb-sucursal w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" checked onchange="window.CierreCajasLogic.updateMultiSelectUI();">
+                        <span class="text-sm text-slate-700 dark:text-slate-300">${s.ID} - ${s.NAME}</span>
+                    </label>
+                `).join('');
+            }
+
+            // 2. Llenar el Dashboard
+            const totalTx = json.kpis.total_tx || 0;
+            const totalErrores = json.kpis.total_tickets || 0;
+            const totalLimpias = totalTx - totalErrores;
+            const tasa = totalTx > 0 ? ((totalLimpias / totalTx) * 100).toFixed(1) : 100;
+            const montoCRC = json.kpis.total_crc || 0;
+            const montoError = json.kpis.monto_tickets_crc || 0;
+            const impactoPorcentaje = montoCRC > 0 ? ((montoError / montoCRC) * 100).toFixed(1) : 0;
+
+            document.getElementById('kpi-crc').innerText = `₡${parseFloat(montoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('kpi-usd').innerText = `$${parseFloat(json.kpis.total_usd).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            
+            // Animación de la barra de progreso
+            document.getElementById('kpi-tasa').innerText = `${tasa}%`;
+            document.getElementById('bar-exito').style.width = `${tasa}%`;
+            document.getElementById('bar-error').style.width = `${100 - tasa}%`;
+            document.getElementById('kpi-tx-limpias').innerText = totalLimpias;
+            document.getElementById('kpi-tickets').innerText = totalErrores;
+
+            document.getElementById('kpi-monto-tickets').innerText = `₡${parseFloat(montoError).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('kpi-porcentaje-monto').innerText = `${impactoPorcentaje}%`;
+
+            // 3. Definir Columnas (Optimizadas para Análisis Forense)
             const cols = [
-                { title: "Fecha", field: "FechaCierre" },
-                { title: "SUC", field: "Sucursal" },
+                { title: "Folio", field: "FolioData", hozAlign: "center", formatter: (c) => {
+                    const val = c.getValue() || '';
+                    const partes = val.split('|');
+                    return `<div class="flex flex-col items-center justify-center"><span class="font-mono text-slate-700 dark:text-slate-300 font-black" title="Folio de Cierre">#${partes[0]}</span><span class="text-[9px] text-slate-500 font-bold whitespace-nowrap mt-0.5 bg-slate-100 dark:bg-slate-700/50 px-1 rounded" title="Rango de facturación que abarca este cierre">${partes[1] || ''}</span></div>`;
+                }},
+                { title: "Hora Cierre", field: "HoraCierre", hozAlign: "center", formatter: (c) => `<span class="text-xs font-bold text-slate-500">⏱️ ${c.getValue()}</span>` },
+                { title: "SUC", field: "SucursalReal", formatter: (c) => `<span class="font-bold text-indigo-700 dark:text-indigo-400">${(c.getValue() || '').split(',')[0]}</span>` },
                 { title: "Contrato", field: "Numero_Contrato" },
                 { title: "Cliente", field: "NombreCliente" },
-                { title: "AUT", field: "Numero_Autorizacion" },
                 { title: "Monto CRC", field: "MontoCRC", formatter: "money", hozAlign: "right" },
-                { title: "Cajero", field: "Cajero" },
+                { title: "Agente", field: "Agente" },
                 { title: "Estado", field: "EstadoTicket", formatter: statusFormatter },
-                { title: "Ticket", field: "IdCaso", hozAlign: "center", formatter: (c) => c.getValue() ? `<span class="text-indigo-500 font-bold underline cursor-pointer">#${c.getValue()}</span>` : '-' }
+                { title: "Ticket", field: "IdCaso", hozAlign: "center", formatter: (c) => c.getValue() ? `<span class="text-indigo-500 font-bold underline cursor-pointer hover:text-indigo-700">#${c.getValue()}</span>` : '-' },
+                { title: "Motivo / Trámite", field: "MotivoTramiteSQL", formatter: (c) => {
+                    const textoSQL = c.getValue() || '';
+                    const partes = textoSQL.split('|'); // FORMATO: ESTADO | Visor | Motivo Agente
+                    
+                    if(partes[0] === 'LIMPIO') {
+                        const comentarioCierre = partes[1] || 'Match Limpio';
+                        return `<span class="text-[10px] text-slate-400 italic">${comentarioCierre}</span>`;
+                    } else {
+                        const visor = partes[1] ? `<b class="text-slate-800 dark:text-white">${partes[1]}</b><br>` : '';
+                        const agenteMsg = partes[2] ? `"${partes[2]}"` : '';
+                        return `<div class="text-[10px] leading-tight min-w-[150px] max-w-[200px] whitespace-normal text-slate-600 dark:text-slate-400">${visor}${agenteMsg}</div>`;
+                    }
+                }}
             ];
 
             // 4. Renderizar Grid (Solo 50 filas por página)
@@ -1469,9 +1586,10 @@ window.CierreCajasLogic = {
             document.getElementById('btn-forense-next').disabled = (json.paginacion.pagina_actual >= json.paginacion.total_paginas);
 
         } catch (e) {
+            console.error("Error Forense:", e);
             document.getElementById('cc-loading').classList.add('hidden');
             document.getElementById('cc-loading').classList.remove('flex');
-            SysUI.alert("Error de red al consultar el explorador.", "Error", "error");
+            SysUI.alert("Error al renderizar los datos: " + e.message, "Error en Auditoría", "error");
         }
     },
 

@@ -27,6 +27,9 @@ if (empty($desde) || empty($hasta)) {
 try {
     $pdo = Database::connect();
 
+    // 0. Recibir el filtro de Sucursal
+    $sucursalFiltro = $_GET['sucursal'] ?? 'TODAS';
+
     // 1. CONDICIONES BASE (WHERE)
     $whereClause = "WHERE CAST(H.FechaCierre AS DATE) BETWEEN ? AND ?";
     $params = [$desde, $hasta];
@@ -37,29 +40,40 @@ try {
         array_push($params, $term, $term, $term);
     }
 
+    if ($sucursalFiltro !== 'TODAS' && !empty($sucursalFiltro)) {
+        // Soporte para selección múltiple (Ej: "SJO,ALA,LIB")
+        $sucsArray = explode(',', $sucursalFiltro);
+        $sucConditions = [];
+        foreach ($sucsArray as $suc) {
+            $sucConditions[] = "(C.Sucursal_Relacionada = ? OR (C.IdCaso IS NULL AND H.Sucursal LIKE ?))";
+            $params[] = $suc;
+            $params[] = '%' . $suc . '%';
+        }
+        $whereClause .= " AND (" . implode(" OR ", $sucConditions) . ")";
+    }
+
     $baseJoins = "FROM Tbl_CierreCaja_Detalle D
                   INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
                   LEFT JOIN Tbl_Usuarios U ON H.EmailUsuario = U.Email
-                  LEFT JOIN Tbl_Casos_TSD C ON D.Numero_Contrato = C.NumeroContrato AND C.IdCierreOrigen = H.IdCierre";
+                  LEFT JOIN Tbl_Casos_TSD C ON D.Numero_Contrato = C.NumeroContrato AND C.IdCierreOrigen = H.IdCierre
+                  LEFT JOIN Tbl_Justificaciones_CC J ON C.IdJustificacion = J.IdJustificacion";
 
     // RBAC: Filtros de Visibilidad Universales
     $rol = $_SESSION['user']['role'] ?? '';
     $emailUsuario = $_SESSION['user']['email'] ?? '';
 
     if ($rol !== 'servicio_cliente') {
-        $tablaVinculo = ($rol === 'agente') ? 'Tbl_Agentes_Estacion' : 'Tbl_Jefes_Estacion';
-        $columnaEmail = ($rol === 'agente') ? 'EmailAgente' : 'EmailJefe';
-        
-        $whereClause .= " AND EXISTS (SELECT 1 FROM $tablaVinculo V WHERE V.$columnaEmail = ? AND V.Activo = 1 AND H.Sucursal LIKE '%' + V.CodigoSucursal + '%')";
+        $whereClause .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND H.Sucursal LIKE '%' + V.CodigoSucursal + '%')";
         $params[] = $emailUsuario;
     }
 
-    // 2. CONSULTA ULTRA-RÁPIDA DE KPIs GLOBALES (Total de ese año/mes)
+    // 2. CONSULTA ULTRA-RÁPIDA DE KPIs GLOBALES Y DASHBOARD
     $sqlKPI = "SELECT 
                     COUNT(D.IdDetalle) AS TotalTx,
-                    SUM(D.MontoCRC) AS TotalCRC,
-                    SUM(D.MontoUSD) AS TotalUSD,
-                    SUM(CASE WHEN C.IdCaso IS NOT NULL THEN 1 ELSE 0 END) AS TotalTickets
+                    ISNULL(SUM(D.MontoCRC), 0) AS TotalCRC,
+                    ISNULL(SUM(D.MontoUSD), 0) AS TotalUSD,
+                    SUM(CASE WHEN C.IdCaso IS NOT NULL THEN 1 ELSE 0 END) AS TotalTickets,
+                    ISNULL(SUM(CASE WHEN C.IdCaso IS NOT NULL THEN D.MontoCRC ELSE 0 END), 0) AS MontoTicketsCRC
                $baseJoins 
                $whereClause";
                
@@ -67,15 +81,26 @@ try {
     $stmtKPI->execute($params);
     $kpi = $stmtKPI->fetch(PDO::FETCH_ASSOC);
 
-    // 3. CONSULTA DE DATOS PAGINADOS (Solo saca 50 filas)
+    // 3. CONSULTA DE DATOS PAGINADOS (Saca 50 filas)
     $sqlData = "SELECT 
-                    D.Numero_Contrato, D.NombreCliente, D.Tipo_Tarjeta, D.Numero_Autorizacion, 
+                    CAST(H.IdCierre AS varchar) + '|' + ISNULL((
+                        SELECT CASE 
+                            WHEN CONVERT(date, MIN(Fecha_Transaccion)) = CONVERT(date, MAX(Fecha_Transaccion)) THEN CONVERT(varchar, MIN(Fecha_Transaccion), 103)
+                            ELSE CONVERT(varchar, MIN(Fecha_Transaccion), 103) + ' al ' + CONVERT(varchar, MAX(Fecha_Transaccion), 103)
+                        END FROM Tbl_CierreCaja_Detalle WHERE IdCierre = H.IdCierre
+                    ), '') AS FolioData,
+                    D.Numero_Contrato, D.NombreCliente, D.Tipo_Tarjeta, D.Numero_Autorizacion,
                     D.MontoUSD, D.MontoCRC, 
-                    CONVERT(varchar, H.FechaCierre, 103) + ' ' + CONVERT(varchar, H.FechaCierre, 108) AS FechaCierre,
-                    H.Sucursal, 
-                    ISNULL(U.Nombre, H.EmailUsuario) AS Cajero,
-                    C.IdCaso, C.Estado AS EstadoTicket
-                $baseJoins 
+                    CONVERT(varchar(5), H.FechaCierre, 108) AS HoraCierre,
+                    ISNULL(C.Sucursal_Relacionada, H.Sucursal) AS SucursalReal,
+                    ISNULL(RTRIM(U.Nombre + ' ' + ISNULL(U.Apellidos, '')), H.EmailUsuario) AS Agente,
+                    H.Comentario AS ComentarioCierre,
+                    C.IdCaso, C.Estado AS EstadoTicket,
+                    CASE 
+                        WHEN C.IdCaso IS NULL THEN 'LIMPIO|' + ISNULL(H.Comentario, '')
+                        ELSE 'TICKET|' + ISNULL(J.TextoVisor, '') + '|' + ISNULL(C.MotivoAgente, '')
+                    END AS MotivoTramiteSQL
+                $baseJoins
                 $whereClause
                 ORDER BY H.FechaCierre DESC, D.IdDetalle DESC
                 OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";
@@ -97,13 +122,26 @@ try {
     $totalFilas = (int)$kpi['TotalTx'];
     $totalPaginas = ceil($totalFilas / $limite);
 
+    // Extraer lista de sucursales disponibles para este usuario (Para llenar el combobox)
+    $listaSucs = [];
+    if ($rol === 'servicio_cliente') {
+        $stmtAllSucs = $pdo->query("SELECT CodigoSucursal AS ID, NombreSucursal AS NAME FROM Tbl_Usuario_Sucursales_cc GROUP BY CodigoSucursal, NombreSucursal");
+        $listaSucs = $stmtAllSucs->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $stmtMySucs = $pdo->prepare("SELECT CodigoSucursal AS ID, NombreSucursal AS NAME FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1 GROUP BY CodigoSucursal, NombreSucursal");
+        $stmtMySucs->execute([$emailUsuario]);
+        $listaSucs = $stmtMySucs->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     echo json_encode([
         'success' => true,
+        'mis_sucursales' => $listaSucs,
         'kpis' => [
             'total_tx' => $totalFilas,
             'total_crc' => (float)$kpi['TotalCRC'],
             'total_usd' => (float)$kpi['TotalUSD'],
-            'total_tickets' => (int)$kpi['TotalTickets']
+            'total_tickets' => (int)$kpi['TotalTickets'],
+            'monto_tickets_crc' => (float)$kpi['MontoTicketsCRC']
         ],
         'paginacion' => [
             'pagina_actual' => $pagina,

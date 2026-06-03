@@ -25,15 +25,15 @@ try {
                 C.IdCaso, C.ICD_Relacionado, C.Sucursal_Relacionada, C.NumeroContrato, 
                 C.NombreCliente, C.MontoCRC, C.Estado, C.FechaCreacion, C.DiasAtraso, C.MotivoAgente,
                 J.NombreJefe, J.EmailJefe,
-                ISNULL(U.Nombre, U.Email) AS CreadoPor
+                ISNULL(RTRIM(U.Nombre + ' ' + ISNULL(U.Apellidos, '')), U.Email) AS CreadoPor
             FROM Tbl_Casos_TSD C
             LEFT JOIN Tbl_Usuarios U ON C.EmailCreador = U.Email
             LEFT JOIN (
-                -- Agrupa múltiples jefes de la misma sucursal (Nombres separados por '/' y Correos por ',')
+                -- Agrupa Jefes dinámicamente desde la Matriz Unificada con Apellidos
                 SELECT CodigoSucursal,
-                    STUFF((SELECT ' / ' + NombreJefe FROM Tbl_Jefes_Estacion J2 WHERE J2.CodigoSucursal = J1.CodigoSucursal AND J2.Activo = 1 FOR XML PATH('')), 1, 3, '') AS NombreJefe,
-                    STUFF((SELECT ',' + EmailJefe FROM Tbl_Jefes_Estacion J2 WHERE J2.CodigoSucursal = J1.CodigoSucursal AND J2.Activo = 1 FOR XML PATH('')), 1, 1, '') AS EmailJefe
-                FROM Tbl_Jefes_Estacion J1
+                    STUFF((SELECT ' / ' + RTRIM(U2.Nombre + ' ' + ISNULL(U2.Apellidos, '')) FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 3, '') AS NombreJefe,
+                    STUFF((SELECT ',' + S2.EmailUsuario FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 1, '') AS EmailJefe
+                FROM Tbl_Usuario_Sucursales_cc S1
                 WHERE Activo = 1
                 GROUP BY CodigoSucursal
             ) J ON SUBSTRING(C.Sucursal_Relacionada, 1, CHARINDEX(' ', C.Sucursal_Relacionada + ' ') - 1) = J.CodigoSucursal
@@ -49,13 +49,9 @@ try {
         $rolUsuario = $_SESSION['user']['role'] ?? '';
         $sucursalesHome = [];
 
-        if ($rolUsuario === 'agente') {
-            $stmtSucs = $pdo->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion WHERE EmailAgente = ? AND Activo = 1");
-            $stmtSucs->execute([$emailUsuario]);
-            $sucursalesHome = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
-        } elseif (in_array($rolUsuario, ['jefe', 'admin', 'servicio_cliente'])) {
-            // Jefes, Administradores y SC guardan sus sucursales en Tbl_Jefes_Estacion
-            $stmtSucs = $pdo->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion WHERE EmailJefe = ? AND Activo = 1");
+        if (in_array($rolUsuario, ['jefe', 'admin', 'servicio_cliente', 'agente', 'coordinador'])) {
+            // Todos los roles extraen sus sucursales de la matriz unificada
+            $stmtSucs = $pdo->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1");
             $stmtSucs->execute([$emailUsuario]);
             $sucursalesHome = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
         }

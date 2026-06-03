@@ -27,13 +27,8 @@ try {
     $pdoLocal = Database::connect();
     $pdoTsd = TSDDatabase::connect();
 
-    // 1. Obtener sucursales asignadas
-    $rolUsuario = $_SESSION['user']['role'] ?? '';
-    if ($rolUsuario === 'agente') {
-        $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion WHERE EmailAgente = ? AND Activo = 1");
-    } else {
-        $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion WHERE EmailJefe = ? AND Activo = 1");
-    }
+    // 1. Obtener sucursales asignadas en la matriz unificada
+    $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1");
     
     $stmtSucs->execute([$emailUsuario]);
     $sucursales = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
@@ -136,30 +131,39 @@ try {
         $trx['Conversion'] = $monto * $tc;
     }
 
-    // 4. FILTRO DE SEGURIDAD (Limpiar Traslapes)
+    // 4. FILTRO DE SEGURIDAD (Limpiar Traslapes Inteligente)
     $contratosTSD = array_unique(array_filter(array_column($transaccionesTSD, 'Numero_Contrato')));
     $transacciones = [];
 
     if (!empty($contratosTSD)) {
         $inClause = str_repeat('?,', count($contratosTSD) - 1) . '?';
         
-        // Eliminamos el filtro de "hoy" para que evalúe si ese contrato ya se procesó alguna vez en el tiempo
-        $stmtCerrados = $pdoLocal->prepare("
-            SELECT Numero_Contrato 
+        // 1. Filtrar transacciones ya exitosas (Usando llave compuesta: Contrato + Autorización)
+        $stmtCerradosDetalle = $pdoLocal->prepare("
+            SELECT Numero_Contrato + '|' + ISNULL(Numero_Autorizacion, '') 
             FROM Tbl_CierreCaja_Detalle 
             WHERE Numero_Contrato IN ($inClause)
-            UNION
-            SELECT NumeroContrato
-            FROM Tbl_Casos_TSD
-            WHERE NumeroContrato IN ($inClause)
         ");
-        
-        $parametrosCheck = array_merge($contratosTSD, $contratosTSD);
-        $stmtCerrados->execute($parametrosCheck);
-        $contratosYaCerrados = $stmtCerrados->fetchAll(PDO::FETCH_COLUMN);
+        // FIX: Usamos array_values para reiniciar los índices numéricos que rompió array_unique
+        $stmtCerradosDetalle->execute(array_values($contratosTSD));
+        $llavesExitosas = $stmtCerradosDetalle->fetchAll(PDO::FETCH_COLUMN);
+
+        // 2. Filtrar transacciones con Tickets ACTIVOS (Usando llave compuesta: Contrato + ICD)
+        $stmtCerradosCasos = $pdoLocal->prepare("
+            SELECT NumeroContrato + '|' + ISNULL(ICD_Relacionado, '')
+            FROM Tbl_Casos_TSD
+            WHERE NumeroContrato IN ($inClause) AND Estado NOT IN ('RESUELTO', 'CERRADO')
+        ");
+        // FIX: Usamos array_values para reiniciar los índices numéricos
+        $stmtCerradosCasos->execute(array_values($contratosTSD));
+        $llavesBloqueadasCasos = $stmtCerradosCasos->fetchAll(PDO::FETCH_COLUMN);
 
         foreach ($transaccionesTSD as $t) {
-            if (!in_array($t['Numero_Contrato'], $contratosYaCerrados)) {
+            $llaveDetalle = $t['Numero_Contrato'] . '|' . $t['Numero_Autorizacion'];
+            $llaveCaso = $t['Numero_Contrato'] . '|' . $t['ICD'];
+
+            // Si no está en el detalle exitoso Y no hay un ticket activo estorbando, lo dejamos pasar.
+            if (!in_array($llaveDetalle, $llavesExitosas) && !in_array($llaveCaso, $llavesBloqueadasCasos)) {
                 $transacciones[] = $t;
             }
         }
@@ -184,29 +188,13 @@ try {
         }
     }
 
-    // 6. MATCH INTELIGENTE
-    $casosResueltosMatch = [];
-    if (!empty($contratosTSD)) {
-        $inClauseC = str_repeat('?,', count($contratosTSD) - 1) . '?';
-        $stmtMatch = $pdoLocal->prepare("
-            SELECT IdCaso, NumeroContrato, MontoCRC 
-            FROM Tbl_Casos_TSD 
-            WHERE Estado = 'RESUELTO' AND NumeroContrato IN ($inClauseC)
-            ORDER BY IdCaso ASC
-        ");
-        $stmtMatch->execute(array_values($contratosTSD));
-        foreach ($stmtMatch->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $casosResueltosMatch[$row['NumeroContrato']] = $row;
-        }
-    }
-
+    // 6. RESPUESTA AL FRONTEND
     echo json_encode([
         'success' => true,
         'metadatos' => $infoMetadatos,
         'icds_info' => implode(', ', $icdsInfo), 
         'icds_abiertos' => $icdsAbiertos,
-        'transacciones' => $transacciones,
-        'casos_resueltos' => $casosResueltosMatch 
+        'transacciones' => $transacciones
     ]);
 
 } catch (Throwable $e) { // ATRAPAMOS TODO

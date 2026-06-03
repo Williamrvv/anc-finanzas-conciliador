@@ -29,12 +29,8 @@ try {
         $pdoTsd = TSDDatabase::connect();
         $stmtSucs = $pdoTsd->query("SELECT Location AS ID, NAME FROM dbo.Setup WHERE DeactivateLocation = 0 AND Hidden = 0 AND Country = 'CRI' ORDER BY Location");
         
-        // Cargar asignaciones actuales (Unificamos Jefes y Agentes para el Frontend)
-        $stmtAsignaciones = $pdo->query("
-            SELECT EmailJefe AS Email, CodigoSucursal, NombreSucursal FROM Tbl_Jefes_Estacion
-            UNION ALL
-            SELECT EmailAgente AS Email, CodigoSucursal, NombreSucursal FROM Tbl_Agentes_Estacion
-        ");
+        // Cargar asignaciones unificadas
+        $stmtAsignaciones = $pdo->query("SELECT EmailUsuario AS Email, CodigoSucursal, NombreSucursal FROM Tbl_Usuario_Sucursales_cc WHERE Activo = 1");
 
         echo json_encode([
             'success' => true, 
@@ -91,28 +87,28 @@ try {
             $stmt->execute([$email, $nombre, $apellidos, $puesto, $idRol, $activo, $puedeAdmin, $passHash]);
         }
 
-        // --- LÓGICA DE SUCURSALES (JEFES Y AGENTES) ---
+        // --- LÓGICA DE SUCURSALES (Jerarquía Unificada) ---
         $stmtRol = $pdo->prepare("SELECT Nombre_Rol FROM Tbl_Roles WHERE Id_Rol = ?");
         $stmtRol->execute([$idRol]);
         $roleName = strtolower($stmtRol->fetchColumn());
 
-        // 1. Borramos cualquier asignación previa en ambas tablas por si cambió de rol (Limpieza)
-        $pdo->prepare("DELETE FROM Tbl_Jefes_Estacion WHERE EmailJefe = ?")->execute([$email]);
-        $pdo->prepare("DELETE FROM Tbl_Agentes_Estacion WHERE EmailAgente = ?")->execute([$email]);
+        // 1. Limpiamos la matriz unificada
+        $pdo->prepare("DELETE FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ?")->execute([$email]);
 
-        // 2. Insertamos las nuevas sucursales si aplica
-        if ($roleName === 'jefe' || $roleName === 'agente' || $roleName === 'admin') {
+        // 2. Insertamos si el rol admite sucursales
+        if (in_array($roleName, ['jefe', 'agente', 'admin', 'coordinador'])) {
             $sucursales = json_decode($_POST['sucursalesJSON'] ?? '[]', true);
-            if (empty($sucursales)) throw new Exception("Debe asignar al menos una sucursal para este rol.");
-
-            if ($roleName === 'jefe' || $roleName === 'admin') {
-                $stmtIns = $pdo->prepare("INSERT INTO Tbl_Jefes_Estacion (CodigoSucursal, NombreSucursal, NombreJefe, EmailJefe, Activo) VALUES (?, ?, ?, ?, 1)");
-            } else {
-                $stmtIns = $pdo->prepare("INSERT INTO Tbl_Agentes_Estacion (CodigoSucursal, NombreSucursal, NombreAgente, EmailAgente, Activo) VALUES (?, ?, ?, ?, 1)");
-            }
             
-            foreach ($sucursales as $suc) {
-                $stmtIns->execute([$suc['id'], $suc['nombre'], $nombre, $email]);
+            // Validación estricta: Obligatorio para todos MENOS para Admin
+            if (empty($sucursales) && $roleName !== 'admin') {
+                throw new Exception("Debe asignar al menos una sucursal obligatoriamente para el rol de " . strtoupper($roleName) . ".");
+            }
+
+            if (!empty($sucursales)) {
+                $stmtIns = $pdo->prepare("INSERT INTO Tbl_Usuario_Sucursales_cc (EmailUsuario, CodigoSucursal, NombreSucursal, Activo) VALUES (?, ?, ?, 1)");
+                foreach ($sucursales as $suc) {
+                    $stmtIns->execute([$email, $suc['id'], $suc['nombre']]);
+                }
             }
         }
 

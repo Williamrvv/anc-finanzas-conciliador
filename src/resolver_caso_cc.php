@@ -186,15 +186,15 @@ if (empty($token)) {
                         <label class="block text-xs font-bold text-slate-700 mb-2">
                             <?php echo $caso['Estado'] === 'PENDIENTE_VISTO_BUENO' ? 'Nota / Comentario de Jefatura (Opcional)' : 'Comentarios de Resolución (Opcional)'; ?>
                         </label>
-                        <textarea id="comentario" rows="3" class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="<?php echo $caso['Estado'] === 'PENDIENTE_VISTO_BUENO' ? 'Indique la resolución (si lo cierra) o una nota (si lo escala a SC)...' : 'Escriba aquí los ajustes realizados en TSD...'; ?>"></textarea>
+                        <textarea id="comentario" rows="3" class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="<?php echo $caso['Estado'] === 'PENDIENTE_VISTO_BUENO' ? 'Indique el motivo del rechazo o nota para SC...' : 'Escriba aquí los ajustes realizados en TSD...'; ?>"></textarea>
                     </div>
 
                     <div id="botones-container" class="mt-4">
                         <?php if ($caso['Estado'] === 'PENDIENTE_VISTO_BUENO'): ?>
                             <div class="flex flex-col gap-3">
-                                <button type="button" onclick="enviarAccion('RESOLVER')" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-colors flex justify-center items-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                                    Cerrar y Marcar como Resuelto
+                                <button type="button" onclick="enviarAccion('REVERTIR')" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-colors flex justify-center items-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                    Rechazar y Devolver a Agente
                                 </button>
                                 <button type="button" onclick="enviarAccion('ESCALAR_SC')" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-colors flex justify-center items-center gap-2">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
@@ -257,6 +257,8 @@ if (empty($token)) {
                 if (data.success) {
                     if (tipoAccion === 'ESCALAR_SC') {
                         form.innerHTML = '<div class="text-center py-6"><div class="text-5xl mb-4">↗️</div><h2 class="text-xl font-bold text-indigo-600 mb-2">¡Escalado!</h2><p class="text-slate-500 text-sm">El ticket ha sido escalado a Servicio al Cliente.</p></div>';
+                    } else if (tipoAccion === 'REVERTIR') {
+                        form.innerHTML = '<div class="text-center py-6"><div class="text-5xl mb-4">↩️</div><h2 class="text-xl font-bold text-rose-600 mb-2">¡Devuelto!</h2><p class="text-slate-500 text-sm">El caso ha sido rechazado y regresado a la bandeja del agente.</p></div>';
                     } else {
                         form.innerHTML = '<div class="text-center py-6"><div class="text-5xl mb-4">🎉</div><h2 class="text-xl font-bold text-green-600 mb-2">¡Ajuste Guardado!</h2><p class="text-slate-500 text-sm">El caso ha sido cerrado y marcado como resuelto.</p></div>';
                     }

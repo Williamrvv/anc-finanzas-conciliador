@@ -110,19 +110,31 @@ try {
 
         if (class_exists('Mailer')) { Mailer::send($csEmail, "Alerta SC: Caso escalado por Jefatura para corrección", $csBodyFinal); }
 
+    } elseif ($accion === 'REVERTIR') {
+        // ------------------ FLUJO RECHAZO / REVERTIR (Jefatura) ------------------
+        if ($caso['Estado'] !== 'PENDIENTE_VISTO_BUENO') {
+            throw new Exception("El caso no está pendiente de visto bueno.");
+        }
+
+        $stmtUpdate = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'NO_REPORTADO' WHERE IdCaso = ?");
+        $stmtUpdate->execute([$caso['IdCaso']]);
+
+        $huella = "Rechazado y devuelto al Agente vía Correo por: $actorCorreo | Nota: $comentarioFinal";
+        $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'ESTADO_NO_REPORTADO', ?, ?)");
+        $stmtHist->execute([$caso['IdCaso'], $dbActor, $huella]);
+
     } else { 
-        // ------------------ FLUJO RESOLVER FINAL (Customer Service o Jefatura) ------------------
-        if (!in_array($caso['Estado'], ['PENDIENTE_RESOLUCION', 'PENDIENTE_VISTO_BUENO'])) {
-            throw new Exception("El caso no está en un estado válido para ser resuelto.");
+        // ------------------ FLUJO RESOLVER FINAL (Customer Service) ------------------
+        if ($caso['Estado'] !== 'PENDIENTE_RESOLUCION') {
+            throw new Exception("El caso no está en estado pendiente de resolución.");
         }
 
         $stmtUpdate = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'RESUELTO' WHERE IdCaso = ?");
         $stmtUpdate->execute([$caso['IdCaso']]);
 
-        $accionDb = ($caso['TokenAprobacionJefe'] === $token) ? 'RESUELTO_JEFATURA' : 'RESUELTO_CS';
         $huella = "Resuelto vía Correo por: $actorCorreo | Nota: $comentarioFinal";
-        $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, ?, ?, ?)");
-        $stmtHist->execute([$caso['IdCaso'], $accionDb, $dbActor, $huella]);
+        $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'RESUELTO_CS', ?, ?)");
+        $stmtHist->execute([$caso['IdCaso'], $dbActor, $huella]);
     }
 
     $pdo->commit();

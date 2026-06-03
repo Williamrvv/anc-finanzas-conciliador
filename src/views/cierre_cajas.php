@@ -1,4 +1,4 @@
-<div class="flex flex-col h-full animate-fade-in-up pb-24 max-w-6xl mx-auto w-full" id="cierre-cajas-module">
+<div class="flex flex-col h-full animate-fade-in-up pb-24 w-full max-w-[1920px] mx-auto" id="cierre-cajas-module">
     
     <!-- HEADER -->
     <header class="pb-4 mb-4 border-b border-slate-200 dark:border-slate-700 shrink-0 mt-2 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -71,7 +71,7 @@
                     Reportar Seleccionados
                 </button>
             </div>
-            <div id="cc-mi-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-5 pb-10"></div>
+            <div id="cc-mi-list" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-5 pb-10"></div>
         </div>
     </div>
 
@@ -181,7 +181,7 @@
                 <input type="text" id="search-activos" oninput="window.CierreCajasLogic.filterActivos()" class="w-full pl-9 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-amber-500 outline-none shadow-sm transition-shadow placeholder-slate-400" placeholder="Buscar en casos activos (Contrato, Cliente, Sucursal)...">
                 <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
             </div>
-            <div id="cc-urgentes-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            <div id="cc-urgentes-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
                 <!-- Tarjetas Activas -->
             </div>
         </div>
@@ -193,7 +193,7 @@
                 <span class="absolute left-3 top-2.5 text-slate-400">🔍</span>
             </div>
             
-            <div id="cc-resueltos-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mb-6">
+            <div id="cc-resueltos-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5 mb-6">
                 <!-- Tarjetas Resueltas -->
             </div>
 
@@ -216,46 +216,85 @@
         
         <!-- Panel de Filtros -->
         <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 shrink-0">
-            <h2 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-4 flex items-center gap-2">
-                <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                Auditoría Global de Transacciones
-            </h2>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    Auditoría Global de Transacciones
+                </h2>
+                <button id="btn-clear-filters" onclick="window.CierreCajasLogic.clearForenseFilters()" class="hidden text-[10px] text-slate-400 hover:text-rose-500 font-bold underline transition-colors cursor-pointer">
+                    Limpiar Filtros
+                </button>
+            </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Inicio</label>
-                    <input type="date" id="forense-desde" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                    <input type="date" id="forense-desde" onchange="window.CierreCajasLogic.checkForenseFilters()" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Fin</label>
-                    <input type="date" id="forense-hasta" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                    <input type="date" id="forense-hasta" onchange="window.CierreCajasLogic.checkForenseFilters()" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                </div>
+                <div class="relative">
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sucursales a Consultar</label>
+                    <!-- Selector Múltiple Personalizado -->
+                    <button type="button" onclick="window.CierreCajasLogic.toggleForenseDropdown(event)" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white text-left flex justify-between items-center transition-colors">
+                        <span id="forense-sucursal-btn-text" class="truncate font-bold">Todas las sucursales</span>
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <!-- Dropdown con Checkboxes -->
+                    <div id="forense-sucursal-dropdown" class="absolute z-50 w-full md:w-64 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl hidden max-h-56 overflow-y-auto custom-scrollbar p-2 origin-top-left animate-fade-in-up">
+                        <!-- JS inyectará las opciones aquí -->
+                        <div class="p-4 text-center text-xs text-slate-400">Cargando...</div>
+                    </div>
                 </div>
                 <div class="md:col-span-2 relative">
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Búsqueda Universal</label>
-                    <input type="text" id="forense-buscar" onkeydown="if(event.key === 'Enter') window.CierreCajasLogic.resetAndLoadForense()" class="w-full pl-9 pr-24 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white placeholder-slate-400" placeholder="Contrato, Cliente o Autorización..." autocomplete="off">
+                    <input type="text" id="forense-buscar" oninput="window.CierreCajasLogic.checkForenseFilters()" onkeydown="if(event.key === 'Enter') window.CierreCajasLogic.resetAndLoadForense()" class="w-full pl-9 pr-24 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white placeholder-slate-400" placeholder="Contrato, Cliente o Autorización..." autocomplete="off">
                     <span class="absolute left-3 top-[26px] text-slate-400">🔍</span>
                     <button onclick="window.CierreCajasLogic.resetAndLoadForense()" class="absolute right-1 top-[22px] bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-md text-xs font-bold transition-colors shadow-sm">Buscar</button>
                 </div>
             </div>
         </div>
 
-        <!-- KPIs Dinámicos -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 shrink-0">
-            <div class="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 p-4 rounded-xl">
-                <div class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mb-1">Transacciones</div>
-                <div id="kpi-tx" class="text-2xl font-black text-indigo-700 dark:text-indigo-400 font-mono">0</div>
+        <!-- DASHBOARD DE RENDIMIENTO OPERATIVO -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6 shrink-0">
+            <!-- Panel 1: Resumen Monetario -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-sm flex flex-col justify-center">
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Dinero Transaccionado</div>
+                <div class="flex items-end gap-2 mb-2">
+                    <span class="text-3xl font-black text-slate-800 dark:text-white font-mono leading-none" id="kpi-crc">₡0.00</span>
+                    <span class="text-xs font-bold text-slate-400 mb-1">CRC</span>
+                </div>
+                <div class="flex items-end gap-2">
+                    <span class="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono leading-none" id="kpi-usd">$0.00</span>
+                    <span class="text-[10px] font-bold text-emerald-500/70 mb-0.5">USD</span>
+                </div>
             </div>
-            <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 p-4 rounded-xl">
-                <div class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Total Colones (CRC)</div>
-                <div id="kpi-crc" class="text-2xl font-black text-emerald-700 dark:text-emerald-400 font-mono">₡0.00</div>
+
+            <!-- Panel 2: Tasa de Efectividad (Progress Bar) -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tasa de Match Perfecto</div>
+                    <div class="text-lg font-black text-indigo-600 dark:text-indigo-400 font-mono" id="kpi-tasa">100%</div>
+                </div>
+                <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-3 overflow-hidden flex">
+                    <div id="bar-exito" class="bg-emerald-500 h-3 transition-all duration-1000" style="width: 100%"></div>
+                    <div id="bar-error" class="bg-rose-500 h-3 transition-all duration-1000" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-[10px] font-bold">
+                    <span class="text-emerald-600 dark:text-emerald-400"><span id="kpi-tx-limpias">0</span> Limpias</span>
+                    <span class="text-rose-600 dark:text-rose-400"><span id="kpi-tickets">0</span> Tickets (Errores)</span>
+                </div>
             </div>
-            <div class="bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/30 p-4 rounded-xl">
-                <div class="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-1">Total Dólares (USD)</div>
-                <div id="kpi-usd" class="text-2xl font-black text-green-700 dark:text-green-400 font-mono">$0.00</div>
-            </div>
-            <div class="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30 p-4 rounded-xl">
-                <div class="text-[10px] font-bold text-rose-500 uppercase tracking-widest mb-1">Tickets Generados</div>
-                <div id="kpi-tickets" class="text-2xl font-black text-rose-700 dark:text-rose-400 font-mono">0</div>
+
+            <!-- Panel 3: Impacto Financiero de los Tickets -->
+            <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-sm">
+                <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Impacto de Inconsistencias (CRC)</div>
+                <div class="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono mb-2" id="kpi-monto-tickets">₡0.00</div>
+                <div class="text-[10px] text-slate-500 font-medium leading-tight">
+                    Equivale al <b id="kpi-porcentaje-monto" class="text-rose-500">0%</b> del dinero total procesado en este rango de fechas.
+                </div>
             </div>
         </div>
 

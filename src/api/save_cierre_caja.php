@@ -87,9 +87,6 @@ try {
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmtD = $pdo->prepare($sqlDetail);
 
-    $stmtCerrarTicket = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'CERRADO' WHERE IdCaso = ? AND Estado = 'RESUELTO'");
-    $stmtHistCerrar = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'ESTADO_CERRADO', ?, 'Match Inteligente: El Agente Rentista vinculó la transacción de ajuste de TSD con este caso durante el Cierre de Cajas.')");
-
     foreach ($data['transacciones'] as $t) {
         // Formateo estricto ISO8601
         $fechaSegura = null;
@@ -104,15 +101,6 @@ try {
             $idCierre, $t['contrato'], $t['nombre'], $t['tarjeta'], $t['autorizacion'],
             $t['monto_usd'], $t['tc'], $t['monto_crc'], $t['match_exitoso'], $fechaSegura
         ]);
-
-        // Cierre definitivo del Bucle (Match Inteligente)
-        if (!empty($t['id_caso_cerrar'])) {
-            $stmtCerrarTicket->execute([$t['id_caso_cerrar']]);
-            // Solo insertamos en el historial si el UPDATE afectó la fila (para evitar dobles registros)
-            if ($stmtCerrarTicket->rowCount() > 0) {
-                $stmtHistCerrar->execute([$t['id_caso_cerrar'], $emailUsuario]);
-            }
-        }
     }
 
     // Casos Borrador (NO_REPORTADO)

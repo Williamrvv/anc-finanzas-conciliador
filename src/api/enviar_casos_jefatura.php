@@ -22,11 +22,15 @@ if (!$data || empty($data['casos'])) {
 }
 
 $emailUsuario = $_SESSION['user']['email'] ?? null;
-$nombreReal = $_SESSION['user']['name'] ?? 'Agente Rentista';
 
 try {
     $pdo = Database::connect();
     $pdo->beginTransaction();
+
+    // Obtener el nombre y apellido del Agente que está enviando el caso
+    $stmtUser = $pdo->prepare("SELECT RTRIM(Nombre + ' ' + ISNULL(Apellidos, '')) FROM Tbl_Usuarios WHERE Email = ?");
+    $stmtUser->execute([$emailUsuario]);
+    $nombreReal = $stmtUser->fetchColumn() ?: ($_SESSION['user']['name'] ?? 'Agente Rentista');
 
     $casosInput = $data['casos'];
     $casosIds = array_map(function($c) { return $c['id_caso']; }, $casosInput);
@@ -38,9 +42,9 @@ try {
                 FROM Tbl_Casos_TSD C
                 LEFT JOIN (
                     SELECT CodigoSucursal,
-                        STUFF((SELECT ' / ' + NombreJefe FROM Tbl_Jefes_Estacion J2 WHERE J2.CodigoSucursal = J1.CodigoSucursal AND J2.Activo = 1 FOR XML PATH('')), 1, 3, '') AS NombreJefe,
-                        STUFF((SELECT ',' + EmailJefe FROM Tbl_Jefes_Estacion J2 WHERE J2.CodigoSucursal = J1.CodigoSucursal AND J2.Activo = 1 FOR XML PATH('')), 1, 1, '') AS EmailJefe
-                    FROM Tbl_Jefes_Estacion J1
+                        STUFF((SELECT ' / ' + RTRIM(U2.Nombre + ' ' + ISNULL(U2.Apellidos, '')) FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 3, '') AS NombreJefe,
+                        STUFF((SELECT ',' + S2.EmailUsuario FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 1, '') AS EmailJefe
+                    FROM Tbl_Usuario_Sucursales_cc S1
                     WHERE Activo = 1
                     GROUP BY CodigoSucursal
                 ) J ON SUBSTRING(C.Sucursal_Relacionada, 1, CHARINDEX(' ', C.Sucursal_Relacionada + ' ') - 1) = J.CodigoSucursal

@@ -29,7 +29,7 @@ try {
     $sqlActivos = "SELECT C.IdCaso, C.Estado, C.NumeroContrato, C.NombreCliente, C.Sucursal_Relacionada, 
                           C.MontoCRC, C.DiasAtraso, C.ICD_Relacionado,
                           CONVERT(varchar, C.FechaCreacion, 103) AS FechaCreacion,
-                          ISNULL(U.Nombre, C.EmailCreador) AS CreadoPor
+                          ISNULL(RTRIM(U.Nombre + ' ' + ISNULL(U.Apellidos, '')), C.EmailCreador) AS CreadoPor
                    FROM Tbl_Casos_TSD C
                    LEFT JOIN Tbl_Usuarios U ON C.EmailCreador = U.Email
                    WHERE C.Estado NOT IN ('RESUELTO', 'CERRADO')";
@@ -37,12 +37,9 @@ try {
     $paramsActivos = [];
 
     // RBAC: Filtros de Visibilidad Universales
-    // Si no es servicio_cliente, DEBE tener sucursales asignadas
+    // Si no es servicio_cliente, DEBE tener sucursales asignadas en la matriz unificada
     if ($rol !== 'servicio_cliente') {
-        $tablaVinculo = ($rol === 'agente') ? 'Tbl_Agentes_Estacion' : 'Tbl_Jefes_Estacion';
-        $columnaEmail = ($rol === 'agente') ? 'EmailAgente' : 'EmailJefe';
-        
-        $sqlActivos .= " AND EXISTS (SELECT 1 FROM $tablaVinculo V WHERE V.$columnaEmail = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
+        $sqlActivos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsActivos[] = $emailUsuario;
     }
 
@@ -61,12 +58,9 @@ try {
                          WHERE C.Estado IN ('RESUELTO', 'CERRADO')";
     $paramsResueltos = [];
 
-    // RBAC
+    // RBAC: Filtros de Visibilidad Universales
     if ($rol !== 'servicio_cliente') {
-        $tablaVinculo = ($rol === 'agente') ? 'Tbl_Agentes_Estacion' : 'Tbl_Jefes_Estacion';
-        $columnaEmail = ($rol === 'agente') ? 'EmailAgente' : 'EmailJefe';
-        
-        $sqlBaseResueltos .= " AND EXISTS (SELECT 1 FROM $tablaVinculo V WHERE V.$columnaEmail = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
+        $sqlBaseResueltos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsResueltos[] = $emailUsuario;
     }
 
@@ -88,7 +82,7 @@ try {
     $sqlDataResueltos = "SELECT C.IdCaso, C.Estado, C.NumeroContrato, C.NombreCliente, C.Sucursal_Relacionada, 
                                 C.MontoCRC, C.DiasAtraso, 
                                 CONVERT(varchar, C.FechaCreacion, 103) AS FechaCreacion,
-                                ISNULL(U.Nombre, C.EmailCreador) AS CreadoPor
+                                ISNULL(RTRIM(U.Nombre + ' ' + ISNULL(U.Apellidos, '')), C.EmailCreador) AS CreadoPor
                          $sqlBaseResueltos
                          ORDER BY C.IdCaso DESC
                          OFFSET ? ROWS FETCH NEXT ? ROWS ONLY";

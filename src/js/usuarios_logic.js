@@ -243,17 +243,20 @@ window.UsuariosLogic = {
             formData.set('puedeAdmin', 'on');
         }
 
-        // Validación de Sucursales
+        // Validación de Sucursales Unificada
         const elRol = document.getElementById('u-rol');
         const roleName = elRol.options[elRol.selectedIndex].text.toLowerCase();
         
-        if (roleName === 'jefe' || roleName === 'agente' || roleName === 'admin') {
+        if (['jefe', 'agente', 'coordinador'].includes(roleName)) {
             if (this.selectedBranches.size === 0) {
                 btn.disabled = false;
                 btn.innerText = "Guardar Cambios";
-                return alert(`Debe seleccionar al menos una sucursal para el rol ${roleName.toUpperCase()}.`);
+                return alert(`Debe seleccionar al menos una sucursal obligatoriamente para el rol ${roleName.toUpperCase()}.`);
             }
-            // Adjuntar las sucursales como JSON
+        }
+
+        // Si es cualquiera de estos 4 (incluyendo admin opcional), pasamos el arreglo
+        if (['jefe', 'agente', 'admin', 'coordinador'].includes(roleName)) {
             const arrSucs = Array.from(this.selectedBranches, ([id, nombre]) => ({ id, nombre }));
             formData.append('sucursalesJSON', JSON.stringify(arrSucs));
         }
@@ -286,14 +289,19 @@ window.UsuariosLogic = {
         if (!elRol || !container) return;
         
         const roleName = elRol.options[elRol.selectedIndex].text.toLowerCase();
+        const asterisco = container.querySelector('label span');
         
-        // Ahora se muestra para Jefes, Agentes y Admins
-        if (roleName === 'jefe' || roleName === 'agente' || roleName === 'admin') {
+        if (['jefe', 'agente', 'admin', 'coordinador'].includes(roleName)) {
             container.classList.remove('hidden');
+            // Admin es opcional, ocultamos el asterisco rojo
+            if (roleName === 'admin') {
+                if(asterisco) asterisco.classList.add('hidden');
+            } else {
+                if(asterisco) asterisco.classList.remove('hidden');
+            }
             this.renderPills();
         } else {
             container.classList.add('hidden');
-            // No limpiamos el Map() aquí por si cambia de rol por error y regresa a Jefe, que conserve su info.
         }
     },
 
