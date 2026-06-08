@@ -1,6 +1,7 @@
 services:
   app:
     container_name: anc_finanzas_app
+    restart: always
     build: .
     ports:
       - "${WEB_PORT}:80"

@@ -15,7 +15,7 @@ $inputJSON = file_get_contents('php://input');
 $data = json_decode($inputJSON, true);
 
 $idCaso = $data['idCaso'] ?? 0;
-$accion = $data['accion'] ?? ''; // REPORTAR, RESOLVER, REVERTIR
+$accion = $data['accion'] ?? ''; 
 $comentario = trim($data['comentario'] ?? '');
 
 $emailUsuario = $_SESSION['user']['email'] ?? 'Sistema';
@@ -30,7 +30,6 @@ try {
     $pdo = Database::connect();
     $pdo->beginTransaction();
 
-    // 1. Validar el estado actual del caso
     $stmtVal = $pdo->prepare("SELECT Estado FROM Tbl_Casos_TSD WHERE IdCaso = ?");
     $stmtVal->execute([$idCaso]);
     $estadoActual = $stmtVal->fetchColumn();
@@ -39,8 +38,8 @@ try {
 
     $nuevoEstado = '';
     $notaHistorial = '';
+    $correoPendiente = null; // Variable para atrapar el correo
 
-    // 2. Máquina de Estados Estricta
     if ($accion === 'ESCALAR') {
         if ($estadoActual !== 'NO_REPORTADO') throw new Exception("El caso ya fue reportado anteriormente.");
         $nuevoEstado = 'PENDIENTE_RESOLUCION';
@@ -50,7 +49,7 @@ try {
         $stmtMotivo->execute([$comentario, $idCaso]);
 
     } 
-    elseif (in_array($accion, ['CONTRACARGO', 'DEVOLUCION', 'OTRO_CONTRATO', 'CAMBIO_RAZON_SOCIAL'])) {
+    elseif (in_array($accion, ['CERRAR', 'CONTRACARGO', 'DEVOLUCION', 'OTRO_CONTRATO', 'CAMBIO_RAZON_SOCIAL'])) {
         if ($estadoActual !== 'NO_REPORTADO') throw new Exception("El caso ya fue procesado.");
         $nuevoEstado = 'CERRADO';
         $notaHistorial = "Cerrado directamente por el Agente ($accion). Nota: $comentario";
@@ -70,7 +69,7 @@ try {
         $nuevoEstado = 'PENDIENTE_RESOLUCION';
         $notaHistorial = "Escalado a SC por Jefatura: $comentario";
         
-        // --- ENVIAR CORREO A SERVICIO AL CLIENTE ---
+        // Preparar datos del correo (sin enviarlo aún)
         $stmtDetails = $pdo->prepare("SELECT NumeroContrato, NombreCliente, Sucursal_Relacionada, MontoCRC, MotivoAgente, TokenResolucionCS, (SELECT TOP 1 RTRIM(Nombre + ' ' + ISNULL(Apellidos, '')) FROM Tbl_Usuarios WHERE Email = Tbl_Casos_TSD.EmailCreador) as CreadorNombre FROM Tbl_Casos_TSD WHERE IdCaso = ?");
         $stmtDetails->execute([$idCaso]);
         $r = $stmtDetails->fetch();
@@ -80,7 +79,6 @@ try {
         $listaCorreosCS = $stmtCS->fetchAll(PDO::FETCH_COLUMN);
 
         $csEmail = count($listaCorreosCS) > 0 ? implode(',', $listaCorreosCS) : 'soporte.tsdiri@rentascorporativascr.com';
-        
         $dominioLocal = $_SERVER['HTTP_HOST'] ?? 'localhost';
         $montoFmt = number_format((float)$r['MontoCRC'], 2, '.', ',');
         $urlResolucion = "https://$dominioLocal/resolver_caso_cc.php?token={$r['TokenResolucionCS']}&actor=" . urlencode('Servicio Al Cliente');
@@ -122,10 +120,14 @@ try {
             </div>
         </div>";
 
-        if (class_exists('Mailer')) { Mailer::send($csEmail, "Alerta SC: Caso escalado por Jefatura para corrección", $csBodyFinal); }
+        $correoPendiente = [
+            'to' => $csEmail,
+            'subject' => "Alerta SC: Caso escalado por Jefatura para corrección",
+            'body' => $csBodyFinal
+        ];
+
     } 
     elseif ($accion === 'REVERTIR') {
-        // Solo para regresar atrás en caso de error
         $nuevoEstado = 'NO_REPORTADO';
         $notaHistorial = "Revertido manualmente por Jefatura.";
     } 
@@ -133,18 +135,28 @@ try {
         throw new Exception("Acción no reconocida.");
     }
 
-    // 3. Ejecutar Update del Estado
     $stmtUpdate = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = ? WHERE IdCaso = ?");
     $stmtUpdate->execute([$nuevoEstado, $idCaso]);
 
-    // 4. Registrar en Historial
     $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, ?, ?, ?)");
     $stmtHist->execute([$idCaso, "ESTADO_" . $nuevoEstado, $emailUsuario, $notaHistorial]);
 
+    // MAGIA DE ARQUITECTURA: Guardamos los datos antes del correo
     $pdo->commit();
+
+    // Disparamos el correo atrapando la caída de red
+    if ($correoPendiente !== null && class_exists('Mailer')) {
+        try {
+            Mailer::send($correoPendiente['to'], $correoPendiente['subject'], $correoPendiente['body']);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => true, 'warning' => 'La acción fue procesada correctamente, pero hubo un fallo de red al notificar a SC.']);
+            exit;
+        }
+    }
+
     echo json_encode(['success' => true]);
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }

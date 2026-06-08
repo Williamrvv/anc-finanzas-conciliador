@@ -10,8 +10,8 @@ $data = json_decode($inputJSON, true);
 
 $token = $data['token'] ?? '';
 $comentario = trim($data['comentario'] ?? '');
-$actorCorreo = trim($data['actor'] ?? 'Sistema/Externa'); // Trazabilidad 
-$accion = trim($data['accion'] ?? 'RESOLVER'); // Puede ser RESOLVER o ESCALAR_SC
+$actorCorreo = trim($data['actor'] ?? 'Sistema/Externa'); 
+$accion = trim($data['accion'] ?? 'RESOLVER'); 
 
 if (empty($token)) {
     echo json_encode(['success' => false, 'error' => 'Token no proporcionado.']);
@@ -22,7 +22,6 @@ try {
     $pdo = Database::connect();
     $pdo->beginTransaction();
 
-    // 1. Validar Token (Cualquiera de los dos)
     $stmt = $pdo->prepare("SELECT IdCaso, Estado, TokenAprobacionJefe, TokenResolucionCS FROM Tbl_Casos_TSD WHERE TokenAprobacionJefe = ? OR TokenResolucionCS = ?");
     $stmt->execute([$token, $token]);
     $caso = $stmt->fetch();
@@ -33,18 +32,16 @@ try {
         throw new Exception("Este caso ya se encuentra resuelto.");
     }
 
-    // Extraer cuenta oficial de BD para foránea
     $stmtCheckUser = $pdo->prepare("SELECT Email FROM Tbl_Usuarios WHERE Email = ?");
     $stmtCheckUser->execute([$actorCorreo]);
     $userBd = $stmtCheckUser->fetchColumn();
     $dbActor = $userBd ? $userBd : null;
 
     $comentarioFinal = empty($comentario) ? "Sin comentarios adicionales." : $comentario;
+    $correoPendiente = null;
 
     if ($accion === 'ESCALAR_SC') {
-        if ($caso['Estado'] !== 'PENDIENTE_VISTO_BUENO') {
-            throw new Exception("El caso no está pendiente de visto bueno.");
-        }
+        if ($caso['Estado'] !== 'PENDIENTE_VISTO_BUENO') throw new Exception("El caso no está pendiente de visto bueno.");
         
         $stmtUpdate = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'PENDIENTE_RESOLUCION' WHERE IdCaso = ?");
         $stmtUpdate->execute([$caso['IdCaso']]);
@@ -53,7 +50,7 @@ try {
         $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'ESCALADO_SC', ?, ?)");
         $stmtHist->execute([$caso['IdCaso'], $dbActor, $huella]);
 
-        // ENVIAR CORREO A SERVICIO AL CLIENTE (SC)
+        // DATOS CORREO
         $stmtDetails = $pdo->prepare("
             SELECT NumeroContrato, NombreCliente, Sucursal_Relacionada, MontoCRC, MotivoAgente, TokenResolucionCS, 
                    (SELECT TOP 1 RTRIM(Nombre + ' ' + ISNULL(Apellidos, '')) FROM Tbl_Usuarios WHERE Email = Tbl_Casos_TSD.EmailCreador) as CreadorNombre 
@@ -108,13 +105,14 @@ try {
             </div>
         </div>";
 
-        if (class_exists('Mailer')) { Mailer::send($csEmail, "Alerta SC: Caso escalado por Jefatura para corrección", $csBodyFinal); }
+        $correoPendiente = [
+            'to' => $csEmail,
+            'subject' => "Alerta SC: Caso escalado por Jefatura para corrección",
+            'body' => $csBodyFinal
+        ];
 
     } elseif ($accion === 'REVERTIR') {
-        // ------------------ FLUJO RECHAZO / REVERTIR (Jefatura) ------------------
-        if ($caso['Estado'] !== 'PENDIENTE_VISTO_BUENO') {
-            throw new Exception("El caso no está pendiente de visto bueno.");
-        }
+        if ($caso['Estado'] !== 'PENDIENTE_VISTO_BUENO') throw new Exception("El caso no está pendiente de visto bueno.");
 
         $stmtUpdate = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'NO_REPORTADO' WHERE IdCaso = ?");
         $stmtUpdate->execute([$caso['IdCaso']]);
@@ -124,26 +122,33 @@ try {
         $stmtHist->execute([$caso['IdCaso'], $dbActor, $huella]);
 
     } else { 
-        // ------------------ FLUJO RESOLVER FINAL (Customer Service) ------------------
-        if ($caso['Estado'] !== 'PENDIENTE_RESOLUCION') {
-            throw new Exception("El caso no está en estado pendiente de resolución.");
-        }
+        if (!in_array($caso['Estado'], ['PENDIENTE_RESOLUCION', 'PENDIENTE_VISTO_BUENO'])) throw new Exception("El caso no está en un estado válido para ser resuelto.");
 
         $stmtUpdate = $pdo->prepare("UPDATE Tbl_Casos_TSD SET Estado = 'RESUELTO' WHERE IdCaso = ?");
         $stmtUpdate->execute([$caso['IdCaso']]);
 
+        $accionDb = ($caso['TokenAprobacionJefe'] === $token) ? 'RESUELTO_JEFATURA' : 'RESUELTO_CS';
         $huella = "Resuelto vía Correo por: $actorCorreo | Nota: $comentarioFinal";
-        $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, 'RESUELTO_CS', ?, ?)");
-        $stmtHist->execute([$caso['IdCaso'], $dbActor, $huella]);
+        $stmtHist = $pdo->prepare("INSERT INTO Tbl_Casos_Historial (IdCaso, Accion, EmailActor, ComentarioAdicional) VALUES (?, ?, ?, ?)");
+        $stmtHist->execute([$caso['IdCaso'], $accionDb, $dbActor, $huella]);
     }
 
+    // MAGIA DE ARQUITECTURA: Guardar BD antes del correo
     $pdo->commit();
+
+    if ($correoPendiente !== null && class_exists('Mailer')) {
+        try {
+            Mailer::send($correoPendiente['to'], $correoPendiente['subject'], $correoPendiente['body']);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => true, 'warning' => 'La acción se procesó correctamente, pero el servidor de correos no pudo enviar la alerta a SC.']);
+            exit;
+        }
+    }
+
     echo json_encode(['success' => true]);
 
-} catch (Exception $e) {
-    if (isset($pdo) && $pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
+} catch (Throwable $e) {
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }
 ?>
