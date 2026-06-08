@@ -317,16 +317,12 @@ window.CierreCajasLogic = {
             const reqComentario = selectedOption.getAttribute('data-req') === '1';
             const textoVisor = selectedOption.getAttribute('data-text');
             
-            // Intención de procesar: Seleccionó una acción o escribió un motivo
             if (idJustificacion !== '' || motivo !== '') {
-                
                 if (idJustificacion === '') {
-                    // Escribió motivo pero no seleccionó acción
                     selectElement.classList.add('ring-2', 'ring-red-500');
                     hasErrors = true;
                 } 
                 else if (reqComentario && motivo === '') {
-                    // Seleccionó acción que requiere motivo, pero está vacío
                     input.classList.add('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
                     hasErrors = true;
                 } 
@@ -366,6 +362,8 @@ window.CierreCajasLogic = {
         if (!confirm) return;
 
         try {
+            SysUI.showLoading("Procesando y enviando correos...");
+
             const res = await fetch('api/enviar_casos_jefatura.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -373,15 +371,19 @@ window.CierreCajasLogic = {
             });
             const data = await res.json();
 
+            SysUI.hideLoading();
+
             if (data.success) {
-                // Actualización Optimista: Eliminamos visualmente los casos procesados de inmediato
                 casosData.forEach(casoProcesado => {
                     this.pendientesData = this.pendientesData.filter(c => c.IdCaso != casoProcesado.id_caso);
                 });
 
-                await SysUI.alert("Los casos han sido procesados y las alertas enviadas exitosamente.", "Proceso Exitoso", "success");
+                if (data.warning) {
+                    await SysUI.alert(data.warning, "Proceso con Advertencias", "warning");
+                } else {
+                    await SysUI.alert("Los casos han sido procesados y las alertas enviadas exitosamente.", "Proceso Exitoso", "success");
+                }
                 
-                // Forzamos el redibujado con la memoria ya filtrada (mucho más rápido que ir a la BD)
                 if (origen === 'home') {
                     this.renderHomeBandeja(this.pendientesData);
                 } else {
@@ -391,6 +393,7 @@ window.CierreCajasLogic = {
                 throw new Error(data.error);
             }
         } catch (e) {
+            SysUI.hideLoading();
             SysUI.alert("Ocurrió un error: " + e.message, "Error Crítico", "error");
         }
     },
@@ -1487,7 +1490,6 @@ window.CierreCajasLogic = {
         let textoVisor = '';
         let confirmMsg = "¿Está seguro de continuar con esta acción?";
 
-        // Si viene del Modal en estado NO_REPORTADO, leemos el Select
         if (actionType === 'REPORTAR_DINAMICO') {
             isReporteDinamico = true;
             const selectEl = document.getElementById('tl-select-accion');
@@ -1513,7 +1515,6 @@ window.CierreCajasLogic = {
                 : "¿Enviar este caso a Jefatura para su visto bueno?";
                 
         } else {
-            // Validaciones para RESOLVER / REVERTIR / ESCALAR_SC
             if (accionFinal === 'RESOLVER' && !comentario) {
                 return SysUI.alert("Debe escribir un comentario sobre la corrección realizada.", "Campo requerido", "warning");
             }
@@ -1521,10 +1522,13 @@ window.CierreCajasLogic = {
             if (accionFinal === 'REVERTIR') confirmMsg = "⚠️ ¿Está seguro de REVERTIR este caso? Perderá el avance y volverá a estado No Reportado.";
             if (accionFinal === 'ESCALAR_SC') confirmMsg = "¿Escalar este caso y enviarlo a Servicio al Cliente para su resolución?";
         }
+        
         const confirm = await SysUI.confirm(confirmMsg, "Confirmar Acción", "info");
         if (!confirm) return;
 
         try {
+            SysUI.showLoading("Procesando y notificando...");
+
             let url = 'api/procesar_accion_modal_cc.php';
             let payload = {
                 idCaso: this.activeTimelineId,
@@ -1532,8 +1536,6 @@ window.CierreCajasLogic = {
                 comentario: comentario
             };
 
-            // MAGIA DE ARQUITECTURA: Si el caso no ha sido reportado, lo pasamos por la API de correos masivos
-            // empacado como un array de 1 elemento. Así garantizamos que el Jefe reciba el correo.
             if (isReporteDinamico) {
                 url = 'api/enviar_casos_jefatura.php';
                 payload = {
@@ -1555,11 +1557,17 @@ window.CierreCajasLogic = {
             
             const data = await res.json();
 
+            SysUI.hideLoading();
+
             if (data.success) {
                 document.getElementById('modal-timeline').classList.add('hidden');
-                SysUI.alert("Acción procesada correctamente.", "Éxito", "success");
                 
-                // Refresco Universal: Actualiza en segundo plano todas las vistas a las que el rol tenga acceso
+                if (data.warning) {
+                    await SysUI.alert(data.warning, "Proceso con Advertencias", "warning");
+                } else {
+                    await SysUI.alert("Acción procesada correctamente.", "Éxito", "success");
+                }
+                
                 if (document.getElementById('cc-sc-view')) {
                     this.loadSCData();
                 }
@@ -1569,7 +1577,6 @@ window.CierreCajasLogic = {
                 if (document.getElementById('cc-home-view')) {
                     this.loadBandejaPendientes(); 
                 }
-                // Si la tabla de auditoría ya fue instanciada, la recargamos para actualizar la fila y los KPIs
                 if (document.getElementById('cc-audit-view') && this.vgAudit) {
                     this.loadForense();
                 }
@@ -1577,6 +1584,7 @@ window.CierreCajasLogic = {
                 throw new Error(data.error);
             }
         } catch (e) {
+            SysUI.hideLoading();
             SysUI.alert("Error: " + e.message, "Error Crítico", "error");
         }
     },

@@ -42,8 +42,8 @@ try {
                 FROM Tbl_Casos_TSD C
                 LEFT JOIN (
                     SELECT CodigoSucursal,
-                        STUFF((SELECT ' / ' + RTRIM(U2.Nombre + ' ' + ISNULL(U2.Apellidos, '')) FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 3, '') AS NombreJefe,
-                        STUFF((SELECT ',' + S2.EmailUsuario FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 1, '') AS EmailJefe
+                        STUFF((SELECT ' / ' + RTRIM(U2.Nombre + ' ' + ISNULL(U2.Apellidos, '')) FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND U2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 3, '') AS NombreJefe,
+                        STUFF((SELECT ',' + S2.EmailUsuario FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND U2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 1, '') AS EmailJefe
                     FROM Tbl_Usuario_Sucursales_cc S1
                     WHERE Activo = 1
                     GROUP BY CodigoSucursal
@@ -173,7 +173,7 @@ try {
                 </li>";
         } // Fin del foreach de casos individuales
 
-        // Armar y enviar el correo para ESTE jefe
+        // Armar y PREPARAR el correo para ESTE jefe (SIN ENVIARLO TODAVÍA)
         $bodyFinal = "
         <div style='font-family: Arial, sans-serif; color: #334155; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;'>
             <div style='background-color: #4f46e5; color: #ffffff; padding: 25px 20px; text-align: center;'>
@@ -189,16 +189,42 @@ try {
             </div>
         </div>";
 
-        if (class_exists('Mailer')) {
-            Mailer::send($emailDestino, "Reporte de Cajas TSD: Novedades enviadas por $nombreReal", $bodyFinal);
-        }
+        // Lo guardamos en memoria RAM para enviarlo después
+        $correosAEnviar[] = [
+            'to' => $emailDestino,
+            'subject' => "Reporte de Cajas TSD: Novedades enviadas por $nombreReal",
+            'body' => $bodyFinal
+        ];
     } // Fin del foreach de Jefes
 
-
+    // ¡CLAVE DE ARQUITECTURA! Hacemos Commit a la BD PRIMERO.
+    // Con esto los tickets se salvan al 100%. Si un correo falla, el ticket no se borra de la BD.
     $pdo->commit();
-    echo json_encode(['success' => true]);
 
-} catch (Throwable $e) { 
+    // 4. MOTOR DE CORREOS CON RETARDO ANTI-SPAM (Manejo de Cola de Red)
+    $erroresCorreo = [];
+    if (class_exists('Mailer')) {
+        foreach ($correosAEnviar as $correo) {
+            try {
+                Mailer::send($correo['to'], $correo['subject'], $correo['body']);
+                usleep(500000); // Retardo de 0.5 segundos (Evita el bloqueo de Exchange 365)
+            } catch (Exception $e) {
+                // Si este correo falla, lo anotamos y continuamos con el siguiente
+                $erroresCorreo[] = $correo['to'];
+            }
+        }
+    }
+
+    if (count($erroresCorreo) > 0) {
+        echo json_encode([
+            'success' => true, 
+            'warning' => 'Los casos se procesaron correctamente en el sistema, pero el servidor de correos bloqueó la notificación para: ' . implode(', ', $erroresCorreo) . '. Indíquele a su Jefatura que revise su bandeja en el sistema IRI.'
+        ]);
+    } else {
+        echo json_encode(['success' => true]);
+    }
+
+} catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) {
         $pdo->rollBack();
     }

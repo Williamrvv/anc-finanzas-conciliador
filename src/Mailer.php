@@ -3,7 +3,7 @@ class Mailer {
     
     public static function send($to_list, $subject, $body) {
         $host = getenv('SMTP_HOST');
-        $port = getenv('SMTP_PORT');
+        $port = 587; // <-- FORZADO MANUALMENTE PARA EVITAR BLOQUEO DE FIREWALL
         $user = getenv('SMTP_USER');
         $pass = getenv('SMTP_PASS');
 
@@ -11,7 +11,7 @@ class Mailer {
             throw new Exception("Error SMTP: Credenciales no configuradas en el archivo .env.");
         }
 
-        // 1. Configuración de Sockets SSL
+        // 1. Configuración de Sockets
         $timeout = 15;
         $context = stream_context_create([
             'ssl' => [
@@ -21,11 +21,15 @@ class Mailer {
             ]
         ]);
 
-        $socketHost = ($port == 465) ? "ssl://$host" : $host;
-        $socket = stream_socket_client("$socketHost:$port", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
+        $isImplicitSSL = ($port == 465);
+        $socketHost = $isImplicitSSL ? "ssl://$host" : $host;
+        
+        // El arroba (@) evita que PHP imprima el warning en pantalla rompiendo el JSON
+        $socket = @stream_socket_client("$socketHost:$port", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
         
         if (!$socket) {
-            throw new Exception("Error SMTP: No se pudo conectar a $socketHost:$port - $errstr");
+            $errstr = empty($errstr) ? "Conexión bloqueada por el Firewall de la red o fallo de DNS." : $errstr;
+            throw new Exception("No se pudo conectar a $socketHost:$port - $errstr");
         }
 
         // Lector del buffer del servidor
@@ -38,14 +42,14 @@ class Mailer {
             return $response;
         };
 
-        // Enviador de comandos (Agrega \r\n automáticamente)
+        // Enviador de comandos
         $sendCommand = function($cmd, $expected_code) use ($socket, $readResponse) {
             if ($cmd !== null) {
                 fwrite($socket, $cmd . "\r\n");
             }
             $res = $readResponse();
             if ($expected_code && substr($res, 0, 3) != $expected_code) {
-                throw new Exception("Error SMTP (Esperaba $expected_code): $res");
+                throw new Exception("Esperaba código $expected_code, pero el servidor respondió: $res");
             }
             return $res;
         };
@@ -54,6 +58,19 @@ class Mailer {
             // 2. Secuencia de Comunicación SMTP
             $sendCommand(null, '220'); // Leer mensaje de bienvenida
             $sendCommand("EHLO " . gethostname(), '250');
+
+            // --- MAGIA CORPORATIVA: SOPORTE PARA STARTTLS (PUERTO 587) ---
+            if (!$isImplicitSSL) {
+                $sendCommand("STARTTLS", '220');
+                // Habilitar criptografía en pleno vuelo
+                if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT | STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                    throw new Exception("Falló la negociación de cifrado STARTTLS.");
+                }
+                // Volver a saludar por el canal seguro
+                $sendCommand("EHLO " . gethostname(), '250');
+            }
+
+            // Autenticación
             $sendCommand("AUTH LOGIN", '334');
             $sendCommand(base64_encode($user), '334');
             $sendCommand(base64_encode($pass), '235'); // 235 = Autenticación exitosa
@@ -63,7 +80,7 @@ class Mailer {
             // Procesar múltiples destinatarios
             $emails = array_filter(array_map('trim', explode(',', $to_list)));
             if (empty($emails)) {
-                throw new Exception("Error SMTP: No hay destinatarios válidos.");
+                throw new Exception("No hay destinatarios válidos.");
             }
 
             foreach ($emails as $email) {
@@ -72,7 +89,7 @@ class Mailer {
 
             $sendCommand("DATA", '354'); // 354 = Go ahead
 
-            // 3. Construcción del Mensaje (Headers y Body)
+            // 3. Construcción del Mensaje
             $messageId = "<" . uniqid() . "@" . gethostname() . ">";
             $date = date('r');
 
@@ -83,20 +100,16 @@ class Mailer {
             $message .= "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n";
             $message .= "MIME-Version: 1.0\r\n";
             $message .= "Content-Type: text/html; charset=UTF-8\r\n";
-            $message .= "\r\n"; // Línea en blanco OBLIGATORIA entre cabeceras y cuerpo
+            $message .= "\r\n"; 
             
             // Convertir saltos de línea del textarea a formato de red
             $body_crlf = preg_replace('/(?<!\r)\n/', "\r\n", $body);
             $message .= $body_crlf;
-            $message .= "\r\n"; // Aseguramos que termine en salto de línea
+            $message .= "\r\n"; 
 
-            // 4. Enviar el correo "crudo" sin esperar respuesta
+            // 4. Enviar el correo y cerrar
             fwrite($socket, $message);
-
-            // 5. Enviar el comando "Punto Final" para decirle al servidor que terminamos
-            $sendCommand(".", '250'); // 250 = Message accepted for delivery
-
-            // 6. Despedida limpia
+            $sendCommand(".", '250'); 
             $sendCommand("QUIT", '221');
             
             fclose($socket);
@@ -104,7 +117,7 @@ class Mailer {
 
         } catch (Exception $e) {
             fclose($socket);
-            throw $e;
+            throw new Exception("Error interno SMTP: " . $e->getMessage());
         }
     }
 }

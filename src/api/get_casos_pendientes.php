@@ -29,10 +29,10 @@ try {
             FROM Tbl_Casos_TSD C
             LEFT JOIN Tbl_Usuarios U ON C.EmailCreador = U.Email
             LEFT JOIN (
-                -- Agrupa Jefes dinámicamente desde la Matriz Unificada con Apellidos
+                -- Agrupa Jefes dinámicamente desde la Matriz Unificada con Apellidos (SOLO CUENTAS ACTIVAS)
                 SELECT CodigoSucursal,
-                    STUFF((SELECT ' / ' + RTRIM(U2.Nombre + ' ' + ISNULL(U2.Apellidos, '')) FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 3, '') AS NombreJefe,
-                    STUFF((SELECT ',' + S2.EmailUsuario FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 1, '') AS EmailJefe
+                    STUFF((SELECT ' / ' + RTRIM(U2.Nombre + ' ' + ISNULL(U2.Apellidos, '')) FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND U2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 3, '') AS NombreJefe,
+                    STUFF((SELECT ',' + S2.EmailUsuario FROM Tbl_Usuario_Sucursales_cc S2 INNER JOIN Tbl_Usuarios U2 ON S2.EmailUsuario = U2.Email INNER JOIN Tbl_Roles R2 ON U2.Id_Rol = R2.Id_Rol WHERE S2.CodigoSucursal = S1.CodigoSucursal AND S2.Activo = 1 AND U2.Activo = 1 AND R2.Nombre_Rol IN ('jefe', 'admin') FOR XML PATH('')), 1, 1, '') AS EmailJefe
                 FROM Tbl_Usuario_Sucursales_cc S1
                 WHERE Activo = 1
                 GROUP BY CodigoSucursal
