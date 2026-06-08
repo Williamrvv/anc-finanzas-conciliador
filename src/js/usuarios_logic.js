@@ -323,12 +323,14 @@ window.UsuariosLogic = {
                 const li = document.createElement('li');
                 li.className = "p-2.5 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0 flex justify-between";
                 li.innerHTML = `<span class="font-bold text-slate-800 dark:text-white">${s.ID}</span> <span class="text-slate-600 dark:text-slate-400 truncate ml-2">${s.NAME}</span>`;
-                li.onmousedown = (e) => { // mousedown dispara antes que blur del input
-                    e.preventDefault(); 
+                li.onmousedown = (e) => { 
+                    e.preventDefault(); // Evita que el input pierda el foco del cursor
                     this.selectedBranches.set(s.ID, s.NAME);
-                    document.getElementById('u-search-branch').value = '';
                     this.renderPills();
-                    list.classList.add('hidden');
+                    
+                    // UX: En lugar de limpiar y cerrar, volvemos a filtrar 
+                    // para que desaparezca la que acabamos de seleccionar y la lista siga abierta
+                    this.filterBranches(); 
                 };
                 list.appendChild(li);
             });
@@ -353,5 +355,11 @@ window.UsuariosLogic = {
     removeBranch: function(id) {
         this.selectedBranches.delete(id);
         this.renderPills();
+        
+        // UX: Si el usuario borra una píldora y la lista está abierta, la regresamos a la lista visualmente en tiempo real
+        const list = document.getElementById('u-branch-list');
+        if (list && !list.classList.contains('hidden')) {
+            this.filterBranches();
+        }
     }
 };

@@ -16,7 +16,7 @@ RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor
     && echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> ~/.bashrc
 
 # Instalar extensiones PHP para SQL Server
-RUN pecl install sqlsrv pdo_sqlsrv \
+RUN pecl install sqlsrv-5.11.1 pdo_sqlsrv-5.11.1 \
     && docker-php-ext-enable sqlsrv pdo_sqlsrv
 
 # Habilitar mod_rewrite de Apache

@@ -1,3 +1,7 @@
+<?php
+// Detectar si el usuario es Admin global (Dios) o un delegado
+$esAdminUniversal = ($_SESSION['user']['role'] ?? '') === 'admin';
+?>
 <div class="flex flex-col h-full animate-fade-in-up">
     <!-- Header -->
     <header class="flex justify-between items-end mb-6">
@@ -8,9 +12,11 @@
             </h1>
             <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Haga clic en un usuario para editar sus accesos y permisos.</p>
         </div>
+        <?php if($esAdminUniversal): ?>
         <button onclick="window.UsuariosLogic.openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all flex items-center gap-2">
             <span>+</span> Nuevo Usuario
         </button>
+        <?php endif; ?>
     </header>
 
     <!-- Barra de Filtros Inteligente -->
@@ -91,11 +97,8 @@
 
         <form id="form-usuario" onsubmit="window.UsuariosLogic.saveUser(event)" class="flex flex-col overflow-hidden">
             <input type="hidden" name="isEdit" id="u-is-edit" value="false">
-            
-            <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar">
-                
-                <!-- Swithes de Control Superior (Modern UI) -->
-                <div class="flex gap-4 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700">
+            <!-- Swithes de Control Superior (Ocultos para no administradores) -->
+                <div class="<?php echo $esAdminUniversal ? 'flex' : 'hidden'; ?> gap-4 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700">
                     <!-- Switch Activo -->
                     <label class="flex items-center cursor-pointer relative gap-3 flex-1 justify-between">
                         <span class="text-sm font-bold text-slate-700 dark:text-slate-300">Cuenta Activa</span>
@@ -117,32 +120,36 @@
 
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo ANC</label>
-                    <input type="email" name="email" id="u-email" required class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
+                    <input type="email" name="email" id="u-email" required class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg outline-none transition-shadow <?php echo $esAdminUniversal ? 'bg-white dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 pointer-events-none cursor-not-allowed'; ?>" <?php echo $esAdminUniversal ? '' : 'readonly tabindex="-1"'; ?>>
                 </div>
                 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre</label>
-                        <input type="text" name="nombre" id="u-nombre" required class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
+                        <input type="text" name="nombre" id="u-nombre" required class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg outline-none transition-shadow <?php echo $esAdminUniversal ? 'bg-white dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 pointer-events-none cursor-not-allowed'; ?>" <?php echo $esAdminUniversal ? '' : 'readonly tabindex="-1"'; ?>>
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Apellidos</label>
-                        <input type="text" name="apellidos" id="u-apellidos" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
+                        <input type="text" name="apellidos" id="u-apellidos" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg outline-none transition-shadow <?php echo $esAdminUniversal ? 'bg-white dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 pointer-events-none cursor-not-allowed'; ?>" <?php echo $esAdminUniversal ? '' : 'readonly tabindex="-1"'; ?>>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Puesto</label>
+                        <!-- El Puesto SIEMPRE es editable por los delegados -->
                         <input type="text" name="puesto" id="u-puesto" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 transition-shadow">
                     </div>
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rol de Acceso Base</label>
-                        <select name="idRol" id="u-rol" required onchange="window.UsuariosLogic.toggleSucursales()" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                        <select name="idRol" id="u-rol" required onchange="window.UsuariosLogic.toggleSucursales()" class="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg outline-none transition-shadow <?php echo $esAdminUniversal ? 'bg-white dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 cursor-pointer' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 pointer-events-none cursor-not-allowed'; ?>" <?php echo $esAdminUniversal ? '' : 'tabindex="-1"'; ?>>
                             <!-- JS inyecta roles -->
                         </select>
                     </div>
                 </div>
+            <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar">
+                
+                
 
                 <!-- CONTENEDOR MULTI-SELECT SUCURSALES (Solo visible para Jefes) -->
                 <div id="u-sucursales-container" class="hidden bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 flex flex-col overflow-visible">
@@ -153,15 +160,17 @@
 
                     <!-- Buscador Desplegable -->
                     <div class="relative">
-                        <input type="text" id="u-search-branch" oninput="window.UsuariosLogic.filterBranches()" onfocus="window.UsuariosLogic.filterBranches()" placeholder="Buscar por ID o Nombre de sucursal..." class="w-full p-2.5 pl-9 text-sm border border-amber-300 dark:border-amber-700/50 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 transition-shadow placeholder-amber-300/80" autocomplete="off">
-                        <span class="absolute left-3 top-2.5 text-amber-500">🔍</span>
+                        <div class="relative">
+                            <input type="text" id="u-search-branch" oninput="window.UsuariosLogic.filterBranches()" onfocus="window.UsuariosLogic.filterBranches()" placeholder="Buscar por ID o Nombre de sucursal..." class="w-full p-2.5 pl-9 text-sm border border-amber-300 dark:border-amber-700/50 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500 transition-shadow placeholder-amber-300/80" autocomplete="off">
+                            <span class="absolute left-3 top-2.5 text-amber-500">🔍</span>
+                        </div>
                         
-                        <!-- Lista Desplegable (Flotante) -->
-                        <ul id="u-branch-list" class="absolute z-[60] w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto hidden custom-scrollbar"></ul>
+                        <!-- Lista Expansible (Empuja el contenido hacia abajo y ajusta el modal) -->
+                        <ul id="u-branch-list" class="w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-inner max-h-60 overflow-y-auto hidden custom-scrollbar transition-all"></ul>
                     </div>
                 </div>
 
-                <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30">
+                <div class="<?php echo $esAdminUniversal ? 'bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30' : 'hidden'; ?>">
                     <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                         <div class="flex-grow w-full">
                             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cambiar / Asignar Contraseña Manual</label>
