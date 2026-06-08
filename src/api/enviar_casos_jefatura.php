@@ -209,8 +209,8 @@ try {
                 Mailer::send($correo['to'], $correo['subject'], $correo['body']);
                 usleep(500000); // Retardo de 0.5 segundos (Evita el bloqueo de Exchange 365)
             } catch (Exception $e) {
-                // Si este correo falla, lo anotamos y continuamos con el siguiente
-                $erroresCorreo[] = $correo['to'];
+                // Atrapamos el error EXACTO para mostrarlo en el frontend
+                $erroresCorreo[] = $correo['to'] . " (" . $e->getMessage() . ")";
             }
         }
     }
@@ -218,7 +218,7 @@ try {
     if (count($erroresCorreo) > 0) {
         echo json_encode([
             'success' => true, 
-            'warning' => 'Los casos se procesaron correctamente en el sistema, pero el servidor de correos bloqueó la notificación para: ' . implode(', ', $erroresCorreo) . '. Indíquele a su Jefatura que revise su bandeja en el sistema IRI.'
+            'warning' => "Los casos fueron procesados y guardados en el sistema, pero el servidor de correos reportó un fallo al notificar a:\n\n" . implode("\n", $erroresCorreo) . "\n\nPor favor, indíquele a su Jefatura que revise su bandeja directamente en IRI."
         ]);
     } else {
         echo json_encode(['success' => true]);

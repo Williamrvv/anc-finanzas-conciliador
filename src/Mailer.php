@@ -59,14 +59,12 @@ class Mailer {
             $sendCommand(null, '220'); // Leer mensaje de bienvenida
             $sendCommand("EHLO " . gethostname(), '250');
 
-            // --- MAGIA CORPORATIVA: SOPORTE PARA STARTTLS (PUERTO 587) ---
+            // Soporte para STARTTLS (PUERTO 587)
             if (!$isImplicitSSL) {
                 $sendCommand("STARTTLS", '220');
-                // Habilitar criptografía en pleno vuelo
                 if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_1_CLIENT | STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
                     throw new Exception("Falló la negociación de cifrado STARTTLS.");
                 }
-                // Volver a saludar por el canal seguro
                 $sendCommand("EHLO " . gethostname(), '250');
             }
 
@@ -77,14 +75,29 @@ class Mailer {
             
             $sendCommand("MAIL FROM: <$user>", '250');
 
-            // Procesar múltiples destinatarios
+            // Procesar múltiples destinatarios (Filtrado Resiliente)
             $emails = array_filter(array_map('trim', explode(',', $to_list)));
             if (empty($emails)) {
                 throw new Exception("No hay destinatarios válidos.");
             }
 
+            $aceptados = 0;
+            $ultimoError = '';
+            
             foreach ($emails as $email) {
-                $sendCommand("RCPT TO: <$email>", '250');
+                try {
+                    // Intentamos agregar al destinatario
+                    $sendCommand("RCPT TO: <$email>", '250');
+                    $aceptados++;
+                } catch (Exception $e) {
+                    // Si el servidor rechaza este correo específico (ej. Hotmail), lo anotamos pero seguimos con los demás
+                    $ultimoError = $e->getMessage();
+                }
+            }
+
+            // Si ABSOLUTAMENTE TODOS los correos fueron rechazados, abortamos
+            if ($aceptados === 0) {
+                throw new Exception("El servidor SMTP rechazó a todos los destinatarios. Detalle: $ultimoError");
             }
 
             $sendCommand("DATA", '354'); // 354 = Go ahead
