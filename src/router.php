@@ -30,7 +30,8 @@ if (!isset($_SESSION['user'])) {
         case 'jefe':
         case 'agente':
         case 'coordinador':
-            // Los de TSD ven su módulo de cierres
+        case 'servicio_cliente':
+            // Los de TSD y SC ven su módulo de cierres
             $allowed_views = ['dashboard', 'cierre_cajas'];
             break;
             

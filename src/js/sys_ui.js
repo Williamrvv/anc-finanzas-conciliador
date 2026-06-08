@@ -55,6 +55,22 @@ window.SysUI = {
                             return input.focus();
                         }
                         close(val);
+                    } else if (b.requireCheckId) {
+                        // Validación de Checkbox Obligatorio
+                        const chk = box.querySelector(`#${b.requireCheckId}`);
+                        if (chk && !chk.checked) {
+                            const err = box.querySelector(`#${b.requireCheckId}-error`);
+                            if(err) err.classList.remove('hidden');
+                            
+                            // Efecto de error visual en el contenedor
+                            const container = chk.closest('label');
+                            if (container) {
+                                container.classList.add('border-red-400', 'bg-red-50', 'dark:bg-red-900/30');
+                                setTimeout(() => container.classList.remove('border-red-400', 'bg-red-50', 'dark:bg-red-900/30'), 1500);
+                            }
+                            return; // Detiene el cierre del modal
+                        }
+                        close(b.value);
                     } else {
                         close(b.value);
                     }
@@ -77,6 +93,16 @@ window.SysUI = {
         return this._createModal(title, html, [
             {text: 'Cancelar', value: null, class: 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors'},
             {text: 'Guardar', isPrompt: true, allowEmpty: false, class: 'bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold shadow-sm transition-colors'}
+        ], "info");
+    },
+    
+    // Nuevo Modal Exclusivo con Checkbox Obligatorio
+    confirmCierre: function(msg, title="Confirmar Cierre") {
+        const html = `<div><span class="block mb-5 whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">${msg}</span><div class="border-t border-slate-200 dark:border-slate-700 pt-5"><label class="flex items-start gap-3 p-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl cursor-pointer transition-colors group select-none relative overflow-hidden"><div class="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div><div class="relative flex items-center justify-center shrink-0 mt-0.5 ml-2"><input type="checkbox" id="chk-datafono" class="peer appearance-none w-5 h-5 border-2 border-slate-300 dark:border-slate-500 rounded-md checked:bg-indigo-600 checked:border-indigo-600 transition-all cursor-pointer"><svg class="absolute w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg></div><div class="flex flex-col"><span class="text-sm font-black text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Cierre de Datáfono Confirmado</span><span class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Declaro que ya ejecuté el proceso de cierre físico en la terminal POS.</span></div></label><div id="chk-datafono-error" class="hidden mt-3 text-xs font-bold text-red-500 animate-shake flex items-center gap-1"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>Debe marcar la casilla obligatoria para continuar.</div></div></div>`;
+
+        return this._createModal(title, html, [
+            {text: 'Cancelar', value: false, class: 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors'},
+            {text: 'Guardar Cierre', value: true, requireCheckId: 'chk-datafono', class: 'bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md transition-colors'}
         ], "info");
     }
 };

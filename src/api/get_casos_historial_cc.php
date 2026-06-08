@@ -37,8 +37,8 @@ try {
     $paramsActivos = [];
 
     // RBAC: Filtros de Visibilidad Universales
-    // Si no es servicio_cliente, DEBE tener sucursales asignadas en la matriz unificada
-    if ($rol !== 'servicio_cliente') {
+    // Si no es servicio_cliente ni admin, DEBE tener sucursales asignadas en la matriz unificada
+    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
         $sqlActivos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsActivos[] = $emailUsuario;
     }
@@ -59,7 +59,7 @@ try {
     $paramsResueltos = [];
 
     // RBAC: Filtros de Visibilidad Universales
-    if ($rol !== 'servicio_cliente') {
+    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
         $sqlBaseResueltos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsResueltos[] = $emailUsuario;
     }

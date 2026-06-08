@@ -40,10 +40,16 @@ try {
             WHERE C.Estado != 'CERRADO'";
 
     if (empty($sucursal)) {
-        // VISTA DE INICIO: Traer todos mis pendientes activos
-        $sql .= " AND C.EmailCreador = ? ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
+        // VISTA DE INICIO: Traer todos mis pendientes activos que coincidan con mis sucursales actuales asignadas
+        $sql .= " AND C.EmailCreador = ? 
+                  AND EXISTS (
+                      SELECT 1 FROM Tbl_Usuario_Sucursales_cc V 
+                      WHERE V.EmailUsuario = ? AND V.Activo = 1 
+                      AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%'
+                  )
+                  ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$emailUsuario]);
+        $stmt->execute([$emailUsuario, $emailUsuario]); // Se pasa dos veces: Uno para el creador, otro para la subconsulta
         
         // --- NUEVO: Extraer sucursales asignadas para mostrar en el Home ---
         $rolUsuario = $_SESSION['user']['role'] ?? '';

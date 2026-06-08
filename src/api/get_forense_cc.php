@@ -35,9 +35,15 @@ try {
     $params = [$desde, $hasta];
 
     if (!empty($buscar)) {
-        $whereClause .= " AND (D.Numero_Contrato LIKE ? OR D.NombreCliente LIKE ? OR D.Numero_Autorizacion LIKE ?)";
-        $term = '%' . $buscar . '%';
-        array_push($params, $term, $term, $term);
+        // Soporte para búsqueda directa por Folio (Ej: f:25 o F:25)
+        if (preg_match('/^f:(\d+)$/i', $buscar, $matches)) {
+            $whereClause .= " AND H.IdCierre = ?";
+            $params[] = $matches[1];
+        } else {
+            $whereClause .= " AND (D.Numero_Contrato LIKE ? OR D.NombreCliente LIKE ? OR D.Numero_Autorizacion LIKE ?)";
+            $term = '%' . $buscar . '%';
+            array_push($params, $term, $term, $term);
+        }
     }
 
     if ($sucursalFiltro !== 'TODAS' && !empty($sucursalFiltro)) {
@@ -62,7 +68,7 @@ try {
     $rol = $_SESSION['user']['role'] ?? '';
     $emailUsuario = $_SESSION['user']['email'] ?? '';
 
-    if ($rol !== 'servicio_cliente') {
+    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
         $whereClause .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND H.Sucursal LIKE '%' + V.CodigoSucursal + '%')";
         $params[] = $emailUsuario;
     }
@@ -80,6 +86,17 @@ try {
     $stmtKPI = $pdo->prepare($sqlKPI);
     $stmtKPI->execute($params);
     $kpi = $stmtKPI->fetch(PDO::FETCH_ASSOC);
+
+    // 2.5 SUB-CONSULTA DE ESTADOS DE TICKETS (Para el Mini-Gráfico)
+    $sqlEstados = "SELECT 
+                       C.Estado, 
+                       COUNT(C.IdCaso) AS Cantidad 
+                   $baseJoins 
+                   $whereClause AND C.IdCaso IS NOT NULL 
+                   GROUP BY C.Estado";
+    $stmtEst = $pdo->prepare($sqlEstados);
+    $stmtEst->execute($params);
+    $kpiEstados = $stmtEst->fetchAll(PDO::FETCH_ASSOC);
 
     // 3. CONSULTA DE DATOS PAGINADOS (Saca 50 filas)
     $sqlData = "SELECT 
@@ -124,8 +141,8 @@ try {
 
     // Extraer lista de sucursales disponibles para este usuario (Para llenar el combobox)
     $listaSucs = [];
-    if ($rol === 'servicio_cliente') {
-        $stmtAllSucs = $pdo->query("SELECT CodigoSucursal AS ID, NombreSucursal AS NAME FROM Tbl_Usuario_Sucursales_cc GROUP BY CodigoSucursal, NombreSucursal");
+    if (in_array($rol, ['servicio_cliente', 'admin'])) {
+        $stmtAllSucs = $pdo->query("SELECT CodigoSucursal AS ID, MAX(NombreSucursal) AS NAME FROM Tbl_Usuario_Sucursales_cc GROUP BY CodigoSucursal");
         $listaSucs = $stmtAllSucs->fetchAll(PDO::FETCH_ASSOC);
     } else {
         $stmtMySucs = $pdo->prepare("SELECT CodigoSucursal AS ID, NombreSucursal AS NAME FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1 GROUP BY CodigoSucursal, NombreSucursal");
@@ -141,7 +158,8 @@ try {
             'total_crc' => (float)$kpi['TotalCRC'],
             'total_usd' => (float)$kpi['TotalUSD'],
             'total_tickets' => (int)$kpi['TotalTickets'],
-            'monto_tickets_crc' => (float)$kpi['MontoTicketsCRC']
+            'monto_tickets_crc' => (float)$kpi['MontoTicketsCRC'],
+            'estados_tickets' => $kpiEstados
         ],
         'paginacion' => [
             'pagina_actual' => $pagina,

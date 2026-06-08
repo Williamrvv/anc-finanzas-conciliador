@@ -3,7 +3,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Router simple: Leer la URL actual
     const path = window.location.pathname.substring(1); 
-    const view = path === '' ? 'dashboard' : path;
+    let view = path === '' ? 'dashboard' : path;
+
+    // Redirección especial: SC va directo a su bandeja
+    if (view === 'dashboard' && window.CURRENT_USER_ROLE === 'servicio_cliente') {
+        view = 'cierre_cajas';
+    }
 
     // Carga inicial
     if(window.loadView) {
@@ -80,7 +85,9 @@ window.loadView = function(viewName, pushHistory = true) {
             }
 
             // Inicialización de módulos
-            if (viewName === 'conciliacion' && window.ConciliacionLogic) {
+            if (viewName === 'dashboard' && window.DashboardLogic) {
+                requestAnimationFrame(() => window.DashboardLogic.init());
+            } else if (viewName === 'conciliacion' && window.ConciliacionLogic) {
                 requestAnimationFrame(() => window.ConciliacionLogic.init());
             } else if (viewName === 'tsd' && window.TSDLogic) {
                 requestAnimationFrame(() => window.TSDLogic.init());

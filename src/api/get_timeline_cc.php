@@ -41,7 +41,7 @@ try {
     $stmtHist->execute([$idCaso]);
     $historial = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
 
-    // Obtener el catálogo por si el caso está en NO_REPORTADO
+    // 3. Obtener Catálogo Dinámico de Justificaciones (VITAL PARA EL SELECT DEL MODAL)
     $stmtCat = $pdo->query("SELECT IdJustificacion, TextoVisor, TipoAccion, RequiereComentario FROM Tbl_Justificaciones_CC WHERE Activo = 1 ORDER BY IdJustificacion ASC");
     $catalogoJustificaciones = $stmtCat->fetchAll(PDO::FETCH_ASSOC);
 

@@ -15,6 +15,7 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         window.CURRENT_USER_NAME = <?php echo json_encode($nombreReal); ?>;
+        window.CURRENT_USER_ROLE = <?php echo json_encode($_SESSION['user']['role'] ?? 'visitante'); ?>;
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -66,6 +67,99 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
 
 <body class="bg-slate-50 dark:bg-slate-900 transition-colors duration-300 flex flex-col min-h-screen">
 
+    <?php if(isset($_SESSION['user']) && ($_SESSION['user']['req_password'] ?? false)): ?>
+    <!-- ============================================================================== -->
+    <!-- PANTALLA FORZAR CONTRASEÑA (AISLADA POR SEGURIDAD)                             -->
+    <!-- Al detener la ejecución con 'exit', garantizamos que el código del sistema     -->
+    <!-- NO se envíe al navegador, haciendo imposible saltar este paso editando el DOM. -->
+    <!-- ============================================================================== -->
+    <div class="flex flex-grow items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-700 transform transition-all animate-fade-in-up">
+            <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-700 bg-indigo-600 text-center">
+                <span class="text-4xl block mb-2">🔐</span>
+                <h3 class="text-lg font-black text-white">Configuración de Seguridad</h3>
+                <p class="text-indigo-200 text-xs mt-1">Debe establecer una contraseña privada</p>
+            </div>
+            <form id="form-force-pass" class="p-6 space-y-4">
+                
+                <!-- Guía Visual de Requisitos -->
+                <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 mb-4">
+                    <span class="block text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Tu contraseña debe incluir:</span>
+                    <ul class="text-[11px] text-slate-600 dark:text-slate-400 space-y-0.5 ml-1">
+                        <li>✔️ Mínimo 12 caracteres.</li>
+                        <li>✔️ Al menos una letra <b class="text-slate-800 dark:text-white">Mayúscula</b>.</li>
+                        <li>✔️ Al menos un <b class="text-slate-800 dark:text-white">número</b> (0-9).</li>
+                        <li>✔️ Un carácter especial <b class="text-slate-800 dark:text-white">(!, @, #, $, %)</b>.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nueva Contraseña</label>
+                    <input type="password" id="fp-pass1" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Confirmar Contraseña</label>
+                    <input type="password" id="fp-pass2" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+                    <p id="fp-error" class="text-xs text-red-500 font-bold mt-2 hidden">Las contraseñas no coinciden.</p>
+                </div>
+                
+                <button type="submit" id="fp-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all mt-4 mb-2 hover:-translate-y-0.5">
+                    Guardar Contraseña
+                </button>
+                <div class="text-center mt-2 border-t border-slate-100 dark:border-slate-700 pt-3">
+                    <a href="logout.php" class="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors">Cancelar y Salir</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        document.getElementById('form-force-pass').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const p1 = document.getElementById('fp-pass1').value;
+            const p2 = document.getElementById('fp-pass2').value;
+            const err = document.getElementById('fp-error');
+            const btn = document.getElementById('fp-btn');
+
+            if (p1.length < 12) {
+                err.innerText = "La contraseña debe tener al menos 12 caracteres.";
+                err.classList.remove('hidden'); return;
+            }
+            if (p1 !== p2) {
+                err.innerText = "Las contraseñas no coinciden.";
+                err.classList.remove('hidden'); return;
+            }
+
+            err.classList.add('hidden');
+            btn.disabled = true;
+            btn.innerText = "Guardando...";
+
+            try {
+                const res = await fetch('api/force_password.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ password: p1 })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    err.innerText = data.error;
+                    err.classList.remove('hidden');
+                }
+            } catch (error) {
+                err.innerText = "Error de red. Intente de nuevo.";
+                err.classList.remove('hidden');
+            }
+            btn.disabled = false;
+            btn.innerText = "Guardar Contraseña";
+        });
+    </script>
+</body>
+</html>
+<?php exit; // <-- MAGIA DE SEGURIDAD: IMPIDE QUE EL RESTO DEL SISTEMA CARGUE ?>
+<?php endif; ?>
+
     <!-- HEADER / NAVBAR -->
     <?php if(isset($_SESSION['user'])): ?>
     <nav class="bg-white dark:bg-slate-800 shadow-sm border-b border-slate-200 dark:border-slate-700 sticky top-0 z-50 relative">
@@ -85,8 +179,8 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
                     <div class="hidden xl:flex ml-2 space-x-1">
                         <button onclick="loadView('dashboard')" class="text-slate-600 dark:text-slate-300 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">Inicio</button>
 
-                        <!-- Módulo TSD (Administradores, Jefes, Agentes y Coordinadores) -->
-                        <?php if(in_array($_SESSION['user']['role'], ['admin', 'agente', 'jefe', 'coordinador'])): ?>
+                        <!-- Módulo TSD (Administradores, Jefes, Agentes, Coordinadores y SC) -->
+                        <?php if(in_array($_SESSION['user']['role'], ['admin', 'agente', 'jefe', 'coordinador', 'servicio_cliente'])): ?>
                         <button onclick="loadView('cierre_cajas')" class="text-slate-600 dark:text-slate-300 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             Cierre de Caja
@@ -194,96 +288,6 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
         <!-- ... stats ... -->
     </div>
 
-    <!-- MODAL FORZAR CONTRASEÑA -->
-    <?php if(isset($_SESSION['user']) && ($_SESSION['user']['req_password'] ?? false)): ?>
-    <div id="modal-force-pass" class="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 dark:border-slate-700 transform transition-all animate-fade-in-up">
-            <div class="px-6 py-5 border-b border-slate-100 dark:border-slate-700 bg-indigo-600 text-center">
-                <span class="text-4xl block mb-2">🔐</span>
-                <h3 class="text-lg font-black text-white">Configuración de Seguridad</h3>
-                <p class="text-indigo-200 text-xs mt-1">Debe establecer una contraseña privada</p>
-            </div>
-            <form id="form-force-pass" class="p-6 space-y-4">
-                
-                <!-- Guía Visual de Requisitos -->
-                <div class="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 mb-4">
-                    <span class="block text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Tu contraseña debe incluir:</span>
-                    <ul class="text-[11px] text-slate-600 dark:text-slate-400 space-y-0.5 ml-1">
-                        <li>✔️ Mínimo 8 caracteres.</li>
-                        <li>✔️ Al menos una letra <b class="text-slate-800 dark:text-white">Mayúscula</b>.</li>
-                        <li>✔️ Al menos un <b class="text-slate-800 dark:text-white">número</b> (0-9).</li>
-                        <li>✔️ Un carácter especial <b class="text-slate-800 dark:text-white">(!, @, #, $, %)</b>.</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nueva Contraseña</label>
-                    <input type="password" id="fp-pass1" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Confirmar Contraseña</label>
-                    <input type="password" id="fp-pass2" required class="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
-                    <p id="fp-error" class="text-xs text-red-500 font-bold mt-2 hidden">Las contraseñas no coinciden.</p>
-                </div>
-                
-                <button type="submit" id="fp-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl shadow-md transition-all mt-4 mb-2 hover:-translate-y-0.5">
-                    Guardar Contraseña
-                </button>
-                <div class="text-center mt-2 border-t border-slate-100 dark:border-slate-700 pt-3">
-                    <a href="logout.php" class="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors">
-                        Regresar
-                    </a>
-                </div>
-            </form>
-        </div>
-    </div>
-    <script>
-        document.getElementById('form-force-pass').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const p1 = document.getElementById('fp-pass1').value;
-            const p2 = document.getElementById('fp-pass2').value;
-            const err = document.getElementById('fp-error');
-            const btn = document.getElementById('fp-btn');
-
-            if (p1.length < 6) {
-                err.innerText = "La contraseña debe tener al menos 6 caracteres.";
-                err.classList.remove('hidden'); return;
-            }
-            if (p1 !== p2) {
-                err.innerText = "Las contraseñas no coinciden.";
-                err.classList.remove('hidden'); return;
-            }
-
-            err.classList.add('hidden');
-            btn.disabled = true;
-            btn.innerText = "Guardando...";
-
-            try {
-                const res = await fetch('api/force_password.php', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ password: p1 })
-                });
-                const data = await res.json();
-                
-                if (data.success) {
-                    document.getElementById('modal-force-pass').remove();
-                    // Refrescar para limpiar la bandera de sesión
-                    window.location.reload();
-                } else {
-                    err.innerText = data.error;
-                    err.classList.remove('hidden');
-                }
-            } catch (error) {
-                err.innerText = "Error de red. Intente de nuevo.";
-                err.classList.remove('hidden');
-            }
-            btn.disabled = false;
-            btn.innerText = "Guardar Contraseña";
-        });
-    </script>
-    <?php endif; ?>
-
     <!-- CSS y JS de Flatpickr (Calendario Rango) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -308,5 +312,8 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script src="js/cierre_cajas_logic.js?v=<?php echo time(); ?>"></script>
     <!-- JS SPA -->
     <script src="js/app.js"></script>
+    <!-- Chart.js para Dashboards Animados -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/dashboard_logic.js?v=1"></script>
 </body>
 </html>

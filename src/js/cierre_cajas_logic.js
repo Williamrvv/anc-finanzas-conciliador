@@ -5,12 +5,37 @@ window.CierreCajasLogic = {
     pendientesData: [],
     justificacionesCatalogo: [], // <-- Almacena las opciones de la BD
     currentUser: window.CURRENT_USER_NAME || 'Error usuario no detectado',
+    fpRango: null, // Instancia de Flatpickr
 
     buildJustificacionesOptions: function() {
         return `<option value="" disabled selected>-- Seleccione una acción --</option>` + 
             this.justificacionesCatalogo.map(j => 
             `<option value="${j.IdJustificacion}" data-accion="${j.TipoAccion}" data-req="${j.RequiereComentario}" data-text="${j.TextoVisor}">${j.TextoVisor}</option>`
         ).join('');
+    },
+
+    getGuiaJustificacionesHTML: function() {
+        return `
+        <details class="mb-2 group border border-indigo-100 dark:border-indigo-800/60 rounded-lg">
+            <summary class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 cursor-pointer p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg list-none [&::-webkit-details-marker]:hidden flex justify-between items-center select-none transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/50">
+                <span class="flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Ver Guía de Justificaciones
+                </span>
+                <svg class="w-3.5 h-3.5 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </summary>
+            <div class="p-3 text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed bg-white dark:bg-slate-900 rounded-b-lg border-t border-indigo-100 dark:border-indigo-800/60">
+                <ul class="space-y-1.5 list-disc pl-3">
+                    <li><b class="text-slate-800 dark:text-slate-200">Escalar a Jefatura:</b> VB para eliminar líneas de pago en TSD (No es pago es check-in, monto incorrecto, autorización errónea, contrato incorrecto).</li>
+                    <li><b class="text-slate-800 dark:text-slate-200">Cerrar - Reintegro:</b> Montos negativos en TSD por contracargos.</li>
+                    <li><b class="text-slate-800 dark:text-slate-200">Cerrar - Devolución:</b> Devoluciones a clientes registradas en TSD por SC.</li>
+                    <li><b class="text-slate-800 dark:text-slate-200">Cerrar - Va para Otro Contrato:</b> Reembolsos aplicados para trasladar el pago.</li>
+                    <li><b class="text-slate-800 dark:text-slate-200">Cerrar - Viene de Otro Contrato:</b> Pago proveniente de otro contrato.</li>
+                    <li><b class="text-slate-800 dark:text-slate-200">Cerrar - Cobro Mal Asignado:</b> Asignado a una razón social o persona incorrecta en TSD.</li>
+                    <li><b class="text-slate-800 dark:text-slate-200">Cerrar - Corrección cierre anterior:</b> Pagos bien registrados por eliminación en un cierre previo.</li>
+                </ul>
+            </div>
+        </details>`;
     },
 
     // Motor UX: Cambia el placeholder y quita errores según lo que diga la BD
@@ -54,20 +79,19 @@ window.CierreCajasLogic = {
         }).catch(err => console.error('Error al copiar:', err));
     },
 
+    dataSC: [], // Memoria local para Servicio al Cliente
+
     init: function() {
         console.log("Módulo Cierre de Caja Iniciado");
 
-        const homeView = document.getElementById('cc-home-view');
-            const workspace = document.getElementById('cc-workspace');
-            const actionBar = document.getElementById('cc-action-bar');
-
-            // Ocultamos las vistas iniciales
-            this.switchTab('workspace'); // Inicia en el workspace por defecto
-            
-            // Llama a la base de datos para traer los pendientes
+        // Si existe el Módulo de Trabajo normal (Para Agentes, Jefes, Admin)
+        if (document.getElementById('tab-workspace')) {
+            this.switchTab('workspace');
             this.loadBandejaPendientes();
-            
-        // }, 50);
+        } else if (document.getElementById('tab-sc_workspace')) {
+            // Si no existe lo anterior, pero sí el de SC (Usuario SC exclusivo)
+            this.switchTab('sc_workspace');
+        }
     },
 
     // =====================================================================
@@ -155,6 +179,7 @@ window.CierreCajasLogic = {
 
                 // Select de Acción e Input Reactivo
                 let motivoHtml = `
+                    ${window.CierreCajasLogic.getGuiaJustificacionesHTML()}
                     <select id="accion-home-${c.IdCaso}" class="cc-accion-select-home w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors" onchange="window.CierreCajasLogic.toggleMotivoReq(this, 'motivo-home-${c.IdCaso}')">
                         ${window.CierreCajasLogic.buildJustificacionesOptions()}
                     </select>
@@ -175,7 +200,13 @@ window.CierreCajasLogic = {
                         
                         <!-- Datos Principales -->
                         <div class="mb-3">
-                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Contrato: <span class="text-slate-700 dark:text-slate-300">${c.NumeroContrato}</span></div>
+                            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">
+                                CONTRATO: 
+                                <span onclick="window.CierreCajasLogic.copiarContrato('${c.NumeroContrato}', this)" class="text-slate-700 dark:text-slate-300 cursor-pointer hover:text-indigo-600 transition-colors flex items-center gap-1 group" title="Clic para copiar">
+                                    ${c.NumeroContrato}
+                                    <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                </span>
+                            </div>
                             <h3 class="text-sm font-black text-indigo-900 dark:text-white leading-tight uppercase line-clamp-2" title="${c.NombreCliente}">${c.NombreCliente}</h3>
                             <div class="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-900 inline-block px-1.5 py-0.5 rounded mt-1.5 uppercase border border-slate-200 dark:border-slate-700">🏢 ${c.Sucursal_Relacionada}</div>
                         </div>
@@ -236,7 +267,13 @@ window.CierreCajasLogic = {
             list.innerHTML = noReportados.map(c => `
                 <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
                     <div class="flex justify-between items-start mb-2">
-                        <span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Contrato: ${c.NumeroContrato}</span>
+                        <span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest flex items-center gap-1">
+                            Contrato: 
+                            <span onclick="window.CierreCajasLogic.copiarContrato('${c.NumeroContrato}', this)" class="cursor-pointer hover:text-amber-800 dark:hover:text-amber-400 transition-colors flex items-center gap-1 group" title="Clic para copiar">
+                                ${c.NumeroContrato}
+                                <svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                            </span>
+                        </span>
                         <span class="text-[9px] font-bold text-indigo-500 bg-indigo-100 dark:bg-indigo-900 dark:text-indigo-300 px-1.5 py-0.5 rounded truncate max-w-[45%]" title="Reportado por">👤 ${c.CreadoPor}</span>
                     </div>
                     <div class="text-sm font-black text-slate-800 dark:text-white leading-tight uppercase mb-1">${c.NombreCliente}</div>
@@ -244,6 +281,7 @@ window.CierreCajasLogic = {
                         <span>ICD: <span class="font-mono text-slate-700 dark:text-slate-300">${c.ICD_Relacionado}</span></span>
                         <span class="text-amber-700 dark:text-amber-500">₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}</span>
                     </div>
+                    ${window.CierreCajasLogic.getGuiaJustificacionesHTML()}
                     <select id="accion-suc-${c.IdCaso}" class="cc-accion-select-suc w-full text-xs px-2 py-1.5 mb-2 bg-slate-50 dark:bg-slate-900 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 font-bold transition-colors" onchange="window.CierreCajasLogic.toggleMotivoReq(this, 'motivo-suc-${c.IdCaso}')">
                         ${window.CierreCajasLogic.buildJustificacionesOptions()}
                     </select>
@@ -783,17 +821,19 @@ window.CierreCajasLogic = {
             confirmMsg = `Resumen del Cierre [${nombresSucs}]:\n\n` +
                          `✅ Conciliados: ${selectedCount}\n` +
                          `⚠️ Pendientes (Sin Match): ${unselected.length}\n\n` +
-                         `Los casos pendientes quedarán guardados en su "Bandeja de Pendientes" para que pueda justificarlos y enviarlos a la jefatura posteriormente.\n\n¿Desea registrar el cierre?`;
+                         `Los casos pendientes quedarán guardados en su "Bandeja de Pendientes" para que pueda justificarlos y enviarlos a la jefatura posteriormente.`;
             
-            const confirm = await SysUI.confirm(confirmMsg, "Confirmar Cierre Parcial", "warning");
+            // Usamos el nuevo modal con Checkbox Obligatorio
+            const confirm = await SysUI.confirmCierre(confirmMsg, "Confirmar Cierre Parcial");
             if (!confirm) return;
             this.executeSaveAndSend(true); // true = crea casos borrador
         } else {
             confirmMsg = `Resumen del Cierre [${nombresSucs}]:\n\n` +
                          `✅ Conciliados y Listos: ${selectedCount}\n\n` +
-                         `Todas las transacciones cuadraron perfectamente. ¿Desea registrar el cierre definitivo?`;
+                         `Todas las transacciones cuadraron perfectamente.`;
             
-            const confirm = await SysUI.confirm(confirmMsg, "Confirmar Cierre Total", "info");
+            // Usamos el nuevo modal con Checkbox Obligatorio
+            const confirm = await SysUI.confirmCierre(confirmMsg, "Confirmar Cierre Total");
             if (!confirm) return;
             this.executeSaveAndSend(false);
         }
@@ -896,31 +936,29 @@ window.CierreCajasLogic = {
     resueltosSearchTerm: '',
 
     switchTab: function(tab) {
-        const tabs = ['workspace', 'history', 'audit'];
+        const tabs = ['workspace', 'history', 'audit', 'sc_workspace'];
         const views = {
             'workspace': ['cc-home-view', 'cc-workspace', 'cc-search-section'],
             'history': ['cc-history-view'],
-            'audit': ['cc-audit-view']
+            'audit': ['cc-audit-view'],
+            'sc_workspace': ['cc-sc-view']
         };
 
         const activeClass = "border-indigo-600 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20".split(' ');
         const inactiveClass = "border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300".split(' ');
+        const activeClassSC = "border-amber-600 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20".split(' ');
 
         // 1. Limpiar y Ocultar TODO de forma segura
         tabs.forEach(t => {
             const btn = document.getElementById(`tab-${t}`);
             if (btn) {
-                btn.classList.remove(...activeClass, ...inactiveClass);
+                btn.classList.remove(...activeClass, ...activeClassSC, ...inactiveClass);
                 btn.classList.add(...inactiveClass);
             }
             
             views[t].forEach(vId => {
                 const el = document.getElementById(vId);
-                // Asegurarse de que el elemento exista antes de tocar sus clases
-                if(el) {
-                    el.classList.add('hidden');
-                    el.classList.remove('flex'); // Limpiar flex si lo tuviera
-                }
+                if(el) { el.classList.add('hidden'); el.classList.remove('flex'); }
             });
         });
 
@@ -928,10 +966,10 @@ window.CierreCajasLogic = {
         const activeBtn = document.getElementById(`tab-${tab}`);
         if (activeBtn) {
             activeBtn.classList.remove(...inactiveClass);
-            activeBtn.classList.add(...activeClass);
+            activeBtn.classList.add(...(tab === 'sc_workspace' ? activeClassSC : activeClass));
         }
 
-        // 3. Mostrar Vistas Correspondientes Seguras
+        // 3. Mostrar Vistas
         if (tab === 'workspace') {
             const searchSec = document.getElementById('cc-search-section');
             if(searchSec) searchSec.classList.remove('hidden');
@@ -946,38 +984,154 @@ window.CierreCajasLogic = {
         } 
         else if (tab === 'history') {
             const histView = document.getElementById('cc-history-view');
-            if(histView) {
-                histView.classList.remove('hidden');
-                histView.classList.add('flex');
-            }
+            if(histView) { histView.classList.remove('hidden'); histView.classList.add('flex'); }
             this.loadHistoryData();
         }
         else if (tab === 'audit') {
             const auditView = document.getElementById('cc-audit-view');
-            if(auditView) {
-                auditView.classList.remove('hidden');
-                auditView.classList.add('flex');
+            if(auditView) { 
+                auditView.classList.remove('hidden'); 
+                auditView.classList.add('flex'); 
+            }
+            
+            // Inicializar Flatpickr en modo Rango (Diseño Minimalista y Auto-Carga)
+            if (!this.fpRango) {
+                this.fpRango = flatpickr("#forense-rango", {
+                    mode: "range",
+                    dateFormat: "Y-m-d", // Formato para el backend
+                    altInput: true,      // Activa un input visual más bonito
+                    altFormat: "d/m/Y",  // Formato visual para el usuario
+                    altInputClass: "w-full pl-9 pr-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white placeholder-slate-400 cursor-pointer transition-colors",
+                    locale: "es",
+                    onChange: (selectedDates) => {
+                        this.checkForenseFilters();
+                        // Solo carga la tabla si el usuario ya seleccionó Inicio y Fin
+                        if (selectedDates.length === 2) {
+                            this.resetAndLoadForense();
+                        }
+                    }
+                });
+            }
+
+            // Configurar fechas por defecto (Últimos 7 días) si están vacías
+            if (!this.fpRango.selectedDates || this.fpRango.selectedDates.length < 2) {
+                const hoy = new Date();
+                const hace7 = new Date(hoy);
+                hace7.setDate(hoy.getDate() - 7);
                 
-                // Configurar fechas por defecto (Últimos 7 días) si están vacías
-                const inputDesde = document.getElementById('forense-desde');
-                const inputHasta = document.getElementById('forense-hasta');
-                if (!inputDesde.value) {
-                    const hoy = new Date();
-                    const hace7 = new Date(hoy);
-                    hace7.setDate(hoy.getDate() - 7);
-                    
-                    inputHasta.value = hoy.toISOString().split('T')[0];
-                    inputDesde.value = hace7.toISOString().split('T')[0];
-                    
-                    // Cargar datos automáticamente la primera vez
-                    this.loadForense();
-                }
-            } else {
-                // Si el div fue borrado accidentalmente del HTML, mostramos una alerta para que el DEV sepa qué falta.
-                console.error("Falta el contenedor <div id='cc-audit-view'> en cierre_cajas.php");
-                SysUI.alert("Error de Interfaz: El módulo de Auditoría no está disponible en este momento.", "Falta Vista", "error");
+                this.fpRango.setDate([hace7, hoy]);
+                
+                // Cargar datos automáticamente la primera vez
+                this.loadForense();
             }
         }
+        else if (tab === 'sc_workspace') {
+            const scView = document.getElementById('cc-sc-view');
+            if(scView) { 
+                scView.classList.remove('hidden'); 
+                scView.classList.add('flex'); 
+                this.loadSCData(); // Cargar la tabla al instante
+            }
+        }
+    },
+
+    // =====================================================================
+    // MOTOR EXCLUSIVO SERVICIO AL CLIENTE (SC)
+    // =====================================================================
+    loadSCData: async function() {
+        const tbody = document.getElementById('sc-tbody');
+        if(!tbody) return;
+        
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-10"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto"></div></td></tr>';
+
+        try {
+            const res = await fetch('api/get_casos_sc_cc.php');
+            const json = await res.json();
+
+            if (!json.success) throw new Error(json.error);
+
+            this.historyUserRole = json.userRole; // Guardamos el rol para el Modal Timeline
+            this.dataSC = json.data;
+            this.renderSCTable(this.dataSC);
+
+        } catch(e) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-red-500 font-bold">${e.message}</td></tr>`;
+        }
+    },
+
+    filterSCTable: function() {
+        const term = document.getElementById('sc-search').value.toLowerCase().trim();
+        if (term === '') return this.renderSCTable(this.dataSC);
+
+        const filtered = this.dataSC.filter(c => {
+            return c.Sucursal_Relacionada.toLowerCase().includes(term) ||
+                   c.NumeroContrato.toLowerCase().includes(term) ||
+                   c.NombreCliente.toLowerCase().includes(term) ||
+                   String(c.Folio).includes(term) ||
+                   String(c.IdCaso).includes(term);
+        });
+        this.renderSCTable(filtered);
+    },
+
+    renderSCTable: function(casosArray) {
+        const tbody = document.getElementById('sc-tbody');
+        if (casosArray.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-16 text-slate-400"><div class="text-4xl mb-2">🎉</div><div class="text-sm font-bold">¡Bandeja Limpia! No hay tickets pendientes en SC.</div></td></tr>';
+            return;
+        }
+
+        // 1. Agrupar por Sucursal
+        const sorted = [...casosArray].sort((a, b) => {
+            if (a.Sucursal_Relacionada < b.Sucursal_Relacionada) return -1;
+            if (a.Sucursal_Relacionada > b.Sucursal_Relacionada) return 1;
+            return b.DiasAtraso - a.DiasAtraso; // Más viejos primero
+        });
+
+        let html = '';
+        let currentSucursal = '';
+
+        sorted.forEach(c => {
+            // Header Group (Sucursal)
+            if (currentSucursal !== c.Sucursal_Relacionada) {
+                currentSucursal = c.Sucursal_Relacionada;
+                const nombreSede = c.NombreSucursal ? ` - ${c.NombreSucursal}` : '';
+                html += `
+                <tr class="bg-amber-50 dark:bg-amber-900/10">
+                    <td colspan="5" class="p-3 border-y border-amber-200 dark:border-amber-800">
+                        <span class="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-500">🏢 SUCURSAL: ${currentSucursal}${nombreSede}</span>
+                    </td>
+                </tr>`;
+            }
+
+            const montoStr = `₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            const atrasoClass = parseInt(c.DiasAtraso) > 2 ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-slate-100 text-slate-600 border border-slate-200';
+
+            // Filas
+            html += `
+            <tr onclick="window.CierreCajasLogic.showTimeline(${c.IdCaso})" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group">
+                <td class="p-4 align-top">
+                    <span class="text-sm font-black text-amber-600 group-hover:text-amber-700 underline underline-offset-2">#${c.IdCaso}</span>
+                    <div class="text-[10px] font-bold text-slate-400 mt-1 uppercase">Folio: ${c.Folio}</div>
+                </td>
+                <td class="p-4 align-top">
+                    <div class="text-sm font-bold text-slate-800 dark:text-white line-clamp-1">${c.NumeroContrato}</div>
+                    <div class="text-xs text-slate-500 line-clamp-1 mt-0.5">${c.NombreCliente}</div>
+                </td>
+                <td class="p-4 align-top text-right">
+                    <span class="text-sm font-mono font-black text-rose-600">${montoStr}</span>
+                </td>
+                <td class="p-4 align-top max-w-xs">
+                    <div class="text-[11px] text-slate-800 dark:text-white font-bold leading-tight line-clamp-1 mb-0.5">${c.TextoVisor || 'Pendiente SC'}</div>
+                    <div class="text-[10px] text-slate-500 italic line-clamp-2">"${c.MotivoAgente}"</div>
+                    <div class="text-[9px] text-indigo-500 font-bold mt-1">👤 ${c.Creador}</div>
+                </td>
+                <td class="p-4 align-top text-center">
+                    <span class="px-2 py-1 rounded text-[10px] font-black ${atrasoClass}">${c.DiasAtraso > 0 ? c.DiasAtraso + ' días' : 'Hoy'}</span>
+                </td>
+            </tr>`;
+        });
+
+        tbody.innerHTML = html;
     },
 
     loadHistoryData: async function(isSilent = false) {
@@ -1064,7 +1218,32 @@ window.CierreCajasLogic = {
         if (filtered.length === 0) {
             contUrgentes.innerHTML = '<div class="col-span-full text-center py-10 text-slate-400 text-sm">No se encontraron casos activos.</div>';
         } else {
-            contUrgentes.innerHTML = filtered.map(c => this.generateCardHTML(c)).join('');
+            // 1. Ordenar por Sucursal alfabéticamente, luego por caso más reciente
+            const sorted = [...filtered].sort((a, b) => {
+                if (a.Sucursal_Relacionada < b.Sucursal_Relacionada) return -1;
+                if (a.Sucursal_Relacionada > b.Sucursal_Relacionada) return 1;
+                return b.IdCaso - a.IdCaso; 
+            });
+
+            let html = '';
+            let currentSucursal = '';
+
+            // 2. Dibujar separadores visuales dinámicos
+            sorted.forEach(c => {
+                if (currentSucursal !== c.Sucursal_Relacionada) {
+                    currentSucursal = c.Sucursal_Relacionada;
+                    html += `
+                    <div class="col-span-full mt-3 mb-1 flex items-center w-full animate-fade-in-up">
+                        <div class="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 font-black text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-r-lg border-l-4 border-indigo-500 shadow-sm">
+                            🏢 Sucursal: ${currentSucursal}
+                        </div>
+                        <div class="h-px bg-slate-200 dark:bg-slate-700 flex-grow ml-4"></div>
+                    </div>`;
+                }
+                html += this.generateCardHTML(c);
+            });
+
+            contUrgentes.innerHTML = html;
         }
     },
 
@@ -1087,7 +1266,32 @@ window.CierreCajasLogic = {
             return;
         }
 
-        contResueltos.innerHTML = casosArray.map(c => this.generateCardHTML(c)).join('');
+        // 1. Agrupar la página actual por Sucursal
+        const sorted = [...casosArray].sort((a, b) => {
+            if (a.Sucursal_Relacionada < b.Sucursal_Relacionada) return -1;
+            if (a.Sucursal_Relacionada > b.Sucursal_Relacionada) return 1;
+            return b.IdCaso - a.IdCaso;
+        });
+
+        let html = '';
+        let currentSucursal = '';
+
+        // 2. Dibujar separadores visuales
+        sorted.forEach(c => {
+            if (currentSucursal !== c.Sucursal_Relacionada) {
+                currentSucursal = c.Sucursal_Relacionada;
+                html += `
+                <div class="col-span-full mt-3 mb-1 flex items-center w-full animate-fade-in-up">
+                    <div class="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 font-black text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-r-lg border-l-4 border-slate-400 shadow-sm">
+                        🏢 Sucursal: ${currentSucursal}
+                    </div>
+                    <div class="h-px bg-slate-200 dark:bg-slate-700 flex-grow ml-4"></div>
+                </div>`;
+            }
+            html += this.generateCardHTML(c);
+        });
+
+        contResueltos.innerHTML = html;
 
         // Controles Paginación
         const maxPages = paginacion.total_paginas;
@@ -1150,6 +1354,11 @@ window.CierreCajasLogic = {
         const eventContainer = document.getElementById('tl-events');
         const actionZone = document.getElementById('tl-action-zone');
         
+        if (!modal || !eventContainer) {
+            console.error("DOM Error: Falta el HTML del Modal Timeline.");
+            return SysUI.alert("Error de Interfaz: El modal de gestión no pudo cargarse.", "Error", "error");
+        }
+
         eventContainer.innerHTML = '<div class="text-slate-400 text-sm animate-pulse">Cargando bitácora...</div>';
         actionZone.classList.add('hidden');
         actionZone.innerHTML = '';
@@ -1163,7 +1372,14 @@ window.CierreCajasLogic = {
             
             const c = data.caso;
             document.getElementById('tl-id').innerText = c.IdCaso;
-            document.getElementById('tl-contrato').innerText = c.NumeroContrato;
+            
+            // Inyectar el número de contrato con el botón de copiado rápido
+            document.getElementById('tl-contrato').innerHTML = `
+                <span onclick="window.CierreCajasLogic.copiarContrato('${c.NumeroContrato}', this)" class="cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1 group w-max" title="Clic para copiar">
+                    ${c.NumeroContrato}
+                    <svg class="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                </span>`;
+                
             document.getElementById('tl-cliente').innerText = c.NombreCliente || 'Desconocido';
             document.getElementById('tl-monto').innerText = `₡${parseFloat(c.MontoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('tl-usd').innerText = `$${parseFloat(c.MontoUSD).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
@@ -1197,12 +1413,16 @@ window.CierreCajasLogic = {
             }).join('');
 
             // 2. CONSTRUIR ZONA DE ACCIÓN BASADA EN ROLES Y ESTADO
-            const role = this.historyUserRole; // 'agente', 'jefe', 'servicio_cliente', 'admin'
+            // Usamos la variable global de index.php como respaldo absoluto
+            const role = window.CURRENT_USER_ROLE || this.historyUserRole; 
             let actionHtml = '';
 
-            if (c.Estado === 'NO_REPORTADO' && (role === 'agente' || role === 'jefe' || role === 'admin')) {
+            if (c.Estado === 'NO_REPORTADO' && (role === 'agente' || role === 'jefe' || role === 'admin' || role === 'coordinador')) {
                 actionHtml = `
-                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Acción sobre la Inconsistencia</label>
+                    <div class="mb-2">
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Acción sobre la Inconsistencia</label>
+                        ${window.CierreCajasLogic.getGuiaJustificacionesHTML()}
+                    </div>
                     <select id="tl-select-accion" class="w-full text-sm px-3 py-2 mb-3 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold transition-colors" onchange="window.CierreCajasLogic.toggleMotivoReq(this, 'tl-input-action')">
                         ${window.CierreCajasLogic.buildJustificacionesOptions()}
                     </select>
@@ -1338,8 +1558,21 @@ window.CierreCajasLogic = {
             if (data.success) {
                 document.getElementById('modal-timeline').classList.add('hidden');
                 SysUI.alert("Acción procesada correctamente.", "Éxito", "success");
-                this.loadHistoryData(true); // Recarga las tarjetas
-                this.loadBandejaPendientes(); // Recarga insignias
+                
+                // Refresco Universal: Actualiza en segundo plano todas las vistas a las que el rol tenga acceso
+                if (document.getElementById('cc-sc-view')) {
+                    this.loadSCData();
+                }
+                if (document.getElementById('cc-history-view')) {
+                    this.loadHistoryData(true); 
+                }
+                if (document.getElementById('cc-home-view')) {
+                    this.loadBandejaPendientes(); 
+                }
+                // Si la tabla de auditoría ya fue instanciada, la recargamos para actualizar la fila y los KPIs
+                if (document.getElementById('cc-audit-view') && this.vgAudit) {
+                    this.loadForense();
+                }
             } else {
                 throw new Error(data.error);
             }
@@ -1361,26 +1594,33 @@ window.CierreCajasLogic = {
     },
 
     checkForenseFilters: function() {
-        const fDesde = document.getElementById('forense-desde').value;
-        const fHasta = document.getElementById('forense-hasta').value;
         const fBuscar = document.getElementById('forense-buscar').value.trim();
         const btnClear = document.getElementById('btn-clear-filters');
         
         if (!btnClear) return;
 
-        // Calcular fechas por defecto del sistema (Últimos 7 días)
         const hoy = new Date();
         const hace7 = new Date(hoy);
         hace7.setDate(hoy.getDate() - 7);
-        const defHasta = hoy.toISOString().split('T')[0];
-        const defDesde = hace7.toISOString().split('T')[0];
+        
+        let fechasCambiadas = true;
+        if (this.fpRango && this.fpRango.selectedDates.length === 2) {
+            const dDesde = flatpickr.formatDate(this.fpRango.selectedDates[0], "Y-m-d");
+            const dHasta = flatpickr.formatDate(this.fpRango.selectedDates[1], "Y-m-d");
+            const defDesde = flatpickr.formatDate(hace7, "Y-m-d");
+            const defHasta = flatpickr.formatDate(hoy, "Y-m-d");
+            
+            if (dDesde === defDesde && dHasta === defHasta) {
+                fechasCambiadas = false;
+            }
+        }
 
         // Revisar si algún checkbox de sucursal está desmarcado
         const checkboxes = document.querySelectorAll('.cb-sucursal');
         const algunDesmarcado = checkboxes.length > 0 && Array.from(checkboxes).some(cb => !cb.checked);
 
         // Si hay cualquier cambio respecto al estado por defecto, mostramos el botón
-        if (fBuscar !== '' || algunDesmarcado || fDesde !== defDesde || fHasta !== defHasta) {
+        if (fBuscar !== '' || algunDesmarcado || fechasCambiadas) {
             btnClear.classList.remove('hidden');
         } else {
             btnClear.classList.add('hidden');
@@ -1392,8 +1632,9 @@ window.CierreCajasLogic = {
         const hace7 = new Date(hoy);
         hace7.setDate(hoy.getDate() - 7);
         
-        document.getElementById('forense-hasta').value = hoy.toISOString().split('T')[0];
-        document.getElementById('forense-desde').value = hace7.toISOString().split('T')[0];
+        if (this.fpRango) {
+            this.fpRango.setDate([hace7, hoy]);
+        }
         document.getElementById('forense-buscar').value = '';
 
         // Marcar todas las sucursales
@@ -1452,8 +1693,14 @@ window.CierreCajasLogic = {
     },
 
     loadForense: async function() {
-        const fDesde = document.getElementById('forense-desde').value;
-        const fHasta = document.getElementById('forense-hasta').value;
+        let fDesde = '';
+        let fHasta = '';
+        
+        if (this.fpRango && this.fpRango.selectedDates.length === 2) {
+            fDesde = flatpickr.formatDate(this.fpRango.selectedDates[0], "Y-m-d");
+            fHasta = flatpickr.formatDate(this.fpRango.selectedDates[1], "Y-m-d");
+        }
+        
         const fBuscar = document.getElementById('forense-buscar').value.trim();
         
         // Determinar qué sucursales consultar
@@ -1462,7 +1709,7 @@ window.CierreCajasLogic = {
             fSucursal = this.updateMultiSelectUI();
         }
 
-        if(!fDesde || !fHasta) return SysUI.alert("Debe seleccionar un rango de fechas válido.", "Filtros", "warning");
+        if(!fDesde || !fHasta) return SysUI.alert("Debe seleccionar un rango de fechas válido completo (Inicio y Fin).", "Filtros", "warning");
 
         this.checkForenseFilters(); // Mantiene sincronizado el estado del botón Limpiar
 
@@ -1524,7 +1771,10 @@ window.CierreCajasLogic = {
             document.getElementById('kpi-crc').innerText = `₡${parseFloat(montoCRC).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('kpi-usd').innerText = `$${parseFloat(json.kpis.total_usd).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             
-            // Animación de la barra de progreso
+            const volTxEl = document.getElementById('kpi-volumen-tx');
+            if(volTxEl) volTxEl.innerText = `${totalTx.toLocaleString('en-US')} Tx`;
+            
+            // Animación de la barra de progreso principal
             document.getElementById('kpi-tasa').innerText = `${tasa}%`;
             document.getElementById('bar-exito').style.width = `${tasa}%`;
             document.getElementById('bar-error').style.width = `${100 - tasa}%`;
@@ -1532,7 +1782,54 @@ window.CierreCajasLogic = {
             document.getElementById('kpi-tickets').innerText = totalErrores;
 
             document.getElementById('kpi-monto-tickets').innerText = `₡${parseFloat(montoError).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
-            document.getElementById('kpi-porcentaje-monto').innerText = `${impactoPorcentaje}%`;
+            document.getElementById('kpi-porcentaje-monto').innerText = `${impactoPorcentaje}% del total`;
+
+            // 2.5. Renderizar Mini-Gráfico de Estados de Tickets (Barra Segmentada)
+            const noErrorsDiv = document.getElementById('kpi-no-errors');
+            const hasErrorsDiv = document.getElementById('kpi-has-errors');
+            const barContainer = document.getElementById('kpi-ticket-bar');
+            const legendContainer = document.getElementById('kpi-ticket-legend');
+            
+            if (totalErrores === 0) {
+                noErrorsDiv.classList.remove('hidden');
+                hasErrorsDiv.classList.add('hidden');
+            } else {
+                noErrorsDiv.classList.add('hidden');
+                hasErrorsDiv.classList.remove('hidden');
+                
+                const estadosArray = json.kpis.estados_tickets || [];
+                let htmlBar = '';
+                let htmlLegend = '';
+                
+                const colorMap = {
+                    'NO_REPORTADO': { bg: 'bg-red-500', name: 'No Reportado' },
+                    'PENDIENTE_VISTO_BUENO': { bg: 'bg-purple-500', name: 'Escalado a Jefatura' },
+                    'PENDIENTE_RESOLUCION': { bg: 'bg-amber-500', name: 'Escalado a SC' },
+                    'RESUELTO': { bg: 'bg-blue-500', name: 'Resuelto' },
+                    'CERRADO': { bg: 'bg-emerald-500', name: 'Cerrado' }
+                };
+
+                const ordenDeseado = ['NO_REPORTADO', 'PENDIENTE_VISTO_BUENO', 'PENDIENTE_RESOLUCION', 'RESUELTO', 'CERRADO'];
+                estadosArray.sort((a, b) => ordenDeseado.indexOf(a.Estado) - ordenDeseado.indexOf(b.Estado));
+
+                estadosArray.forEach(est => {
+                    const qty = parseInt(est.Cantidad);
+                    const pct = ((qty / totalErrores) * 100).toFixed(1);
+                    const conf = colorMap[est.Estado] || { bg: 'bg-slate-400', name: est.Estado.replace(/_/g, ' ') };
+
+                    htmlBar += `<div class="${conf.bg} h-full transition-all duration-500 hover:brightness-110" style="width: ${pct}%" title="${conf.name}: ${qty} tickets"></div>`;
+                    
+                    htmlLegend += `
+                        <div class="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                            <span class="w-2 h-2 rounded-full ${conf.bg} shadow-sm shrink-0"></span>
+                            <span class="truncate" title="${conf.name}">${conf.name}: <span class="text-slate-900 dark:text-white ml-0.5">${qty}</span> <span class="font-normal opacity-70">(${pct}%)</span></span>
+                        </div>
+                    `;
+                });
+                
+                barContainer.innerHTML = htmlBar;
+                legendContainer.innerHTML = htmlLegend;
+            }
 
             // 3. Definir Columnas (Optimizadas para Análisis Forense)
             const cols = [
@@ -1564,16 +1861,21 @@ window.CierreCajasLogic = {
                 }}
             ];
 
-            // 4. Renderizar Grid (Solo 50 filas por página)
-            if (this.vgAudit) {
-                this.vgAudit.updateData(json.transacciones);
-            } else {
+            // 4. Renderizar Grid A Prueba de Fallos
+            const gridContainer = document.getElementById('forense-grid');
+            gridContainer.innerHTML = ''; // Limpiar el spinner o cualquier tabla vieja
+
+            if (json.transacciones && json.transacciones.length > 0) {
+                // Instanciar desde cero garantiza que el DOM siempre esté fresco
                 this.vgAudit = new VanillaGrid('#forense-grid', json.transacciones, cols, {
                     onRowDblClick: (row) => {
                         if (row.IdCaso) this.showTimeline(row.IdCaso);
                         else SysUI.alert("Esta transacción se concilió con éxito (Match Exacto) y no posee Ticket de error asociado.", "Transacción Limpia", "info");
                     }
                 });
+            } else {
+                this.vgAudit = null;
+                gridContainer.innerHTML = '<div class="text-center py-16 text-slate-400"><div class="text-4xl mb-2">📭</div><div class="text-sm font-bold">No se encontraron transacciones para estos filtros.</div></div>';
             }
 
             // 5. Control de Paginación
