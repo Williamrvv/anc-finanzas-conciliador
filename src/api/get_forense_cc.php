@@ -61,7 +61,12 @@ try {
     $baseJoins = "FROM Tbl_CierreCaja_Detalle D
                   INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
                   LEFT JOIN Tbl_Usuarios U ON H.EmailUsuario = U.Email
-                  LEFT JOIN Tbl_Casos_TSD C ON D.Numero_Contrato = C.NumeroContrato AND C.IdCierreOrigen = H.IdCierre
+                  LEFT JOIN (
+                      SELECT IdCierreOrigen, NumeroContrato, MAX(IdCaso) AS IdCaso
+                      FROM Tbl_Casos_TSD
+                      GROUP BY IdCierreOrigen, NumeroContrato
+                  ) C_Unico ON D.Numero_Contrato = C_Unico.NumeroContrato AND C_Unico.IdCierreOrigen = H.IdCierre
+                  LEFT JOIN Tbl_Casos_TSD C ON C.IdCaso = C_Unico.IdCaso
                   LEFT JOIN Tbl_Justificaciones_CC J ON C.IdJustificacion = J.IdJustificacion";
 
     // RBAC: Filtros de Visibilidad Universales
@@ -78,8 +83,10 @@ try {
                     COUNT(D.IdDetalle) AS TotalTx,
                     ISNULL(SUM(D.MontoCRC), 0) AS TotalCRC,
                     ISNULL(SUM(D.MontoUSD), 0) AS TotalUSD,
-                    SUM(CASE WHEN C.IdCaso IS NOT NULL THEN 1 ELSE 0 END) AS TotalTickets,
-                    ISNULL(SUM(CASE WHEN C.IdCaso IS NOT NULL THEN D.MontoCRC ELSE 0 END), 0) AS MontoTicketsCRC
+                    SUM(CASE WHEN D.MatchExitoso = 1 THEN 1 ELSE 0 END) AS TxLimpias,
+                    SUM(CASE WHEN D.MatchExitoso = 0 THEN 1 ELSE 0 END) AS TxError,
+                    COUNT(DISTINCT C.IdCaso) AS TotalTickets,
+                    ISNULL(SUM(CASE WHEN D.MatchExitoso = 0 THEN D.MontoCRC ELSE 0 END), 0) AS MontoTicketsCRC
                $baseJoins 
                $whereClause";
                
@@ -90,7 +97,7 @@ try {
     // 2.5 SUB-CONSULTA DE ESTADOS DE TICKETS (Para el Mini-Gráfico)
     $sqlEstados = "SELECT 
                        C.Estado, 
-                       COUNT(C.IdCaso) AS Cantidad 
+                       COUNT(DISTINCT C.IdCaso) AS Cantidad 
                    $baseJoins 
                    $whereClause AND C.IdCaso IS NOT NULL 
                    GROUP BY C.Estado";
@@ -155,6 +162,8 @@ try {
         'mis_sucursales' => $listaSucs,
         'kpis' => [
             'total_tx' => $totalFilas,
+            'tx_limpias' => (int)$kpi['TxLimpias'],
+            'tx_error' => (int)$kpi['TxError'],
             'total_crc' => (float)$kpi['TotalCRC'],
             'total_usd' => (float)$kpi['TotalUSD'],
             'total_tickets' => (int)$kpi['TotalTickets'],

@@ -32,7 +32,12 @@ try {
 
     $baseJoins = "FROM Tbl_CierreCaja_Detalle D
                   INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
-                  LEFT JOIN Tbl_Casos_TSD C ON D.Numero_Contrato = C.NumeroContrato AND C.IdCierreOrigen = H.IdCierre";
+                  LEFT JOIN (
+                      SELECT IdCierreOrigen, NumeroContrato, MAX(IdCaso) AS IdCaso
+                      FROM Tbl_Casos_TSD
+                      GROUP BY IdCierreOrigen, NumeroContrato
+                  ) C_Unico ON D.Numero_Contrato = C_Unico.NumeroContrato AND C_Unico.IdCierreOrigen = H.IdCierre
+                  LEFT JOIN Tbl_Casos_TSD C ON C.IdCaso = C_Unico.IdCaso";
 
     // 2. KPIs GLOBALES (Cantidades exactas)
     $sqlKPIs = "
@@ -40,7 +45,7 @@ try {
             COUNT(D.IdDetalle) AS TotalTx,
             ISNULL(SUM(D.MontoCRC), 0) AS RangoCRC,
             ISNULL(SUM(D.MontoUSD), 0) AS RangoUSD,
-            SUM(CASE WHEN C.IdCaso IS NOT NULL AND C.Estado NOT IN ('CERRADO', 'RESUELTO') THEN 1 ELSE 0 END) AS TicketsActivos
+            COUNT(DISTINCT CASE WHEN C.IdCaso IS NOT NULL AND C.Estado NOT IN ('CERRADO', 'RESUELTO') THEN C.IdCaso END) AS TicketsActivos
         $baseJoins 
         $whereClause
     ";
@@ -67,7 +72,7 @@ try {
     $sqlEstados = "
         SELECT 
             C.Estado, 
-            COUNT(C.IdCaso) AS Cantidad
+            COUNT(DISTINCT C.IdCaso) AS Cantidad
         $baseJoins 
         $whereClause AND C.IdCaso IS NOT NULL
         GROUP BY C.Estado

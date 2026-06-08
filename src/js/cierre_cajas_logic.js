@@ -876,14 +876,24 @@ window.CierreCajasLogic = {
         };
 
         if (crearCasos) {
-            payload.casos_borrador = unselected.map(t => ({
-                contrato: t.Numero_Contrato,
-                cliente: `${t.Nombre} ${t.Apellido}`.trim(),
-                monto_crc: parseFloat(t.Conversion || 0),
-                icd: t.ICD || "PENDIENTE TSD", // Enviamos el ICD original o "PENDIENTE TSD" si viene vacío
-                sucursal: t.Sucursal, // Enviamos la sucursal exacta donde falló
-                motivo: "" 
-            }));
+            const agrupadosPorContrato = {};
+            
+            unselected.forEach(t => {
+                if (!agrupadosPorContrato[t.Numero_Contrato]) {
+                    agrupadosPorContrato[t.Numero_Contrato] = {
+                        contrato: t.Numero_Contrato,
+                        cliente: `${t.Nombre} ${t.Apellido}`.trim(),
+                        monto_crc: 0,
+                        icd: t.ICD || "PENDIENTE TSD",
+                        sucursal: t.Sucursal,
+                        motivo: ""
+                    };
+                }
+                // Si el contrato tiene varias líneas, sumamos sus montos en un solo gran ticket
+                agrupadosPorContrato[t.Numero_Contrato].monto_crc += parseFloat(t.Conversion || 0);
+            });
+            
+            payload.casos_borrador = Object.values(agrupadosPorContrato);
         }
 
         const btn = document.getElementById('btn-save-cierre');
@@ -1767,11 +1777,15 @@ window.CierreCajasLogic = {
                 `).join('');
             }
 
-            // 2. Llenar el Dashboard
+            // 2. Llenar el Dashboard (Matemática pura desacoplada)
             const totalTx = json.kpis.total_tx || 0;
-            const totalErrores = json.kpis.total_tickets || 0;
-            const totalLimpias = totalTx - totalErrores;
-            const tasa = totalTx > 0 ? ((totalLimpias / totalTx) * 100).toFixed(1) : 100;
+            const txLimpias = json.kpis.tx_limpias || 0;
+            const txErrores = json.kpis.tx_error || 0;
+            const totalTickets = json.kpis.total_tickets || 0; // Cantidad real agrupada en Casos
+            
+            // La tasa de éxito se calcula estrictamente sobre el volumen de transacciones reales
+            const tasa = totalTx > 0 ? ((txLimpias / totalTx) * 100).toFixed(1) : 100;
+            
             const montoCRC = json.kpis.total_crc || 0;
             const montoError = json.kpis.monto_tickets_crc || 0;
             const impactoPorcentaje = montoCRC > 0 ? ((montoError / montoCRC) * 100).toFixed(1) : 0;
@@ -1786,8 +1800,14 @@ window.CierreCajasLogic = {
             document.getElementById('kpi-tasa').innerText = `${tasa}%`;
             document.getElementById('bar-exito').style.width = `${tasa}%`;
             document.getElementById('bar-error').style.width = `${100 - tasa}%`;
-            document.getElementById('kpi-tx-limpias').innerText = totalLimpias;
-            document.getElementById('kpi-tickets').innerText = totalErrores;
+            document.getElementById('kpi-tx-limpias').innerText = txLimpias;
+            
+            // Corrección semántica: Mostramos los Errores Reales para que la suma cuadre con Total Tx
+            const ticketLabel = document.getElementById('kpi-tickets').parentElement;
+            if (ticketLabel) {
+                const textTicket = totalTickets === 1 ? 'Ticket' : 'Tickets';
+                ticketLabel.innerHTML = `<span id="kpi-tickets">${txErrores}</span> Errores <span class="font-normal opacity-75 text-[9px]">(${totalTickets} ${textTicket})</span>`;
+            }
 
             document.getElementById('kpi-monto-tickets').innerText = `₡${parseFloat(montoError).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('kpi-porcentaje-monto').innerText = `${impactoPorcentaje}% del total`;
@@ -1798,7 +1818,7 @@ window.CierreCajasLogic = {
             const barContainer = document.getElementById('kpi-ticket-bar');
             const legendContainer = document.getElementById('kpi-ticket-legend');
             
-            if (totalErrores === 0) {
+            if (totalTickets === 0) {
                 noErrorsDiv.classList.remove('hidden');
                 hasErrorsDiv.classList.add('hidden');
             } else {
@@ -1822,7 +1842,7 @@ window.CierreCajasLogic = {
 
                 estadosArray.forEach(est => {
                     const qty = parseInt(est.Cantidad);
-                    const pct = ((qty / totalErrores) * 100).toFixed(1);
+                    const pct = ((qty / totalTickets) * 100).toFixed(1);
                     const conf = colorMap[est.Estado] || { bg: 'bg-slate-400', name: est.Estado.replace(/_/g, ' ') };
 
                     htmlBar += `<div class="${conf.bg} h-full transition-all duration-500 hover:brightness-110" style="width: ${pct}%" title="${conf.name}: ${qty} tickets"></div>`;

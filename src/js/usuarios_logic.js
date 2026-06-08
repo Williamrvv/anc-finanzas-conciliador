@@ -9,7 +9,7 @@ window.UsuariosLogic = {
     
     // Configuración de Paginación
     currentPage: 1,
-    itemsPerPage: 5,
+    itemsPerPage: 9, 
     
     init: function() {
         this.loadData();

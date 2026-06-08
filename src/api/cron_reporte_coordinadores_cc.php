@@ -55,7 +55,7 @@ try {
             CONVERT(varchar(5), MAX(H.FechaCierre), 108) AS HoraCierre,
             COUNT(D.IdDetalle) AS TotalTx,
             ISNULL(SUM(D.MontoCRC), 0) AS MontoTotalCRC,
-            SUM(CASE WHEN C.IdCaso IS NOT NULL AND C.Estado != 'CERRADO' THEN 1 ELSE 0 END) AS CantidadErrores,
+            COUNT(DISTINCT CASE WHEN C.IdCaso IS NOT NULL AND C.Estado != 'CERRADO' THEN C.IdCaso END) AS CantidadErrores,
             ISNULL(SUM(CASE WHEN C.IdCaso IS NOT NULL AND C.Estado != 'CERRADO' THEN D.MontoCRC ELSE 0 END), 0) AS ImpactoCRC,
             ISNULL(RTRIM(MAX(U.Nombre) + ' ' + ISNULL(MAX(U.Apellidos), '')), MAX(H.EmailUsuario)) AS Agente
         FROM Tbl_CierreCaja_Header H
@@ -98,7 +98,7 @@ try {
     $stmtCasos = $pdo->prepare("
         SELECT 
             C.IdCaso, C.Sucursal_Relacionada, C.NumeroContrato, C.NombreCliente, C.MontoCRC, C.Estado, C.MotivoAgente,
-            ISNULL(D.MontoUSD, 0) AS MontoUSD,
+            ISNULL(SUM(D.MontoUSD), 0) AS MontoUSD,
             J.TextoVisor, 
             ISNULL(RTRIM(MAX(U.Nombre) + ' ' + ISNULL(MAX(U.Apellidos), '')), MAX(C.EmailCreador)) AS AgenteCreador
         FROM Tbl_Casos_TSD C
@@ -110,7 +110,7 @@ try {
               SELECT 1 FROM Tbl_Usuario_Sucursales_cc CO 
               WHERE CO.EmailUsuario = ? AND CO.Activo = 1 AND C.Sucursal_Relacionada LIKE CO.CodigoSucursal + '%'
           )
-        GROUP BY C.IdCaso, C.Sucursal_Relacionada, C.NumeroContrato, C.NombreCliente, C.MontoCRC, C.Estado, C.MotivoAgente, D.MontoUSD, J.TextoVisor
+        GROUP BY C.IdCaso, C.Sucursal_Relacionada, C.NumeroContrato, C.NombreCliente, C.MontoCRC, C.Estado, C.MotivoAgente, J.TextoVisor
         ORDER BY AgenteCreador ASC, C.Sucursal_Relacionada ASC, C.IdCaso DESC
     ");
 

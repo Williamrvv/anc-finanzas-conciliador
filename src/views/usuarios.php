@@ -36,9 +36,9 @@ $esAdminUniversal = ($_SESSION['user']['role'] ?? '') === 'admin';
         </select>
     </div>
 
-     <!-- Tabla Minimalista -->
+    <!-- Tabla Minimalista -->
     <div class="bg-white dark:bg-slate-800 shadow-sm border border-slate-200 dark:border-slate-700 rounded-b-xl overflow-hidden">
-        <div class="overflow-x-auto custom-scrollbar min-h-[500px]">
+        <div class="overflow-x-auto custom-scrollbar max-h-[65vh]">
             <table class="w-full text-left border-collapse select-none">
                 <thead class="sticky top-0 bg-slate-50 dark:bg-slate-900/90 z-10 backdrop-blur-sm shadow-sm">
                     <tr class="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 uppercase tracking-wider">
@@ -97,7 +97,11 @@ $esAdminUniversal = ($_SESSION['user']['role'] ?? '') === 'admin';
 
         <form id="form-usuario" onsubmit="window.UsuariosLogic.saveUser(event)" class="flex flex-col overflow-hidden">
             <input type="hidden" name="isEdit" id="u-is-edit" value="false">
-            <!-- Swithes de Control Superior (Ocultos para no administradores) -->
+            
+            <!-- EL DIV MAGICO: Contenedor con Padding y Scroll -->
+            <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar">
+                
+                <!-- Swithes de Control Superior (Ocultos para no administradores) -->
                 <div class="<?php echo $esAdminUniversal ? 'flex' : 'hidden'; ?> gap-4 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700">
                     <!-- Switch Activo -->
                     <label class="flex items-center cursor-pointer relative gap-3 flex-1 justify-between">
@@ -147,11 +151,8 @@ $esAdminUniversal = ($_SESSION['user']['role'] ?? '') === 'admin';
                         </select>
                     </div>
                 </div>
-            <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar">
-                
-                
 
-                <!-- CONTENEDOR MULTI-SELECT SUCURSALES (Solo visible para Jefes) -->
+                <!-- CONTENEDOR MULTI-SELECT SUCURSALES (Solo visible para Jefes/Admins/Coordinadores) -->
                 <div id="u-sucursales-container" class="hidden bg-amber-50 dark:bg-amber-900/10 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 flex flex-col overflow-visible">
                     <label class="block text-[10px] font-bold text-amber-700 dark:text-amber-500 uppercase mb-2">Sucursales Asignadas a la Jefatura <span class="text-red-500">*</span></label>
                     
@@ -188,7 +189,7 @@ $esAdminUniversal = ($_SESSION['user']['role'] ?? '') === 'admin';
                         </div>
                     </div>
                 </div>
-            </div>
+            </div> <!-- FIN DEL CONTENEDOR CON PADDING -->
 
             <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3 shrink-0">
                 <button type="button" onclick="window.UsuariosLogic.closeModal()" class="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancelar</button>

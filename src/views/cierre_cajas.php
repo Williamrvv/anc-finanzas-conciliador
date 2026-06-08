@@ -76,7 +76,7 @@
             <div id="cc-mi-bandeja" class="hidden animate-fade-in-up w-full mt-2">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-700 pb-3 mb-4">
                     <h2 class="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest flex items-center gap-2">
-                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span> Mis Casos Pendientes de Corrección
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.6)]"></span> Casos Pendientes 
                         <span id="cc-mi-count" class="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-md text-[10px] ml-1">0</span>
                     </h2>
                     <button onclick="window.CierreCajasLogic.enviarSeleccionadosAJefatura('home')" id="cc-btn-report-home" class="hidden bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg font-bold shadow-sm transition-colors items-center gap-2 text-xs">
