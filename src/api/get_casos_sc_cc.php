@@ -3,7 +3,7 @@ ini_set('display_errors', 0);
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
-if (!isset($_SESSION['user']) || !in_array($_SESSION['user']['role'], ['servicio_cliente', 'admin'])) {
+if (!isset($_SESSION['user']) || !in_array($_SESSION['user']['role'], ['servicio_cliente', 'admin', 'conciliador', 'gerente_operaciones'])) {
     echo json_encode(['success' => false, 'error' => 'Acceso denegado. Permisos insuficientes.']);
     exit;
 }
@@ -36,7 +36,7 @@ try {
     $stmt = $pdo->query($sql);
     $casos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    echo json_encode(['success' => true, 'data' => $casos, 'userRole' => 'servicio_cliente']);
+    echo json_encode(['success' => true, 'data' => $casos, 'userRole' => $_SESSION['user']['role']]);
 
 } catch(Exception $e) { 
     echo json_encode(['success' => false, 'error' => 'Error BD: ' . $e->getMessage()]); 

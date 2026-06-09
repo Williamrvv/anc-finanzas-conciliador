@@ -1,4 +1,7 @@
 window.CierreCajasLogic = {
+    selectedGlobalBranches: [], // Memoria para roles Dios
+    _tempSelectedGlobal: [],    // Reparación de Bug de lectura de modal
+    allAvailableBranches: [],   // Catálogo general de sucursales
     currentFacturacion: false, // Flag para saber si hay un lote de facturas abierto
     headerData: null,
     transacciones: [],
@@ -61,9 +64,105 @@ window.CierreCajasLogic = {
     
     // Función getter dinámica para el borrador (asegura que la llave sea única y limpia)
     getDraftKey: function() {
-        // Usa el EMAIL del usuario (Llave primaria) para evitar colisiones entre homónimos
         const emailClean = String(window.CURRENT_USER_EMAIL || this.currentUser).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
         return 'iri_cierre_draft_' + emailClean;
+    },
+
+    getGlobalSucsKey: function() {
+        const emailClean = String(window.CURRENT_USER_EMAIL || this.currentUser).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        return 'iri_global_sucs_' + emailClean;
+    },
+
+    updateTempGlobalSucs: function() {
+        this._tempSelectedGlobal = Array.from(document.querySelectorAll('.cb-global-suc:checked')).map(cb => cb.value);
+        const countBadge = document.getElementById('global-sucs-count');
+        if (countBadge) countBadge.innerText = `${this._tempSelectedGlobal.length} seleccionadas`;
+    },
+
+    filterGlobalModal: function(term) {
+        term = term.toLowerCase().trim();
+        document.querySelectorAll('.global-suc-item').forEach(item => {
+            const text = item.innerText.toLowerCase();
+            if (text.includes(term)) item.style.display = 'flex';
+            else item.style.display = 'none';
+        });
+    },
+
+    showGlobalBranchesModal: function(branches = null) {
+        if (!branches) branches = this.allAvailableBranches;
+        if (!branches || branches.length === 0) {
+            return SysUI.alert("No se encontraron sucursales en TSD.", "Error", "warning");
+        }
+
+        this._tempSelectedGlobal = [...this.selectedGlobalBranches];
+
+        // 1. ORDENAMIENTO: Las seleccionadas van primero, luego alfabéticamente
+        const sortedBranches = [...branches].sort((a, b) => {
+            const aSel = this._tempSelectedGlobal.includes(a.CodigoSucursal);
+            const bSel = this._tempSelectedGlobal.includes(b.CodigoSucursal);
+            if (aSel && !bSel) return -1;
+            if (!aSel && bSel) return 1;
+            return a.CodigoSucursal.localeCompare(b.CodigoSucursal);
+        });
+
+        // 2. HTML FLUIDO: Usamos "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" para usar el ancho de pantalla
+        let html = `
+            <div class="mb-4 text-slate-500 dark:text-slate-400 text-sm leading-relaxed shrink-0">
+                Seleccione las sucursales a operar. <b class="text-slate-700 dark:text-slate-200">Su elección se guardará</b> automáticamente para futuras sesiones.
+            </div>
+            
+            <div class="flex items-center bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 mb-4 transition-shadow focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500 overflow-hidden shrink-0">
+                <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <input type="text" id="search-global-sucs" onkeyup="window.CierreCajasLogic.filterGlobalModal(this.value)" class="w-full bg-transparent border-none outline-none text-sm py-2.5 pl-2 text-slate-800 dark:text-white placeholder-slate-400" placeholder="Buscar por código o nombre..." autocomplete="off">
+            </div>
+
+            <div class="mb-2 flex items-center justify-between px-1 shrink-0">
+                <label class="flex items-center gap-2 cursor-pointer group">
+                    <input type="checkbox" onchange="const isChecked = this.checked; document.querySelectorAll('.cb-global-suc').forEach(cb => { if(cb.closest('.global-suc-item').style.display !== 'none') cb.checked = isChecked; }); window.CierreCajasLogic.updateTempGlobalSucs();" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer">
+                    <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-widest">Seleccionar Visibles</span>
+                </label>
+                <span class="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded border border-indigo-100 dark:border-indigo-800" id="global-sucs-count">${this._tempSelectedGlobal.length} seleccionadas</span>
+            </div>
+
+            <div class="max-h-[50vh] overflow-y-auto custom-scrollbar grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 p-2 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900/50">
+                ${sortedBranches.map(b => `
+                    <label class="global-suc-item flex items-start gap-3 p-3 hover:bg-white dark:hover:bg-slate-800 cursor-pointer rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 hover:shadow-sm transition-all ${this._tempSelectedGlobal.includes(b.CodigoSucursal) ? 'bg-indigo-50/50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800 shadow-sm' : 'bg-white dark:bg-slate-800'}">
+                        <input type="checkbox" value="${b.CodigoSucursal}" onchange="window.CierreCajasLogic.updateTempGlobalSucs(); this.parentElement.classList.toggle('bg-indigo-50/50', this.checked); this.parentElement.classList.toggle('dark:bg-indigo-900/20', this.checked); this.parentElement.classList.toggle('border-indigo-100', this.checked); this.parentElement.classList.toggle('dark:border-indigo-800', this.checked); this.parentElement.classList.toggle('bg-white', !this.checked);" class="cb-global-suc shrink-0 mt-0.5 w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer" ${this._tempSelectedGlobal.includes(b.CodigoSucursal) ? 'checked' : ''}>
+                        <div class="flex flex-col overflow-hidden">
+                            <span class="text-xs font-black text-slate-800 dark:text-white uppercase tracking-widest truncate" title="${b.CodigoSucursal}">${b.CodigoSucursal}</span>
+                            <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-tight mt-0.5" title="${b.NombreSucursal}">${b.NombreSucursal}</span>
+                        </div>
+                    </label>
+                `).join('')}
+            </div>
+        `.replace(/\s*\n\s*/g, ''); // Limpieza del HTML para evitar bugs de formato
+
+        // 3. PARAMETRO EXTRA: "max-w-4xl" le indica a SysUI que use toda la pantalla.
+        SysUI._createModal("🌍 Modo Global: Elegir Sucursales", html, [
+            {text: 'Cancelar / Salir', value: false, class: 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-xl font-bold transition-colors w-full sm:w-auto'},
+            {text: 'Guardar y Recargar', value: true, class: 'bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl font-bold shadow-md transition-colors w-full sm:w-auto'}
+        ], "info", "max-w-4xl").then((res) => {
+            if (res) {
+                if (this._tempSelectedGlobal.length === 0) {
+                    SysUI.alert("Debe seleccionar al menos una sucursal para poder operar el módulo.", "Selección Vacía", "warning").then(() => {
+                        this.showGlobalBranchesModal(branches);
+                    });
+                    return;
+                }
+                
+                // Guardar en RAM y en LocalStorage
+                this.selectedGlobalBranches = this._tempSelectedGlobal;
+                localStorage.setItem(this.getGlobalSucsKey(), JSON.stringify(this.selectedGlobalBranches));
+                
+                // 4. RECARGA SPA: Destruye y vuelve a construir el módulo para forzar actualización de Pestañas
+                window.loadView('cierre_cajas');
+
+            } else {
+                if (this.selectedGlobalBranches.length === 0) {
+                    SysUI.alert("Ha cancelado la selección. El módulo no mostrará datos hasta que asigne sucursales.", "Modo Global Pausado", "info");
+                }
+            }
+        });
     },
     
     autoSaveInterval: null, // Control del temporizador de auto-guardado
@@ -83,6 +182,10 @@ window.CierreCajasLogic = {
 
     init: function() {
         console.log("Módulo Cierre de Caja Iniciado");
+        
+        // LIMPIEZA VITAL SPA: Forzar la recreación del Calendario y Tabla al recargar
+        this.fpRango = null; 
+        this.vgAudit = null; 
 
         // Si existe el Módulo de Trabajo normal (Para Agentes, Jefes, Admin)
         if (document.getElementById('tab-workspace')) {
@@ -99,9 +202,16 @@ window.CierreCajasLogic = {
     // =====================================================================
     loadBandejaPendientes: async function(sucursalCode = null) {
         try {
-            const url = sucursalCode 
+            let url = sucursalCode 
                 ? `api/get_casos_pendientes.php?sucursal=${encodeURIComponent(sucursalCode)}` 
                 : `api/get_casos_pendientes.php`;
+
+            // Si es un rol global, inyectamos las sucursales seleccionadas en la URL
+            const isGlobalRole = ['admin', 'conciliador', 'gerente_operaciones'].includes(window.CURRENT_USER_ROLE);
+            if (isGlobalRole && this.selectedGlobalBranches.length > 0 && !sucursalCode) {
+                // Previene errores de URL asegurando si va con ? o con &
+                url += (url.includes('?') ? '&' : '?') + `global_sucs=${encodeURIComponent(this.selectedGlobalBranches.join(','))}`;
+            }
                 
             const res = await fetch(url);
             const json = await res.json();
@@ -111,17 +221,46 @@ window.CierreCajasLogic = {
                 if (json.catalogo_justificaciones) {
                     this.justificacionesCatalogo = json.catalogo_justificaciones;
                 }
+
+                // Lógica de Interceptación Modal (Roles Dios) + LocalStorage
+                if (json.require_selection) {
+                    this.allAvailableBranches = json.mis_sucursales;
+                    
+                    const savedSucs = localStorage.getItem(this.getGlobalSucsKey());
+                    if (savedSucs) {
+                        try {
+                            this.selectedGlobalBranches = JSON.parse(savedSucs);
+                            if (this.selectedGlobalBranches.length > 0) {
+                                // Auto-cargar sin preguntar
+                                return this.loadBandejaPendientes();
+                            }
+                        } catch (e) {
+                            localStorage.removeItem(this.getGlobalSucsKey());
+                        }
+                    }
+
+                    // Si no había nada guardado, levantar modal
+                    this.showGlobalBranchesModal(this.allAvailableBranches);
+                    return; 
+                }
                 
                 // Pintar mis sucursales en el Home (Panel Central) si venimos de la carga inicial
                 if (!sucursalCode && json.mis_sucursales) {
+                    this.allAvailableBranches = json.mis_sucursales;
                     const contSucs = document.getElementById('home-sucursales-list');
+                    
+                    let sucsToShow = json.mis_sucursales;
+                    if (isGlobalRole && this.selectedGlobalBranches.length > 0) {
+                        sucsToShow = sucsToShow.filter(s => this.selectedGlobalBranches.includes(s.CodigoSucursal));
+                    }
+
                     if (contSucs) {
-                        if (json.mis_sucursales.length > 0) {
-                            contSucs.innerHTML = json.mis_sucursales.map(s => 
+                        if (sucsToShow.length > 0) {
+                            contSucs.innerHTML = sucsToShow.map(s => 
                                 `<span class="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[10px] font-bold text-slate-600 dark:text-slate-300 shadow-sm whitespace-nowrap">🏢 ${s.CodigoSucursal} - ${s.NombreSucursal}</span>`
                             ).join('');
                         } else {
-                            contSucs.innerHTML = `<span class="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-1.5 rounded-full border border-red-200 dark:border-red-800">⚠️ No tiene sucursales asignadas en su perfil de usuario.</span>`;
+                            contSucs.innerHTML = `<span class="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-1.5 rounded-full border border-red-200 dark:border-red-800">⚠️ No hay sucursales seleccionadas.</span>`;
                         }
                     }
                 }
@@ -498,7 +637,10 @@ window.CierreCajasLogic = {
         document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            const payload = manualDates ? { manual_dates: manualDates } : {};
+            const payload = { 
+                manual_dates: manualDates || {},
+                global_sucs: this.selectedGlobalBranches 
+            };
             const res = await fetch(`api/get_facturacion_cc.php`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1162,7 +1304,11 @@ window.CierreCajasLogic = {
         try {
             // Pasamos los parámetros al backend
             const term = encodeURIComponent(this.resueltosSearchTerm);
-            const url = `api/get_casos_historial_cc.php?page=${this.resueltosCurrentPage}&search=${term}`;
+            let url = `api/get_casos_historial_cc.php?page=${this.resueltosCurrentPage}&search=${term}`;
+            
+            if (['admin', 'conciliador', 'gerente_operaciones'].includes(window.CURRENT_USER_ROLE) && this.selectedGlobalBranches.length > 0) {
+                url += `&global_sucs=${encodeURIComponent(this.selectedGlobalBranches.join(','))}`;
+            }
             
             const res = await fetch(url);
             const data = await res.json();
@@ -1433,7 +1579,7 @@ window.CierreCajasLogic = {
             const role = window.CURRENT_USER_ROLE || this.historyUserRole; 
             let actionHtml = '';
 
-            if (c.Estado === 'NO_REPORTADO' && (role === 'agente' || role === 'jefe' || role === 'admin' || role === 'coordinador')) {
+            if (c.Estado === 'NO_REPORTADO' && ['agente', 'jefe', 'admin', 'coordinador', 'conciliador', 'gerente_operaciones'].includes(role)) {
                 actionHtml = `
                     <div class="mb-2">
                         <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Acción sobre la Inconsistencia</label>
@@ -1450,7 +1596,7 @@ window.CierreCajasLogic = {
                     </div>
                 `;
             }
-            else if (c.Estado === 'PENDIENTE_VISTO_BUENO' && (role === 'jefe' || role === 'admin')) {
+            else if (c.Estado === 'PENDIENTE_VISTO_BUENO' && ['jefe', 'admin', 'conciliador', 'gerente_operaciones'].includes(role)) {
                 actionHtml = `
                     <div class="flex flex-col gap-3">
                         <div>
@@ -1466,7 +1612,7 @@ window.CierreCajasLogic = {
                     </div>
                 `;
             }
-            else if (c.Estado === 'PENDIENTE_RESOLUCION' && (role === 'servicio_cliente' || role === 'admin')) {
+            else if (c.Estado === 'PENDIENTE_RESOLUCION' && ['servicio_cliente', 'admin', 'conciliador', 'gerente_operaciones'].includes(role)) {
                 actionHtml = `
                     <div class="flex flex-col gap-3">
                         <div>
@@ -1742,7 +1888,12 @@ window.CierreCajasLogic = {
         document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            const url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&sucursal=${encodeURIComponent(fSucursal)}&page=${this.forensePage}`;
+            let url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&sucursal=${encodeURIComponent(fSucursal)}&page=${this.forensePage}`;
+            
+            if (['admin', 'conciliador', 'gerente_operaciones'].includes(window.CURRENT_USER_ROLE) && this.selectedGlobalBranches.length > 0) {
+                url += `&global_sucs=${encodeURIComponent(this.selectedGlobalBranches.join(','))}`;
+            }
+            
             const res = await fetch(url);
             const json = await res.json();
             
@@ -1778,6 +1929,9 @@ window.CierreCajasLogic = {
                         <span class="text-sm text-slate-700 dark:text-slate-300">${s.ID} - ${s.NAME}</span>
                     </label>
                 `).join('');
+                
+                // ACTUALIZAR LA UI DEL BOTÓN INMEDIATAMENTE DESPUÉS DE PINTAR
+                this.updateMultiSelectUI();
             }
 
             // 2. Llenar el Dashboard (Matemática pura desacoplada)

@@ -13,82 +13,110 @@ require_once '../db.php';
 $emailUsuario = $_SESSION['user']['email'] ?? '';
 $rol = $_SESSION['user']['role'] ?? '';
 
-// Capturar rango de fechas (Por defecto últimos 7 días)
+// Capturar rango de fechas
 $desde = $_GET['desde'] ?? date('Y-m-d', strtotime('-7 days'));
 $hasta = $_GET['hasta'] ?? date('Y-m-d');
+
+// REGLA ACTUALIZADA: Todos los roles que tienen visión global
+$esGlobal = in_array($rol, ['admin', 'conciliador', 'gerente_operaciones', 'servicio_cliente']);
 
 try {
     $pdo = Database::connect();
 
-    // 1. CONSTRUCCIÓN DE LA CONSULTA MAESTRA (Idéntica al Forense para cuadre perfecto)
-    $whereClause = "WHERE CAST(H.FechaCierre AS DATE) BETWEEN ? AND ?";
-    $params = [$desde, $hasta];
+    // ==========================================
+    // 1. KPI GLOBALES DEL RANGO DE FECHAS (TotalTx, CRC, USD)
+    // ==========================================
+    $whereRango = "WHERE CAST(H.FechaCierre AS DATE) BETWEEN ? AND ?";
+    $paramsRango = [$desde, $hasta];
 
-    // Filtro RBAC: Sucursales cruzadas mediante la Matriz Unificada
-    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
-        $whereClause .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND H.Sucursal LIKE '%' + V.CodigoSucursal + '%')";
-        $params[] = $emailUsuario;
+    // Si NO es global, lo limitamos estrictamente a sus sucursales asignadas
+    if (!$esGlobal) {
+        $whereRango .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND H.Sucursal LIKE '%' + V.CodigoSucursal + '%')";
+        $paramsRango[] = $emailUsuario;
     }
 
-    $baseJoins = "FROM Tbl_CierreCaja_Detalle D
+    $baseJoinsRango = "FROM Tbl_CierreCaja_Detalle D INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre";
+
+    $sqlKPIs = "
+        SELECT 
+            COUNT(D.IdDetalle) AS TotalTx,
+            ISNULL(SUM(D.MontoCRC), 0) AS RangoCRC,
+            ISNULL(SUM(D.MontoUSD), 0) AS RangoUSD
+        $baseJoinsRango 
+        $whereRango
+    ";
+    
+    $stmtKPI = $pdo->prepare($sqlKPIs);
+    $stmtKPI->execute($paramsRango);
+    $kpiData = $stmtKPI->fetch(PDO::FETCH_ASSOC);
+
+    // ==========================================
+    // 2. TICKETS ACTIVOS EN TIEMPO REAL (KPI de urgencia)
+    // Muestra todos los tickets en trámite sin importar si son viejos
+    // ==========================================
+    $whereActivos = "WHERE C.Estado NOT IN ('CERRADO', 'RESUELTO')";
+    $paramsActivos = [];
+
+    if (!$esGlobal) {
+        $whereActivos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
+        $paramsActivos[] = $emailUsuario;
+    }
+
+    $sqlActivos = "SELECT COUNT(C.IdCaso) AS TicketsActivos FROM Tbl_Casos_TSD C $whereActivos";
+    $stmtActivos = $pdo->prepare($sqlActivos);
+    $stmtActivos->execute($paramsActivos);
+    $ticketsActivos = $stmtActivos->fetchColumn();
+
+    // ==========================================
+    // 3. GRÁFICO: Evolución Financiera (Por Día en el Rango)
+    // ==========================================
+    $sqlEvo = "
+        SELECT 
+            CONVERT(varchar(5), CAST(H.FechaCierre AS DATE), 103) AS Fecha, 
+            ISNULL(SUM(D.MontoCRC), 0) AS CRC
+        $baseJoinsRango 
+        $whereRango
+        GROUP BY CAST(H.FechaCierre AS DATE)
+        ORDER BY CAST(H.FechaCierre AS DATE) ASC
+    ";
+    $stmtEvo = $pdo->prepare($sqlEvo);
+    $stmtEvo->execute($paramsRango);
+    $dataEvolucion = $stmtEvo->fetchAll(PDO::FETCH_ASSOC);
+
+    // ==========================================
+    // 4. GRÁFICO: Estados de los Tickets (Dentro del Rango)
+    // ==========================================
+    $baseJoinsCasosRango = "FROM Tbl_CierreCaja_Detalle D
                   INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
                   LEFT JOIN (
                       SELECT IdCierreOrigen, NumeroContrato, MAX(IdCaso) AS IdCaso
                       FROM Tbl_Casos_TSD
                       GROUP BY IdCierreOrigen, NumeroContrato
                   ) C_Unico ON D.Numero_Contrato = C_Unico.NumeroContrato AND C_Unico.IdCierreOrigen = H.IdCierre
-                  LEFT JOIN Tbl_Casos_TSD C ON C.IdCaso = C_Unico.IdCaso";
+                  INNER JOIN Tbl_Casos_TSD C ON C.IdCaso = C_Unico.IdCaso";
 
-    // 2. KPIs GLOBALES (Cantidades exactas)
-    $sqlKPIs = "
-        SELECT 
-            COUNT(D.IdDetalle) AS TotalTx,
-            ISNULL(SUM(D.MontoCRC), 0) AS RangoCRC,
-            ISNULL(SUM(D.MontoUSD), 0) AS RangoUSD,
-            COUNT(DISTINCT CASE WHEN C.IdCaso IS NOT NULL AND C.Estado NOT IN ('CERRADO', 'RESUELTO') THEN C.IdCaso END) AS TicketsActivos
-        $baseJoins 
-        $whereClause
-    ";
-    
-    $stmtKPI = $pdo->prepare($sqlKPIs);
-    $stmtKPI->execute($params);
-    $kpiData = $stmtKPI->fetch(PDO::FETCH_ASSOC);
-
-    // 3. GRÁFICO: Evolución Financiera (Por Día)
-    $sqlEvo = "
-        SELECT 
-            CONVERT(varchar(5), CAST(H.FechaCierre AS DATE), 103) AS Fecha, 
-            ISNULL(SUM(D.MontoCRC), 0) AS CRC
-        $baseJoins 
-        $whereClause
-        GROUP BY CAST(H.FechaCierre AS DATE)
-        ORDER BY CAST(H.FechaCierre AS DATE) ASC
-    ";
-    $stmtEvo = $pdo->prepare($sqlEvo);
-    $stmtEvo->execute($params);
-    $dataEvolucion = $stmtEvo->fetchAll(PDO::FETCH_ASSOC);
-
-    // 4. GRÁFICO: Estados de los Tickets (Dona)
     $sqlEstados = "
         SELECT 
             C.Estado, 
             COUNT(DISTINCT C.IdCaso) AS Cantidad
-        $baseJoins 
-        $whereClause AND C.IdCaso IS NOT NULL
+        $baseJoinsCasosRango 
+        $whereRango
         GROUP BY C.Estado
     ";
     $stmtEstados = $pdo->prepare($sqlEstados);
-    $stmtEstados->execute($params);
+    $stmtEstados->execute($paramsRango);
     $dataEstados = $stmtEstados->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5. RESPUESTA CONSOLIDADA
+    // ==========================================
+    // 5. RESPUESTA AL FRONTEND
+    // ==========================================
     echo json_encode([
         'success' => true,
         'kpis' => [
             'hoy_crc' => $kpiData['RangoCRC'],
             'hoy_usd' => $kpiData['RangoUSD'],
-            'tickets_activos' => $kpiData['TicketsActivos'],
-            'tx_7d' => $kpiData['TotalTx'] // Ahora refleja exactamente el Volumen Transaccional de Forense
+            'tickets_activos' => $ticketsActivos,
+            'tx_7d' => $kpiData['TotalTx']
         ],
         'graficos' => [
             'evolucion' => $dataEvolucion,

@@ -1,5 +1,5 @@
 window.SysUI = {
-    _createModal: function(title, html, buttons, type="info") {
+    _createModal: function(title, html, buttons, type="info", widthClass="max-w-md") {
         return new Promise((resolve) => {
             const overlay = document.createElement('div');
             overlay.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[999999] flex items-center justify-center p-4 opacity-0 transition-opacity duration-300 select-none';
@@ -11,7 +11,7 @@ window.SysUI = {
             if(type === 'success') { icon = '✅ '; titleColor = 'text-green-600 dark:text-green-400'; }
 
             const box = document.createElement('div');
-            box.className = 'bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md overflow-hidden transform scale-95 transition-transform duration-300';
+            box.className = `bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full ${widthClass} overflow-hidden transform scale-95 transition-transform duration-300 flex flex-col max-h-[95vh]`;
             
             let btnsHtml = buttons.map((b, i) => `<button id="sysui-btn-${i}" class="${b.class}">${b.text}</button>`).join('');
             

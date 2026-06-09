@@ -22,16 +22,26 @@ $emailUsuario = $_SESSION['user']['email'] ?? '';
 $inputJSON = file_get_contents('php://input');
 $requestData = json_decode($inputJSON, true) ?: [];
 $manualDates = $requestData['manual_dates'] ?? [];
+$globalSucsArray = $requestData['global_sucs'] ?? [];
+
+$rolUsuario = $_SESSION['user']['role'] ?? '';
+$esGlobal = in_array($rolUsuario, ['admin', 'conciliador', 'gerente_operaciones']);
 
 try {
     $pdoLocal = Database::connect();
     $pdoTsd = TSDDatabase::connect();
 
-    // 1. Obtener sucursales asignadas en la matriz unificada
-    $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1");
-    
-    $stmtSucs->execute([$emailUsuario]);
-    $sucursales = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
+    // 1. Obtener sucursales (Modo Global o Modo Agente)
+    if ($esGlobal && !empty($globalSucsArray)) {
+        $inClause = str_repeat('?,', count($globalSucsArray) - 1) . '?';
+        $stmtSucs = $pdoTsd->prepare("SELECT Location AS CodigoSucursal, Name AS NombreSucursal FROM dbo.Setup WHERE Location IN ($inClause)");
+        $stmtSucs->execute($globalSucsArray);
+        $sucursales = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $stmtSucs = $pdoLocal->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1");
+        $stmtSucs->execute([$emailUsuario]);
+        $sucursales = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     if (empty($sucursales)) {
         throw new Exception("No tiene sucursales asignadas. Solicite a un Administrador que configure sus sucursales desde el panel de Usuarios.");

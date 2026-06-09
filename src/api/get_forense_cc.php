@@ -72,8 +72,20 @@ try {
     // RBAC: Filtros de Visibilidad Universales
     $rol = $_SESSION['user']['role'] ?? '';
     $emailUsuario = $_SESSION['user']['email'] ?? '';
+    $globalSucsRaw = $_GET['global_sucs'] ?? '';
+    $esGlobal = in_array($rol, ['admin', 'conciliador', 'gerente_operaciones']);
 
-    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
+    if ($esGlobal && !empty($globalSucsRaw)) {
+        $sucsArray = array_filter(array_map('trim', explode(',', $globalSucsRaw)));
+        if (!empty($sucsArray)) {
+            $sucConditions = [];
+            foreach ($sucsArray as $suc) {
+                $sucConditions[] = "(H.Sucursal LIKE ?)";
+                $params[] = '%' . $suc . '%';
+            }
+            $whereClause .= " AND (" . implode(" OR ", $sucConditions) . ")";
+        }
+    } else if (!in_array($rol, ['servicio_cliente', 'admin'])) {
         $whereClause .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND H.Sucursal LIKE '%' + V.CodigoSucursal + '%')";
         $params[] = $emailUsuario;
     }
@@ -148,9 +160,18 @@ try {
 
     // Extraer lista de sucursales disponibles para este usuario (Para llenar el combobox)
     $listaSucs = [];
-    if (in_array($rol, ['servicio_cliente', 'admin'])) {
-        $stmtAllSucs = $pdo->query("SELECT CodigoSucursal AS ID, MAX(NombreSucursal) AS NAME FROM Tbl_Usuario_Sucursales_cc GROUP BY CodigoSucursal");
-        $listaSucs = $stmtAllSucs->fetchAll(PDO::FETCH_ASSOC);
+    if ($esGlobal) {
+        if (!empty($globalSucsRaw)) {
+            $sucsArrLocal = array_filter(array_map('trim', explode(',', $globalSucsRaw)));
+            if (!empty($sucsArrLocal)) {
+                require_once 'tsd_db.php';
+                $pdoTsd = TSDDatabase::connect();
+                $inClause = str_repeat('?,', count($sucsArrLocal) - 1) . '?';
+                $stmtAllSucs = $pdoTsd->prepare("SELECT Location AS ID, Name AS NAME FROM dbo.Setup WHERE Location IN ($inClause)");
+                $stmtAllSucs->execute(array_values($sucsArrLocal));
+                $listaSucs = $stmtAllSucs->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
     } else {
         $stmtMySucs = $pdo->prepare("SELECT CodigoSucursal AS ID, NombreSucursal AS NAME FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1 GROUP BY CodigoSucursal, NombreSucursal");
         $stmtMySucs->execute([$emailUsuario]);

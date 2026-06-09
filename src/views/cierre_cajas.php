@@ -1,10 +1,10 @@
 <?php 
     $rolCC = $_SESSION['user']['role'] ?? '';
+    $esGlobal = in_array($rolCC, ['admin', 'conciliador', 'gerente_operaciones']);
     $esSC = ($rolCC === 'servicio_cliente');
-    $esAdmin = ($rolCC === 'admin');
     
-    $verNormal = !$esSC; // Agentes, Jefes, Coordinadores, y Admins
-    $verSC = ($esSC || $esAdmin); // SC y Admins
+    $verNormal = !$esSC; // Todos menos SC ven el módulo normal
+    $verSC = ($esSC || $esGlobal); // SC y Roles Globales ven la bandeja de SC
 ?>
 
 <div class="flex flex-col h-full animate-fade-in-up pb-24 w-full max-w-[1920px] mx-auto" id="cierre-cajas-module">
@@ -19,11 +19,18 @@
             <p class="text-xs text-slate-500 mt-1">Conciliación de vouchers vs Registro TSD.</p>
         </div>
         
-        <!-- BOTÓN DE MANUAL DE USUARIO -->
-        <div>
+        <!-- BOTONES DE ACCIÓN GLOBALES -->
+        <div class="flex items-center gap-3">
+            <?php if(in_array($_SESSION['user']['role'] ?? '', ['admin', 'conciliador', 'gerente_operaciones'])): ?>
+            <button onclick="window.CierreCajasLogic.showGlobalBranchesModal()" class="bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-4 py-2 rounded-xl font-bold shadow-sm transition-all flex items-center gap-2 text-sm group">
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                <span class="hidden sm:inline">Sucursales</span>
+            </button>
+            <?php endif; ?>
+
             <a href="manual_cc/" target="_blank" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-4 py-2 rounded-xl font-bold shadow-sm transition-all flex items-center gap-2 text-sm group">
                 <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                Manual de Usuario
+                <span class="hidden sm:inline">Manual de Usuario</span>
             </a>
         </div>
     </header>

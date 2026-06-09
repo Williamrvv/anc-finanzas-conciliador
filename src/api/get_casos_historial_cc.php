@@ -12,6 +12,8 @@ require_once '../db.php';
 
 $emailUsuario = $_SESSION['user']['email'] ?? '';
 $rol = $_SESSION['user']['role'] ?? '';
+$globalSucsRaw = $_GET['global_sucs'] ?? '';
+$esGlobal = in_array($rol, ['admin', 'conciliador', 'gerente_operaciones']);
 
 // Parámetros de Paginación Server-Side (Solo aplican para RESUELTOS)
 $pagina = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
@@ -37,8 +39,17 @@ try {
     $paramsActivos = [];
 
     // RBAC: Filtros de Visibilidad Universales
-    // Si no es servicio_cliente ni admin, DEBE tener sucursales asignadas en la matriz unificada
-    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
+    if ($esGlobal && !empty($globalSucsRaw)) {
+        $sucsArray = array_filter(array_map('trim', explode(',', $globalSucsRaw)));
+        if (!empty($sucsArray)) {
+            $sucConditions = [];
+            foreach ($sucsArray as $suc) {
+                $sucConditions[] = "(C.Sucursal_Relacionada LIKE ?)";
+                $paramsActivos[] = $suc . '%';
+            }
+            $sqlActivos .= " AND (" . implode(" OR ", $sucConditions) . ")";
+        }
+    } else if (!in_array($rol, ['servicio_cliente', 'admin'])) {
         $sqlActivos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsActivos[] = $emailUsuario;
     }
@@ -59,7 +70,17 @@ try {
     $paramsResueltos = [];
 
     // RBAC: Filtros de Visibilidad Universales
-    if (!in_array($rol, ['servicio_cliente', 'admin'])) {
+    if ($esGlobal && !empty($globalSucsRaw)) {
+        $sucsArray = array_filter(array_map('trim', explode(',', $globalSucsRaw)));
+        if (!empty($sucsArray)) {
+            $sucConditions = [];
+            foreach ($sucsArray as $suc) {
+                $sucConditions[] = "(C.Sucursal_Relacionada LIKE ?)";
+                $paramsResueltos[] = $suc . '%';
+            }
+            $sqlBaseResueltos .= " AND (" . implode(" OR ", $sucConditions) . ")";
+        }
+    } else if (!in_array($rol, ['servicio_cliente', 'admin'])) {
         $sqlBaseResueltos .= " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%')";
         $paramsResueltos[] = $emailUsuario;
     }

@@ -10,6 +10,7 @@ if (!isset($_SESSION['user'])) {
 }
 
 require_once '../db.php';
+require_once 'tsd_db.php';
 $emailUsuario = $_SESSION['user']['email'] ?? null;
 $sucursal = $_GET['sucursal'] ?? ''; // Leemos si nos mandan una sucursal
 
@@ -40,31 +41,52 @@ try {
             WHERE C.Estado != 'CERRADO'";
 
     if (empty($sucursal)) {
-        // VISTA DE INICIO: Traer TODOS los pendientes de las sucursales asignadas (Visión colaborativa total)
-        $sql .= " AND EXISTS (
-                      SELECT 1 FROM Tbl_Usuario_Sucursales_cc V 
-                      WHERE V.EmailUsuario = ? AND V.Activo = 1 
-                      AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%'
-                  )
-                  ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([$emailUsuario]); // Solo se pasa una vez para la subconsulta
-        
-        // --- NUEVO: Extraer sucursales asignadas para mostrar en el Home ---
         $rolUsuario = $_SESSION['user']['role'] ?? '';
+        $esGlobal = in_array($rolUsuario, ['admin', 'conciliador', 'gerente_operaciones']);
         $sucursalesHome = [];
 
-        if (in_array($rolUsuario, ['jefe', 'admin', 'servicio_cliente', 'agente', 'coordinador'])) {
-            // Todos los roles extraen sus sucursales de la matriz unificada
+        // 1. Cargar catálogo de sucursales según el rol
+        if ($esGlobal) {
+            $pdoTsd = TSDDatabase::connect();
+            $sqlTsd = "SELECT Location AS CodigoSucursal, Name AS NombreSucursal FROM dbo.Setup WHERE DeactivateLocation = 0 AND (Hidden = 0 OR Hidden IS NULL)";
+            $stmtAllSucs = $pdoTsd->query($sqlTsd);
+            $sucursalesHome = $stmtAllSucs->fetchAll(PDO::FETCH_ASSOC);
+        } else {
             $stmtSucs = $pdo->prepare("SELECT CodigoSucursal, NombreSucursal FROM Tbl_Usuario_Sucursales_cc WHERE EmailUsuario = ? AND Activo = 1");
             $stmtSucs->execute([$emailUsuario]);
             $sucursalesHome = $stmtSucs->fetchAll(PDO::FETCH_ASSOC);
         }
         
+        $globalSucsRaw = $_GET['global_sucs'] ?? '';
+        
+        if ($esGlobal && empty($globalSucsRaw)) {
+            // Requiere selección del modal (Retorna vacío pero pasa el catálogo para pintarlo)
+            echo json_encode(['success' => true, 'data' => [], 'mis_sucursales' => $sucursalesHome, 'catalogo_justificaciones' => $catalogoJustificaciones, 'require_selection' => true]);
+            exit;
+        }
+
+        // 2. Extraer tickets filtrados por el modal o por permisos reales
+        if ($esGlobal && !empty($globalSucsRaw)) {
+            $sucsArray = array_filter(array_map('trim', explode(',', $globalSucsRaw)));
+            $sucConditions = [];
+            $paramsQuery = [];
+            foreach ($sucsArray as $suc) {
+                $sucConditions[] = "(C.Sucursal_Relacionada LIKE ?)";
+                $paramsQuery[] = $suc . '%';
+            }
+            $sqlGlobal = $sql . " AND (" . implode(" OR ", $sucConditions) . ") ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
+            $stmt = $pdo->prepare($sqlGlobal);
+            $stmt->execute($paramsQuery);
+        } else {
+            $sqlNormal = $sql . " AND EXISTS (SELECT 1 FROM Tbl_Usuario_Sucursales_cc V WHERE V.EmailUsuario = ? AND V.Activo = 1 AND C.Sucursal_Relacionada LIKE V.CodigoSucursal + '%') ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
+            $stmt = $pdo->prepare($sqlNormal);
+            $stmt->execute([$emailUsuario]);
+        }
+        
         echo json_encode(['success' => true, 'data' => $stmt->fetchAll(), 'mis_sucursales' => $sucursalesHome, 'catalogo_justificaciones' => $catalogoJustificaciones]);
 
     } else {
-        // VISTA COLABORATIVA: Traer los NO REPORTADOS de esa Sucursal (Míos o de otros)
+        // VISTA COLABORATIVA SUCURSAL
         $sql .= " AND C.Sucursal_Relacionada LIKE ? AND C.Estado = 'NO_REPORTADO' ORDER BY C.DiasAtraso DESC, C.FechaCreacion DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$sucursal . '%']);
