@@ -16,6 +16,7 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script>
         window.CURRENT_USER_NAME = <?php echo json_encode($nombreReal); ?>;
         window.CURRENT_USER_ROLE = <?php echo json_encode($_SESSION['user']['role'] ?? 'visitante'); ?>;
+        window.CURRENT_USER_EMAIL = <?php echo json_encode($_SESSION['user']['email'] ?? 'desconocido'); ?>;
         tailwind.config = {
             darkMode: 'class',
             theme: {

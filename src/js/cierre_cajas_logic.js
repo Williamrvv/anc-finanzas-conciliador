@@ -61,9 +61,9 @@ window.CierreCajasLogic = {
     
     // Función getter dinámica para el borrador (asegura que la llave sea única y limpia)
     getDraftKey: function() {
-        // Limpia el nombre del usuario para usarlo como llave segura
-        const userClean = String(this.currentUser).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-        return 'iri_cierre_draft_' + userClean;
+        // Usa el EMAIL del usuario (Llave primaria) para evitar colisiones entre homónimos
+        const emailClean = String(window.CURRENT_USER_EMAIL || this.currentUser).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        return 'iri_cierre_draft_' + emailClean;
     },
     
     autoSaveInterval: null, // Control del temporizador de auto-guardado
@@ -900,6 +900,9 @@ window.CierreCajasLogic = {
         const originalText = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = "Guardando en BD...";
+        
+        // Frena el temporizador de inmediato para evitar Race Conditions (Borradores Zombie)
+        this.detenerAutoGuardado();
 
         try {
             const res = await fetch('api/save_cierre_caja.php', {

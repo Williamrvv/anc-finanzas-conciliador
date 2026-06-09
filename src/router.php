@@ -23,8 +23,8 @@ if (!isset($_SESSION['user'])) {
             break;
             
         case 'conciliador':
-            // Solo ve la parte de bancos, consolidado TSD y Auxiliar Contable
-            $allowed_views = ['dashboard', 'conciliacion', 'tsd', 'auxiliar'];
+            // Ve la parte de bancos, consolidado TSD, Auxiliar Contable y módulo de Cierres (Lectura)
+            $allowed_views = ['dashboard', 'conciliacion', 'tsd', 'auxiliar', 'cierre_cajas'];
             break;
             
         case 'jefe':
