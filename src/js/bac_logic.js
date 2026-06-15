@@ -1940,6 +1940,8 @@ window.BACLogic = {
                                 // Variables BAC Nativas (Van directo a Ventas)
                                 _id: document.getElementById('fm-afil').value,
                                 _liq: document.getElementById('fm-liq').value,
+                                NUMERO_AFILIADO: document.getElementById('fm-afil').value, // <--- Obligatorio para PHP
+                                NUMERO_LIQUIDACION: document.getElementById('fm-liq').value,
                                 [idxComercio]: document.getElementById('fm-comercio').value,
                                 [idxAuth]: document.getElementById('fm-auth').value,
                                 _venta: res.venta,

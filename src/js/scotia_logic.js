@@ -1425,6 +1425,7 @@ window.ScotiaLogic = {
                                 _auth: document.getElementById('fm-auth').value,
                                 
                                 [idxMerId]: document.getElementById('fm-afil').value,
+                                MerID: document.getElementById('fm-afil').value, // <--- Obligatorio para PHP
                                 [comercioIdx]: document.getElementById('fm-comercio').value,
                                 [idxAuth]: document.getElementById('fm-auth').value,
                                 

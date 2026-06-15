@@ -96,20 +96,6 @@ try {
         $row['CentroCosto'] = $mapaCC[$sucursal] ?? '00-00-00';
     }
     unset($row);
-    $tarjetasRows = $stmtTarjetas->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Crear un diccionario rápido [Contrato => Tarjeta]
-    $mapaTarjetas = [];
-    foreach($tarjetasRows as $t) {
-        $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']);
-    }
-
-    // Inyectar la tarjeta a los resultados de TSD en memoria
-    foreach ($dataTSD as &$row) {
-        $contrato = trim($row['Contrato']);
-        $row['Tarjeta_Ultimos4'] = isset($mapaTarjetas[$contrato]) ? $mapaTarjetas[$contrato] : '';
-    }
-    unset($row); // Romper la referencia
 
     // ==========================================
     // 2. QUERY BANCOS (Extracción por Marca de Agua y Datos Financieros)
@@ -127,7 +113,7 @@ try {
         b.MONTONETO AS Monto_Neto, b.COMISION AS Comision, b.RETENCION_VENTAS AS Retencion_Ventas,
         b.RETENCION_RENTA AS Retencion_Renta, b.AJUSTE_COMISION_INTERNACIONAL AS ACI,
         
-        a.TipoAjuste, a.Justificacion
+        a.TipoAjuste, a.Justificacion, COALESCE(b.CentroCosto, '00-00-00') AS CentroCosto
     FROM Tbl_Detalle_BAC b
     INNER JOIN Tbl_Transacciones_Maestra m ON b.IdTransaccion = m.IdTransaccion
     INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
@@ -149,7 +135,7 @@ try {
         s.Monto_Neto AS Monto_Neto, s.Monto_Comision_Total AS Comision, s.Monto_Retencion_IVA AS Retencion_Ventas,
         s.Monto_Retencion_ISR AS Retencion_Renta, 0 AS ACI,
         
-        a.TipoAjuste, a.Justificacion
+        a.TipoAjuste, a.Justificacion, COALESCE(s.CentroCosto, '00-00-00') AS CentroCosto
     FROM Tbl_Detalle_Scotia s
     INNER JOIN Tbl_Transacciones_Maestra m ON s.IdTransaccion = m.IdTransaccion
     INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre

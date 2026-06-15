@@ -35,33 +35,15 @@ try {
     $pdo->beginTransaction();
 
     // =========================================================================
-    // INTEGRACIÓN CRM: DESCARGAR ÁRBOL DE CENTROS DE COSTO
+    // DICCIONARIO MAESTRO: AFILIADO -> CENTRO DE COSTO
     // =========================================================================
-    $mapaCrmCC = [];
-    $crmContext = stream_context_create(['http' => ['timeout' => 5]]); // Evitar cuelgues si el ERP no responde
-    $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $crmContext);
-    
-    if ($crmJson) {
-        $crmData = json_decode($crmJson, true);
-        if (!empty($crmData['ok']) && !empty($crmData['data'])) {
-            foreach ($crmData['data'] as $item) {
-                // Guardamos: [ 'ACOC01' => '01-06-18' ]
-                $mapaCrmCC[strtoupper(trim($item['Codigo']))] = trim($item['Centro_Costo']);
-            }
-        }
-    } else {
-        throw new \Exception("Error Crítico: No se pudo contactar al ERP para validar los Centros de Costo. Abortando guardado.");
+    // Consultamos la nueva tabla maestra directamente desde SQL Server
+    $mapaCentroCosto = [];
+    $stmtDiccionario = $pdo->query("SELECT Afiliado, CentroCosto FROM Tbl_Diccionario_Afiliados");
+    while ($rowDict = $stmtDiccionario->fetch(PDO::FETCH_ASSOC)) {
+        // Almacenamos '123456789' => '01-06-18'
+        $mapaCentroCosto[trim(strtoupper($rowDict['Afiliado']))] = trim($rowDict['CentroCosto']);
     }
-
-    // =========================================================================
-    // DICCIONARIO MAESTRO: AFILIADO -> SUCURSAL
-    // =========================================================================
-    // AQUI debes colocar la información con la que "ya cuentan". 
-    // Si la tienes en una tabla SQL, podemos hacer un $pdo->query() para poblar este arreglo dinámicamente.
-    $mapaAfiliadoSucursal = [
-        '123456789' => 'ACOC01',  // Ejemplo de Banco -> Sucursal
-        '987654321' => 'LIOC71',
-    ];
 
     // 1. Calcular totales reales agrupados por Banco en el Servidor
     $totalesPorBanco = [];
@@ -139,28 +121,24 @@ try {
             $bancoParaBD = (($t['Banco'] ?? '') === 'SCOTIA') ? 'DAVIBANK' : ($t['Banco'] ?? 'DESC');
             
             // =========================================================================
-            // VALIDACIÓN IMPLACABLE DEL CENTRO DE COSTO
+            // VALIDACIÓN IMPLACABLE DEL CENTRO DE COSTO DIRECTO DEL DICCIONARIO
+            // (Aplica para Archivos Detallados y para Ajustes Manuales inyectados)
             // =========================================================================
             $centroCostoValidado = null;
-            $esDetallado = ($t['Origen'] ?? '') !== 'PAGADO' && ($t['Origen'] ?? '') !== 'AJUSTE';
+            $esVenta = in_array(($t['Origen'] ?? ''), ['DETALLADO', 'AJUSTE']);
             
-            if ($esDetallado) {
+            if ($esVenta) {
                 $afiliado = ($bancoParaBD === 'BAC') ? trim($t['RawBAC']['NUMERO_AFILIADO'] ?? '') : trim($t['RawScotia']['MerID'] ?? '');
                 
                 if (empty($afiliado)) {
-                    throw new \Exception("Error de Integridad: Una transacción de {$bancoParaBD} no tiene número de Afiliado/MerID.");
+                    throw new \Exception("Error de Integridad: Una transacción de Venta o Ajuste en {$bancoParaBD} no tiene número de Afiliado/MerID.");
                 }
 
-                $codigoSucursal = $mapaAfiliadoSucursal[$afiliado] ?? null;
-                
-                if (!$codigoSucursal) {
-                    throw new \Exception("ALERTA DE DICCIONARIO: El Afiliado/MerID '{$afiliado}' no está enlazado a ninguna Sucursal en el código. No se puede determinar su Centro de Costo.");
-                }
-
-                $centroCostoValidado = $mapaCrmCC[strtoupper($codigoSucursal)] ?? null;
+                $afiliadoUpper = strtoupper($afiliado);
+                $centroCostoValidado = $mapaCentroCosto[$afiliadoUpper] ?? null;
 
                 if (empty($centroCostoValidado)) {
-                    throw new \Exception("ALERTA ERP: La sucursal '{$codigoSucursal}' (Afiliado: {$afiliado}) NO TIENE un Centro de Costo asignado en Softland. Por favor, créelo en el ERP antes de guardar esta conciliación.");
+                    throw new \Exception("ALERTA DICCIONARIO: El Datáfono (Afiliado/MerID) '{$afiliado}' no está registrado en el Diccionario de Centros de Costo de IRI.\n\nPor favor, vincule este Afiliado en la Base de Datos antes de guardar la conciliación o el ajuste manual.");
                 }
             }
             // =========================================================================

@@ -52,7 +52,7 @@ window.TSDLogic = {
 
     generateCargadorMaestroTarjetas: async function() {
         if (!this.lastTSD.length || !this.lastBancos.length) {
-            return window.SysUI.alert("No hay datos en memoria. Ejecute el cruce primero.", "Sin datos", "warning");
+            return window.SysUI.alert("No hay datos cargados en memoria. Ejecute el cruce primero.", "Sin datos", "warning");
         }
 
         const dateVal = document.getElementById('tsd-date-picker').value;
@@ -74,36 +74,41 @@ window.TSDLogic = {
             let retRenta176 = 0, retVentas531 = 0;
             const comisionesPorCC = {};
 
+            // Recorremos los bancos en RAM. Ahora cada fila YA TRAE su CentroCosto gracias a M2.
             this.lastBancos.forEach(b => {
                 const isBac = b.Banco === 'BAC';
+                // Si por alguna razón la fila no tiene CC, usa el genérico para no perder el dinero
+                const cc = b.CentroCosto || '00-00-00'; 
+                
+                const montoNeto = parseFloat(b.Monto_Neto) || 0;
+                const comision = parseFloat(b.Comision) || 0;
+                const retVentas = parseFloat(b.Retencion_Ventas) || 0;
+                const retRenta = parseFloat(b.Retencion_Renta) || 0;
+                const aci = parseFloat(b.ACI) || 0;
+
                 if (isBac) {
-                    tBacNeto += parseFloat(b.Monto_Neto) || 0;
-                    tBacAci += parseFloat(b.ACI) || 0;
-                    retRenta176 += parseFloat(b.Retencion_Renta) || 0;
-                    retVentas531 += parseFloat(b.Retencion_Ventas) || 0;
+                    tBacNeto += montoNeto;
+                    tBacAci += aci;
+                    retRenta176 += retRenta;
+                    retVentas531 += retVentas;
                 } else {
-                    tDaviNeto += parseFloat(b.Monto_Neto) || 0;
-                    retRenta176 += parseFloat(b.Retencion_Renta) || 0; 
-                    retVentas531 += parseFloat(b.Retencion_Ventas) || 0; 
+                    tDaviNeto += montoNeto;
+                    retRenta176 += retRenta; 
+                    retVentas531 += retVentas; 
                 }
 
-                // 3. AGRUPACIÓN NATIVA POR CENTRO DE COSTO (Inyectado desde la BD / API)
-                const cc = b.CentroCosto || '00-00-00';
+                // Agrupamos la comisión directamente por el Centro de Costo que M2 inyectó
                 if (!comisionesPorCC[cc]) comisionesPorCC[cc] = 0;
-                comisionesPorCC[cc] += parseFloat(b.Comision) || 0;
+                comisionesPorCC[cc] += comision;
             });
 
             this.lastTSD.forEach(t => tTsdCRC += parseFloat(t.MontoCRC) || 0);
 
-            // 4. CONSTRUCTOR DE FILAS SOFTLAND
+            // 3. CONSTRUCTOR DE FILAS SOFTLAND
             const fmtS = (num) => Number(num).toFixed(2).replace('.', ',');
             const dParts = startDate.split('-'); 
-            const diaAsiento = String(parseInt(dParts[2])).padStart(2, '0');
-            const mesAsiento = parseInt(dParts[1]); 
-            const anioAsiento = dParts[0];
-            const fechaAsiento = `${diaAsiento}/${mesAsiento}/${anioAsiento}`; 
-            
-            const fuenteVal = `T${String(dParts[2]).padStart(2, '0')}${String(dParts[1]).padStart(2, '0')}${dParts[0]}`;
+            const fechaAsiento = `${parseInt(dParts[2])}/${parseInt(dParts[1])}/${dParts[0]}`; 
+            const fuenteVal = `T${dParts[2]}${dParts[1]}${dParts[0]}`; 
 
             const ws1Data = [
                 ["Asiento", "Paquete", "Tipo Asiento", "Fecha", "Contabilidad"],
@@ -121,44 +126,60 @@ window.TSDLogic = {
             const addRow = (cc, cuenta, ref, debito, credito) => {
                 const dCRC = Math.round((parseFloat(debito) || 0) * 100) / 100;
                 const cCRC = Math.round((parseFloat(credito) || 0) * 100) / 100;
-                const dUSD = dCRC > 0 ? dCRC / avgTC : 0;
-                const cUSD = cCRC > 0 ? cCRC / avgTC : 0;
+                // Calculamos el dólar basándonos en si hay dinero, sin importar el signo
+                const dUSD = Math.abs(dCRC) > 0 ? dCRC / avgTC : 0;
+                const cUSD = Math.abs(cCRC) > 0 ? cCRC / avgTC : 0;
 
                 sumDebitoGlobal += dCRC;
                 sumCreditoGlobal += cCRC;
 
+                // EL BUG SOLUCIONADO: Math.abs(dCRC) > 0 permite que montos negativos (ej: -50) 
+                // pasen el filtro e impriman "-50,00" en el Excel en lugar de quedar en blanco.
                 ws2Data.push([
                     asientoId, consecutivo++, "", `'${cc}`, cuenta, fuenteVal, ref,
-                    dCRC > 0 ? fmtS(dCRC) : "", cCRC > 0 ? fmtS(cCRC) : "",
-                    dUSD > 0 ? fmtS(dUSD) : "", cUSD > 0 ? fmtS(cUSD) : "",
-                    !tcInyectado ? Number(avgTC).toFixed(2).replace('.', ',') : ""
+                    Math.abs(dCRC) > 0 ? fmtS(dCRC) : "", 
+                    Math.abs(cCRC) > 0 ? fmtS(cCRC) : "",
+                    Math.abs(dUSD) > 0 ? fmtS(dUSD) : "", 
+                    Math.abs(cUSD) > 0 ? fmtS(cUSD) : "",
+                    !tcInyectado ? Number(avgTC).toFixed(4).replace('.', ',') : ""
                 ]);
                 tcInyectado = true;
             };
 
+            // Fila 1: BAC Neto - ACI
             addRow('00-00-00', '101-004-003-000-000-000', 'Dinero ingresado en BAC', tBacNeto - tBacAci, 0);
+
+            // Fila 2: Davibank Neto
             addRow('00-00-00', '101-004-003-000-000-000', 'Dinero ingresado en el Davibank', tDaviNeto, 0);
+
+            // Fila 3: Total Tarjetas TSD
             addRow('00-00-00', '101-004-003-000-000-000', 'TARJETAS', 0, tTsdCRC);
 
+            // Filas 4+: Comisiones Agrupadas por Centro de Costo nativo
             Object.keys(comisionesPorCC).forEach(cc => {
                 if (Math.abs(comisionesPorCC[cc]) > 0.01) {
                     addRow(cc, '520-005-002-000-000-000', 'DESCUENTO DE TARJETA', comisionesPorCC[cc], 0);
                 }
             });
 
+            // Fila Retención Renta (1.76%)
             if (Math.abs(retRenta176) > 0.01) addRow('00-00-00', '101-004-003-000-000-000', 'RETENCION DE TARJETAS 1.76%', retRenta176, 0);
+
+            // Fila Retención Ventas (5.31%)
             if (Math.abs(retVentas531) > 0.01) addRow('00-00-00', '101-004-003-000-000-000', 'RETENCION DE TARJETAS 5.31%', retVentas531, 0);
 
+            // Filas TSD Detallado
             this.lastTSD.forEach(t => {
                 const tarj = t.Tarjeta_Ultimos4 ? `TarjetaXXXXXXXX${t.Tarjeta_Ultimos4}` : 'TarjetaXXXXXXXX';
                 const ref = `${t.Contrato||''} ${t.Sucursal||''} Aut ${t.Autorizacion||''} ${tarj}`.substring(0, 100);
-                addRow(t.CentroCosto || '00-00-00', '101-004-003-000-000-000', ref, parseFloat(t.MontoCRC) || 0, 0);
+                addRow('00-00-00', '101-004-003-000-000-000', ref, parseFloat(t.MontoCRC) || 0, 0);
             });
 
+            // Filas Bancos Detallado
             this.lastBancos.forEach(b => {
                 const isBac = b.Banco === 'BAC';
                 const ref = `${b.Afiliado_MerID||''} ${b.Nombre_Sucursal_Comercio||''} AUT ${b.Numero_Autorizacion||''} TARJETA ${b.Tarjeta_Ultimos4||''}`.substring(0, 100);
-                addRow(b.CentroCosto || '00-00-00', '101-004-003-000-000-000', ref, 0, parseFloat(b.Monto_Venta_Original) || 0);
+                addRow('00-00-00', '101-004-003-000-000-000', ref, 0, parseFloat(b.Monto_Venta_Original) || 0);
             });
 
             // FILA FINAL: Diferencial Cambiario
@@ -168,19 +189,21 @@ window.TSDLogic = {
                 else addRow('00-00-00', '420-010-001-000-000-000', 'Diferencial cambiario', 0, Math.abs(diff));
             }
 
-            // 6. ENSAMBLAJE FINAL SHEETJS
+            // 4. ENSAMBLAJE FINAL SHEETJS
             const wb = XLSX.utils.book_new();
             const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
             const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+            
             ws2['!cols'] = ws2Data[0].map(h => ({wch: Math.max(15, h.length + 5)}));
+
             XLSX.utils.book_append_sheet(wb, ws1, "Asiento");
             XLSX.utils.book_append_sheet(wb, ws2, "Desglose");
 
             XLSX.writeFile(wb, `Cargador_Tarjetas_${asientoId}.xlsx`);
-            window.SysUI.alert("Cargador generado con cuadratura automática.", "Éxito", "success");
+            window.SysUI.alert("El archivo Excel del asiento de tarjetas se generó correctamente con cuadratura automática.", "Cargador Creado", "success");
 
         } catch (e) {
-            window.SysUI.alert("Error al generar el cargador: " + e.message, "Fallo", "error");
+            window.SysUI.alert("Error al generar el cargador: " + e.message, "Fallo de Sistema", "error");
         } finally {
             document.body.classList.remove('cursor-wait');
         }
