@@ -97,9 +97,10 @@ window.TSDLogic = {
                     retVentas531 += retVentas; 
                 }
 
-                // Agrupamos la comisión directamente por el Centro de Costo que M2 inyectó
+                // Agrupamos la comisión directamente por el Centro de Costo que M2 inyectó.
+                // Lógica Contable: Si es BAC, el Ajuste de Comisión Internacional (ACI) se suma al gasto por comisión.
                 if (!comisionesPorCC[cc]) comisionesPorCC[cc] = 0;
-                comisionesPorCC[cc] += comision;
+                comisionesPorCC[cc] += comision + (isBac ? aci : 0);
             });
 
             this.lastTSD.forEach(t => tTsdCRC += parseFloat(t.MontoCRC) || 0);
@@ -124,23 +125,24 @@ window.TSDLogic = {
             let tcInyectado = false; 
 
             const addRow = (cc, cuenta, ref, debito, credito) => {
-                const dCRC = Math.round((parseFloat(debito) || 0) * 100) / 100;
-                const cCRC = Math.round((parseFloat(credito) || 0) * 100) / 100;
-                // Calculamos el dólar basándonos en si hay dinero, sin importar el signo
-                const dUSD = Math.abs(dCRC) > 0 ? dCRC / avgTC : 0;
-                const cUSD = Math.abs(cCRC) > 0 ? cCRC / avgTC : 0;
+                // Siempre usamos valor absoluto para no escribir signos negativos en el Excel
+                const dCRC = Math.abs(Math.round((parseFloat(debito) || 0) * 100) / 100);
+                const cCRC = Math.abs(Math.round((parseFloat(credito) || 0) * 100) / 100);
+                
+                const dUSD = dCRC > 0 ? dCRC / avgTC : 0;
+                const cUSD = cCRC > 0 ? cCRC / avgTC : 0;
 
-                sumDebitoGlobal += dCRC;
-                sumCreditoGlobal += cCRC;
+                // Importante: La matemática global sigue respetando los signos originales para cuadrar la balanza final.
+                // Aquí sumamos los valores "crudos" (positivos y negativos de devoluciones)
+                sumDebitoGlobal += (Math.round((parseFloat(debito) || 0) * 100) / 100);
+                sumCreditoGlobal += (Math.round((parseFloat(credito) || 0) * 100) / 100);
 
-                // EL BUG SOLUCIONADO: Math.abs(dCRC) > 0 permite que montos negativos (ej: -50) 
-                // pasen el filtro e impriman "-50,00" en el Excel en lugar de quedar en blanco.
                 ws2Data.push([
                     asientoId, consecutivo++, "", `'${cc}`, cuenta, fuenteVal, ref,
-                    Math.abs(dCRC) > 0 ? fmtS(dCRC) : "", 
-                    Math.abs(cCRC) > 0 ? fmtS(cCRC) : "",
-                    Math.abs(dUSD) > 0 ? fmtS(dUSD) : "", 
-                    Math.abs(cUSD) > 0 ? fmtS(cUSD) : "",
+                    dCRC > 0 ? fmtS(dCRC) : "", 
+                    cCRC > 0 ? fmtS(cCRC) : "",
+                    dUSD > 0 ? fmtS(dUSD) : "", 
+                    cUSD > 0 ? fmtS(cUSD) : "",
                     !tcInyectado ? Number(avgTC).toFixed(4).replace('.', ',') : ""
                 ]);
                 tcInyectado = true;
@@ -168,18 +170,30 @@ window.TSDLogic = {
             // Fila Retención Ventas (5.31%)
             if (Math.abs(retVentas531) > 0.01) addRow('00-00-00', '101-004-003-000-000-000', 'RETENCION DE TARJETAS 5.31%', retVentas531, 0);
 
-            // Filas TSD Detallado
+            // Filas TSD Detallado (Lógica: Positivo = Débito | Negativo = Crédito)
             this.lastTSD.forEach(t => {
                 const tarj = t.Tarjeta_Ultimos4 ? `TarjetaXXXXXXXX${t.Tarjeta_Ultimos4}` : 'TarjetaXXXXXXXX';
                 const ref = `${t.Contrato||''} ${t.Sucursal||''} Aut ${t.Autorizacion||''} ${tarj}`.substring(0, 100);
-                addRow('00-00-00', '101-004-003-000-000-000', ref, parseFloat(t.MontoCRC) || 0, 0);
+                
+                const montoCRC = parseFloat(t.MontoCRC) || 0;
+                if (montoCRC >= 0) {
+                    addRow('00-00-00', '101-004-003-000-000-000', ref, montoCRC, 0);
+                } else {
+                    addRow('00-00-00', '101-004-003-000-000-000', ref, 0, montoCRC);
+                }
             });
 
-            // Filas Bancos Detallado
+            // Filas Bancos Detallado (Lógica: Positivo = Crédito | Negativo = Débito)
             this.lastBancos.forEach(b => {
                 const isBac = b.Banco === 'BAC';
                 const ref = `${b.Afiliado_MerID||''} ${b.Nombre_Sucursal_Comercio||''} AUT ${b.Numero_Autorizacion||''} TARJETA ${b.Tarjeta_Ultimos4||''}`.substring(0, 100);
-                addRow('00-00-00', '101-004-003-000-000-000', ref, 0, parseFloat(b.Monto_Venta_Original) || 0);
+                
+                const montoVenta = parseFloat(b.Monto_Venta_Original) || 0;
+                if (montoVenta >= 0) {
+                    addRow('00-00-00', '101-004-003-000-000-000', ref, 0, montoVenta);
+                } else {
+                    addRow('00-00-00', '101-004-003-000-000-000', ref, montoVenta, 0);
+                }
             });
 
             // FILA FINAL: Diferencial Cambiario
@@ -705,7 +719,7 @@ window.TSDLogic = {
         const blindajeBancos = [...bancosData];
 
         // --- HELPERS DE BUSQUEDA PARA FASES 1 A 8 ---
-        const run1to1Phase = (keyGetterT, keyGetterB, matchLabel, requireSameMonto) => {
+        const run1to1Phase = (keyGetterT, keyGetterB, matchLabel, requireSameMonto, maxTolerance = null) => {
             let nextTSD = [];
             pendientesTSD.forEach(tsdRow => {
                 const kT = keyGetterT(tsdRow);
@@ -714,9 +728,17 @@ window.TSDLogic = {
                 if (kT) {
                     matchIdx = bancosDisponibles.findIndex(b => {
                         const kB = keyGetterB(b);
-                        const sameMonto = isSameMonto(b.Monto_Venta_Original, montoTSD);
-                        // Evaluamos usando ID_Transaccion
-                        return kB === kT && !isBlacklisted(tsdRow.ID_Transaccion, b.IdTransaccion) && (!requireSameMonto || sameMonto);
+                        const montoBanco = parseFloat(b.Monto_Venta_Original) || 0;
+                        let valid = kB === kT && !isBlacklisted(tsdRow.ID_Transaccion, b.IdTransaccion);
+                        
+                        if (requireSameMonto) {
+                            valid = valid && isSameMonto(montoBanco, montoTSD);
+                        } else if (maxTolerance !== null) {
+                            // Aplicar Tolerancia de Seguridad (Evalúa magnitudes)
+                            const gap = Math.abs(Math.abs(montoTSD) - Math.abs(montoBanco));
+                            valid = valid && (gap < maxTolerance);
+                        }
+                        return valid;
                     });
                 }
                 if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], matchLabel);
@@ -725,7 +747,7 @@ window.TSDLogic = {
             pendientesTSD = nextTSD;
         };
 
-        const runGroupPhase = (keyGetterT, keyGetterB, matchLabelExact, matchLabelSolo, strictMonto) => {
+        const runGroupPhase = (keyGetterT, keyGetterB, matchLabelExact, matchLabelSolo, strictMonto, maxTolerance = null) => {
             const groupT = {}, groupB = {};
             pendientesTSD.forEach(r => { const k = keyGetterT(r); if(k) { groupT[k] = groupT[k]||[]; groupT[k].push(r); } });
             bancosDisponibles.forEach(r => { const k = keyGetterB(r); if(k) { groupB[k] = groupB[k]||[]; groupB[k].push(r); } });
@@ -735,16 +757,28 @@ window.TSDLogic = {
                     const arrT = groupT[k], arrB = groupB[k];
                     // Evaluamos usando ID_Transaccion en la matriz grupal
                     if (!arrT.some(t => arrB.some(b => isBlacklisted(t.ID_Transaccion, b.IdTransaccion)))) {
-                        const sumT = arrT.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
-                        const sumB = arrB.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
+                        
+                        // Uso de magnitudes absolutas para proteger contra signos cruzados
+                        const sumT = arrT.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+                        const sumB = arrB.map(c => parseFloat(c.Monto_Venta_Original) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+                        
                         if (isSameMonto(sumT, sumB)) {
                             processMatch(arrT, arrB, matchLabelExact);
                             pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
                             bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
                         } else if (!strictMonto) {
-                            processMatch(arrT, arrB, matchLabelSolo);
-                            pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
-                            bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+                            let valid = true;
+                            if (maxTolerance !== null) {
+                                // Aplicar Tolerancia de Seguridad para evitar cruces absurdos
+                                const gap = Math.abs(Math.abs(sumT) - Math.abs(sumB));
+                                if (gap >= maxTolerance) valid = false;
+                            }
+                            
+                            if (valid) {
+                                processMatch(arrT, arrB, matchLabelSolo);
+                                pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
+                                bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+                            }
                         }
                     }
                 }
@@ -759,13 +793,15 @@ window.TSDLogic = {
         // EJECUCIÓN DE LAS 8 FASES (Cascada Implacable)
         run1to1Phase(getAuthT, getAuthB, 'Auth + Monto', true);          // Fase 1
         runGroupPhase(getAuthT, getAuthB, 'Auth Grupal + Monto', '', true); // Fase 2
-        run1to1Phase(getAuthT, getAuthB, 'Auth Solo', false);            // Fase 3
-        runGroupPhase(getAuthT, getAuthB, '', 'Auth Grupal Solo', false);   // Fase 4
+        run1to1Phase(getAuthT, getAuthB, 'Auth Solo', false);            // Fase 3 (Autorización es fuerte, no ocupa límite)
+        runGroupPhase(getAuthT, getAuthB, '', 'Auth Grupal Solo', false);   // Fase 4 
         
         run1to1Phase(getCardT, getCardB, 'Tarjeta + Monto', true);       // Fase 5
         runGroupPhase(getCardT, getCardB, 'Tarjeta Grupal + Monto', '', true); // Fase 6
-        run1to1Phase(getCardT, getCardB, 'Tarjeta Solo', false);         // Fase 7
-        runGroupPhase(getCardT, getCardB, '', 'Tarjeta Grupal Solo', false);   // Fase 8
+        
+        // --- LIMITE DE TOLERANCIA ESTRICTA (10,000 COLONES) PARA CRUCES SOLO POR TARJETA ---
+        run1to1Phase(getCardT, getCardB, 'Tarjeta Solo', false, 10000);         // Fase 7
+        runGroupPhase(getCardT, getCardB, '', 'Tarjeta Grupal Solo', false, 10000);   // Fase 8
 
         // --- FASE 9: SUGERENCIA (MONTO SOLO) ---
         let nextTSD = [];

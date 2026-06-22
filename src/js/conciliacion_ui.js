@@ -1827,6 +1827,150 @@ window.ConciliacionLogic = {
         
         await window.SysUI.alert(`El archivo ha sido excluido y los totales han sido recalculados exitosamente.`, "Archivo Eliminado", "success");
     },
+
+    // =========================================================================
+    // DICCIONARIO MAESTRO: MANTENIMIENTO DE CENTROS DE COSTO
+    // =========================================================================
+    
+    gridDicc: null,
+    rawDiccData: [],
+
+    openDiccionario: function() {
+        const modal = document.getElementById('modal-diccionario');
+        const card = document.getElementById('modal-dicc-card');
+        
+        modal.classList.remove('hidden');
+        // Pequeño retardo para que la animación CSS se ejecute
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            card.classList.remove('scale-95');
+        }, 10);
+        
+        document.getElementById('form-dicc').reset();
+        this.loadDiccionario();
+    },
+
+    closeDiccionario: function() {
+        const modal = document.getElementById('modal-diccionario');
+        const card = document.getElementById('modal-dicc-card');
+        
+        modal.classList.add('opacity-0');
+        card.classList.add('scale-95');
+        
+        setTimeout(() => { modal.classList.add('hidden'); }, 300);
+    },
+
+    loadDiccionario: async function() {
+        try {
+            const res = await fetch('api/mantenimiento_cc.php');
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error);
+            
+            this.rawDiccData = json.data;
+            this.renderDiccGrid();
+
+        } catch (error) {
+            window.SysUI.alert("Error al cargar diccionario: " + error.message, "Fallo", "error");
+        }
+    },
+
+    renderDiccGrid: function() {
+        const hideInactive = document.getElementById('dicc-filter-active').checked;
+        const displayData = hideInactive 
+            ? this.rawDiccData.filter(r => parseInt(r.Activo) === 1) 
+            : this.rawDiccData;
+
+        const cols = [
+            { 
+                title: "Estado", field: "Activo", width: 70, hozAlign: "center",
+                formatter: (cell) => {
+                    const r = cell.getRow();
+                    const act = parseInt(r.Activo) === 1;
+                    return `<button onclick="window.ConciliacionFunctions.toggleDiccStatus('${r.Afiliado}', ${act ? 0 : 1})" class="px-2 py-0.5 rounded text-[9px] font-bold ${act ? 'bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700' : 'bg-red-100 text-red-700 hover:bg-green-100 hover:text-green-700'} transition-colors cursor-pointer" title="Clic para cambiar estado">${act ? 'ACTIVO' : 'INACTIVO'}</button>`;
+                }
+            },
+            { 
+                title: "Afiliado", field: "Afiliado", width: 110, headerFilter: true,
+                formatter: (cell) => `<span class="font-mono font-bold text-indigo-700 dark:text-indigo-400 cursor-pointer hover:underline" onclick="window.ConciliacionFunctions.editDiccRow('${cell.getValue()}')">${cell.getValue()}</span>`
+            },
+            { title: "Banco", field: "Banco", width: 80, cssClass: "text-[10px]" },
+            { title: "C.Costo", field: "CentroCosto", width: 90, headerFilter: true, cssClass: "font-mono font-bold" },
+            { title: "Sucursal", field: "NombreSucursal", headerFilter: true, cssClass: "text-[10px] truncate" }
+        ];
+
+        if (this.gridDicc) {
+            this.gridDicc.updateData(displayData);
+        } else {
+            this.gridDicc = new VanillaGrid("#grid-diccionario", displayData, cols, { searchInputId: "search-dicc" });
+        }
+    },
+
+    editDiccRow: function(afiliado) {
+        const row = this.rawDiccData.find(r => r.Afiliado === afiliado);
+        if(!row) return;
+
+        document.getElementById('dicc-afil').value = row.Afiliado;
+        document.getElementById('dicc-cc').value = row.CentroCosto;
+        document.getElementById('dicc-banco').value = row.Banco;
+        document.getElementById('dicc-cod').value = row.CodigoSucursal;
+        document.getElementById('dicc-nom').value = row.NombreSucursal;
+    },
+
+    saveDiccionario: async function(e) {
+        e.preventDefault();
+        
+        const btn = document.getElementById('dicc-btn-save');
+        const oHtml = btn.innerHTML;
+        btn.innerHTML = 'Guardando...'; btn.disabled = true;
+
+        const payload = {
+            Afiliado: document.getElementById('dicc-afil').value,
+            CentroCosto: document.getElementById('dicc-cc').value,
+            Banco: document.getElementById('dicc-banco').value,
+            CodigoSucursal: document.getElementById('dicc-cod').value,
+            NombreSucursal: document.getElementById('dicc-nom').value
+        };
+
+        try {
+            const res = await fetch('api/mantenimiento_cc.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            
+            if(!data.success) throw new Error(data.error);
+
+            // Reseteo visual y recarga
+            document.getElementById('form-dicc').reset();
+            window.SysUI.alert(data.message, "Guardado Exitoso", "success");
+            this.loadDiccionario();
+
+        } catch (error) {
+            window.SysUI.alert(error.message, "Error al guardar", "error");
+        } finally {
+            btn.innerHTML = oHtml; btn.disabled = false;
+        }
+    },
+
+    toggleDiccStatus: async function(afiliado, nuevoEstado) {
+        const accion = nuevoEstado === 1 ? 'Activar' : 'Desactivar';
+        if(!confirm(`¿Desea ${accion} el Afiliado ${afiliado}?`)) return;
+
+        try {
+            const res = await fetch('api/mantenimiento_cc.php', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ Afiliado: afiliado, Activo: nuevoEstado })
+            });
+            const data = await res.json();
+            if(!data.success) throw new Error(data.error);
+            
+            this.loadDiccionario(); // Recargar grilla
+        } catch (error) {
+            window.SysUI.alert(error.message, "Error", "error");
+        }
+    }
 };
 
 // 1. Inicializador (Punto de entrada desde el Router)
@@ -1841,31 +1985,20 @@ window.initConciliacion = function() {
 
 // 2. Funciones Globales (Para onclicks en HTML)
 window.ConciliacionFunctions = {
-    openPopup: function(t) { 
-        window.ConciliacionLogic.openPopup(t); 
-    },
-    
-    switchTab: function(t) {
-        window.ConciliacionLogic.switchTab(t);
-    },
-    
-    updateThreshold: function(v, bank) {
-        window.ConciliacionLogic.updateThreshold(v, bank);
-    },
-    
-    exportToExcel: function() { 
-        alert("Exportar pendiente."); 
-    },
-    
-    saveSnapshot: function() {
-        window.ConciliacionLogic.saveSnapshot();
-    },
+    openPopup: function(t) { window.ConciliacionLogic.openPopup(t); },
+    switchTab: function(t) { window.ConciliacionLogic.switchTab(t); },
+    updateThreshold: function(v, bank) { window.ConciliacionLogic.updateThreshold(v, bank); },
+    exportToExcel: function() { alert("Exportar pendiente."); },
+    saveSnapshot: function() { window.ConciliacionLogic.saveSnapshot(); },
+    forceLocalSave: function() { if(window.ConciliacionLogic) window.ConciliacionLogic.saveDraftToLocal(true); },
 
-    forceLocalSave: function() {
-        if(window.ConciliacionLogic) {
-            window.ConciliacionLogic.saveDraftToLocal(true);
-        }
-    }
+    // --- PUENTES DICCIONARIO ---
+    openDiccionario: function() { window.ConciliacionLogic.openDiccionario(); },
+    closeDiccionario: function() { window.ConciliacionLogic.closeDiccionario(); },
+    loadDiccionario: function() { window.ConciliacionLogic.loadDiccionario(); },
+    editDiccRow: function(afiliado) { window.ConciliacionLogic.editDiccRow(afiliado); },
+    saveDiccionario: function(e) { window.ConciliacionLogic.saveDiccionario(e); },
+    toggleDiccStatus: function(afiliado, nuevoEstado) { window.ConciliacionLogic.toggleDiccStatus(afiliado, nuevoEstado); }
 };
 
 // ==========================================================
@@ -1919,3 +2052,4 @@ window.LocalDB = {
         });
     }
 };
+

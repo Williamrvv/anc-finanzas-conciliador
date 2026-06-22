@@ -24,17 +24,25 @@ try {
     $pdoBancos = Database::connect();
 
     // ==========================================
-    // 1. QUERY TSD (Usa $pdoTSD) - Limpio, sin JOIN externo
+    // 1. QUERY TSD (Usa $pdoTSD) 
     // ==========================================
     $sqlTSD = "
         SELECT
             P.ID AS [ID_Transaccion],
             P.KNUM AS [Contrato],
-            C.FNAME + ' ' + C.LNAME AS [Cliente],
+            
+            /* Extrae el nombre de la tabla de contratos, si no existe, lo toma de reservas */
+            ISNULL(C.FNAME, R.FNAME) + ' ' + ISNULL(C.LNAME, R.LNAME) AS [Cliente],
+            
             P.AMOUNT AS [MontoUSD],
-            ISNULL(E.sell, C.USDRate) AS [TC],
-            (ISNULL(E.sell, C.USDRate) * P.AMOUNT) AS [MontoCRC],
-            P.CARD_TYPE AS [Tipo],
+            
+            /* Extrae el Tipo de Cambio en este orden: Exchange -> Contrato -> Reserva */
+            ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) AS [TC],
+            (ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) * P.AMOUNT) AS [MontoCRC],
+            
+            /* Usamos P.TYPE en vez de P.CARD_TYPE para evitar errores de esquema */
+            P.TYPE AS [Tipo],
+            
             P.Ref AS [Autorizacion],
             P.RECEIPT AS [Recibo_Detalle],
             CAST(P.Pay_Date AS DATE) AS [Fecha],
@@ -42,10 +50,16 @@ try {
             P.DBR AS [ICD],
             P.LOC_CODE AS [SucursalCod],
             S.Name AS [Sucursal]
+            
         FROM dbo.Cpay AS P
-        INNER JOIN dbo.Cra001 AS C ON P.KNUM = C.KNUM
+
+        /* Búsquedas directas e independientes por número de documento */
+        LEFT JOIN dbo.Cra001 AS C ON P.KNUM = C.KNUM
+        LEFT JOIN dbo.Creser AS R ON P.KNUM = R.KNUM
+
         LEFT JOIN dbo.Setup AS S ON P.LOC_CODE = S.Location
         LEFT JOIN dbo.Cemp01 AS U ON P.TAKEN_BY = U.EmpID 
+
         OUTER APPLY (
             SELECT TOP (1) Ex.sell
             FROM dbo.Exchange AS Ex
@@ -54,6 +68,7 @@ try {
               AND Ex.AsOf <= CAST(P.Pay_Date AS DATE)
             ORDER BY Ex.AsOf DESC
         ) AS E
+
         WHERE P.PAY_CHARGE = 'P'                            
           AND P.TYPE IN ('3', '7', 'C', 'F', 'J')           
           AND S.Country = 'CRI'                      

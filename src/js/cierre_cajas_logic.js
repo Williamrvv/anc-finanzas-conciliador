@@ -169,6 +169,17 @@ window.CierreCajasLogic = {
     vgHistory: null, // Motor VanillaGrid para el historial
     activeTimelineId: null,
 
+    // Escapa HTML para evitar que datos de TSD/usuario rompan el DOM del modal
+    escapeHtml: function(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
     // Función global para copiar contratos al portapapeles
     copiarContrato: function(contrato, element) {
         navigator.clipboard.writeText(contrato).then(() => {
@@ -1551,6 +1562,12 @@ window.CierreCajasLogic = {
             }
 
             // 1. DIBUJAR HISTORIAL
+            // Motivo maestro escrito por la persona (vive en Tbl_Casos_TSD.MotivoAgente)
+            const motivoMaestro = this.escapeHtml(c.MotivoAgente);
+            // Acciones que representan el momento donde el agente justificó el caso
+            const accionesConMotivo = ['ENVIADO_JEFATURA', 'CREADO_BORRADOR', 'ESTADO_PENDIENTE_RESOLUCION', 'ESTADO_CERRADO', 'ESCALADO_SC'];
+            let motivoYaPintado = false;
+
             eventContainer.innerHTML = data.historial.map(h => {
                 const dateObj = new Date(h.FechaAccion);
                 const fecha = dateObj.toLocaleDateString('es-CR') + ' ' + dateObj.toLocaleTimeString('es-CR', {hour: '2-digit', minute:'2-digit'});
@@ -1560,6 +1577,20 @@ window.CierreCajasLogic = {
                 if(h.Accion.includes('REPORTADO') || h.Accion.includes('ENVIADO')) dotColor = 'bg-amber-500';
                 if(h.Accion.includes('RESUELTO')) dotColor = 'bg-green-500 ring-4 ring-green-100 dark:ring-green-900';
 
+                const actorTxt = this.escapeHtml(h.EmailActor) || 'Sistema (acción automática / token externo)';
+                const comentarioTxt = this.escapeHtml(h.ComentarioAdicional);
+
+                // Bloque de justificación maestra: solo en el primer evento de origen y si hay motivo
+                let motivoBloque = '';
+                if (!motivoYaPintado && motivoMaestro && accionesConMotivo.includes(h.Accion)) {
+                    motivoYaPintado = true;
+                    motivoBloque = `
+                        <div class="px-2.5 py-2 border-t border-slate-100 dark:border-slate-700/60 bg-indigo-50/50 dark:bg-indigo-900/10">
+                            <span class="block text-[9px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest mb-1">Justificación del Agente</span>
+                            <p class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line italic">"${motivoMaestro}"</p>
+                        </div>`;
+                }
+
                 return `
                 <div class="relative">
                     <span class="absolute -left-[21px] sm:-left-[25px] top-1.5 w-2.5 h-2.5 rounded-full ${dotColor}"></span>
@@ -1567,9 +1598,15 @@ window.CierreCajasLogic = {
                         <h4 class="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase">${h.Accion.replace(/_/g, ' ')}</h4>
                         <time class="text-[9px] font-bold text-slate-400">${fecha}</time>
                     </div>
-                    <div class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed bg-white dark:bg-slate-900 p-2.5 rounded border border-slate-100 dark:border-slate-700">
-                        <span class="font-bold text-indigo-500 block mb-0.5 text-[10px]">👤 ${h.EmailActor || 'Sistema'}</span>
-                        ${h.ComentarioAdicional || 'Sin detalle.'}
+                    <div class="bg-white dark:bg-slate-900 rounded border border-slate-100 dark:border-slate-700 overflow-hidden">
+                        <div class="px-2.5 py-1.5 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/40">
+                            <span class="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">${actorTxt}</span>
+                        </div>
+                        <div class="px-2.5 py-2">
+                            <span class="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Detalle del Movimiento</span>
+                            <p class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">${comentarioTxt || 'Sin detalle registrado en este paso.'}</p>
+                        </div>
+                        ${motivoBloque}
                     </div>
                 </div>`;
             }).join('');

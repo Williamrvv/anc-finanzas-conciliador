@@ -20,12 +20,14 @@ if (empty($idCaso)) {
 try {
     $pdo = Database::connect();
     
-    // 1. Obtener la cabecera del Caso (Incluyendo Cliente y USD)
+    // 1. Obtener la cabecera del Caso (Incluyendo Cliente, USD, Motivo y Justificación)
     $stmtCaso = $pdo->prepare("
         SELECT C.IdCaso, C.NumeroContrato, C.NombreCliente, C.Sucursal_Relacionada, C.MontoCRC, C.Estado, 
+               C.MotivoAgente, J.TextoVisor,
                ISNULL(D.MontoUSD, 0) AS MontoUSD
         FROM Tbl_Casos_TSD C
         LEFT JOIN Tbl_CierreCaja_Detalle D ON C.IdCierreOrigen = D.IdCierre AND C.NumeroContrato = D.Numero_Contrato
+        LEFT JOIN Tbl_Justificaciones_CC J ON C.IdJustificacion = J.IdJustificacion
         WHERE C.IdCaso = ?
     ");
     $stmtCaso->execute([$idCaso]);

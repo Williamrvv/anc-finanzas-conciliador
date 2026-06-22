@@ -1,4 +1,6 @@
 <?php
+// Forzar al servidor a enviar el documento en UTF-8 nativo
+header('Content-Type: text/html; charset=utf-8');
 session_start();
 $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? 'Analista');
 ?>
@@ -235,21 +237,49 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
         <!-- MENÚ DESPLEGABLE MÓVIL (Oculto por defecto) -->
         <div id="mobile-menu" class="hidden xl:hidden absolute top-full left-0 w-full bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden z-50 origin-top transform transition-all">
             <div class="px-4 pt-2 pb-6 space-y-2">
-                <button onclick="loadView('dashboard'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">🏠 Inicio</button>
-                
-                <?php if($_SESSION['user']['role'] !== 'visitante'): ?>
-                <button onclick="loadView('conciliacion'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">🏦 Conciliación Bancaria</button>
-                <button onclick="loadView('tsd'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors">📊 Consolidado TSD</button>
-                <button onclick="loadView('auxiliar'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors">⚖️ Auxiliar Contable</button>
-                <button onclick="loadView('cierre_cajas'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">🧾 Cierre de Caja</button>
+                <button onclick="loadView('dashboard'); toggleMobileMenu()" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                    Inicio
+                </button>
+
+                <!-- Módulo TSD (Administradores, Jefes y Agentes) -->
+                <?php if(in_array($_SESSION['user']['role'], ['admin', 'agente', 'jefe'])): ?>
+                <button onclick="loadView('cierre_cajas'); toggleMobileMenu()" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors">
+                    <svg class="w-5 h-5 mr-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Cierre de Caja
+                </button>
                 <?php endif; ?>
                 
+                <!-- Módulo Bancario (Solo Administradores y Conciliadores) -->
+                <?php if(in_array($_SESSION['user']['role'], ['admin', 'conciliador'])): ?>
+                <button onclick="loadView('conciliacion'); toggleMobileMenu()" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors">
+                    <svg class="w-5 h-5 mr-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                    Conciliación Bancaria
+                </button>
+                <button onclick="loadView('tsd'); toggleMobileMenu()" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors">
+                    <svg class="w-5 h-5 mr-3 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    Consolidado TSD
+                </button>
+                <button onclick="loadView('auxiliar'); toggleMobileMenu()" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors">
+                    <svg class="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>
+                    Auxiliar Contable
+                </button>
+                <?php endif; ?>
+                
+                <!-- Panel de Control (Solo Admin y Can Manage) -->
                 <?php if(($_SESSION['user']['can_manage'] ?? false) || ($_SESSION['user']['role'] ?? '') === 'admin'): ?>
-                <button onclick="loadView('usuarios'); toggleMobileMenu()" class="w-full text-left px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">👥 Usuarios</button>
+                <button onclick="loadView('usuarios'); toggleMobileMenu()" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    <svg class="w-5 h-5 mr-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    Usuarios
+                </button>
                 <?php endif; ?>
                 
+                <!-- Botón de Cerrar Sesión (Siempre visible y seguro) -->
                 <div class="border-t border-slate-200 dark:border-slate-700 mt-2 pt-2">
-                    <a href="logout.php" class="block w-full text-left px-4 py-3 rounded-lg text-base font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">🚪 Cerrar Sesión</a>
+                    <a href="logout.php" class="w-full flex items-center px-4 py-3 rounded-lg text-base font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                        <svg class="w-5 h-5 mr-3 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                        Cerrar Sesión
+                    </a>
                 </div>
             </div>
         </div>

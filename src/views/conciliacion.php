@@ -11,6 +11,15 @@
             </nav>
         </div>
         <div class="flex items-center gap-3">            
+            
+            <!-- BOTÓN MANTENIMIENTO DICCIONARIO (Solo Admin/Conciliador) -->
+            <button onclick="window.ConciliacionFunctions.openDiccionario()" title="Diccionario de Centros de Costo" class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                Centros de Costos
+            </button>
+
+            <div class="w-px h-6 bg-slate-300 dark:bg-slate-700"></div>
+
             <!-- BOTÓN DISCRETO (Guardado Local) -->
             <button onclick="window.ConciliacionFunctions.forceLocalSave()" title="Guardar borrador temporal en el navegador" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
@@ -239,6 +248,80 @@
             </div>
         </div>
 
+    </div>
+
+    <!-- MODAL DICCIONARIO CC MINIMALISTA -->
+    <div id="modal-diccionario" class="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden transform scale-95 transition-transform duration-300" id="modal-dicc-card">
+            
+            <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center shrink-0">
+                <h3 class="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                    <span class="text-indigo-600">📚</span> Diccionario Maestro (Afiliado ➔ Centro Costo)
+                </h3>
+                <button onclick="window.ConciliacionFunctions.closeDiccionario()" class="text-slate-400 hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 dark:hover:bg-red-900/30">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="flex flex-col md:flex-row h-[600px] overflow-hidden">
+                <!-- COLUMNA IZQUIERDA: FORMULARIO -->
+                <div class="w-full md:w-1/3 bg-slate-50 dark:bg-slate-800/30 border-r border-slate-200 dark:border-slate-700 p-5 flex flex-col gap-4 overflow-y-auto">
+                    <div class="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-300 p-3 rounded-lg text-[10px] border border-indigo-100 dark:border-indigo-800/50 font-medium">
+                        Si el Afiliado ya existe, se actualizarán sus datos y se marcará como <b>ACTIVO</b> automáticamente.
+                    </div>
+
+                    <form id="form-dicc" onsubmit="window.ConciliacionFunctions.saveDiccionario(event)" class="flex flex-col gap-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Afiliado / MerID <span class="text-red-500">*</span></label>
+                            <input type="text" id="dicc-afil" required class="w-full p-2 text-xs font-mono font-bold border rounded-lg bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ej: 123456789">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Centro Costo (Softland) <span class="text-red-500">*</span></label>
+                            <input type="text" id="dicc-cc" required class="w-full p-2 text-xs font-mono font-bold border rounded-lg bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ej: 01-06-18">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Banco</label>
+                                <select id="dicc-banco" class="w-full p-2 text-xs border rounded-lg bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none">
+                                    <option value="BAC">BAC</option>
+                                    <option value="Davibank">Davibank</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cód. Sucursal</label>
+                                <input type="text" id="dicc-cod" class="w-full p-2 text-xs font-mono border rounded-lg bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none" placeholder="Ej: ACOC01">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Sucursal (Opcional)</label>
+                            <input type="text" id="dicc-nom" class="w-full p-2 text-xs border rounded-lg bg-white dark:bg-slate-900 dark:border-slate-600 dark:text-white outline-none" placeholder="Ej: COBANO">
+                        </div>
+
+                        <button type="submit" id="dicc-btn-save" class="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg shadow-sm transition-colors text-sm flex justify-center items-center gap-2">
+                            Guardar Registro
+                        </button>
+                    </form>
+                </div>
+
+                <!-- COLUMNA DERECHA: TABLA -->
+                <div class="w-full md:w-2/3 flex flex-col bg-white dark:bg-slate-800 relative">
+                    <div class="p-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
+                        <div class="relative w-64">
+                            <input type="text" id="search-dicc" class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all dark:bg-slate-900 dark:border-slate-600 dark:text-white" placeholder="Buscar por afiliado o CC...">
+                            <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[10px] font-bold text-slate-500 flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="dicc-filter-active" checked onchange="window.ConciliacionFunctions.loadDiccionario()" class="accent-indigo-600 w-3 h-3"> Ocultar Inactivos
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div id="grid-diccionario" class="flex-grow w-full border-none"></div>
+                </div>
+            </div>
+
+        </div>
     </div>
 </div>
 

@@ -30,8 +30,8 @@ try {
                 b.FECHA_PAGO AS Fecha_Pago_Excel, b.FECHA_TRANSACCION, b.FECHA_CIERRE_DATAFONO, 
                 b.COMISION, b.RETENCION_VENTAS, b.RETENCION_RENTA, b.NUMERO_LIQUIDACION, 
                 b.NUMERO_CUENTA, b.TIPO_CAMBIO, b.AJUSTE_COMISION_INTERNACIONAL, b.TIPO_TARJETA,
-                a.TipoAjuste, a.Justificacion
-            FROM Tbl_Detalle_BAC b 
+                b.CentroCosto, a.TipoAjuste, a.Justificacion
+            FROM Tbl_Detalle_BAC b
             INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
             WHERE c.ConsolidadoTSD IS NULL 
@@ -57,8 +57,8 @@ try {
                 s.Fecha_Lote_Ajuste, s.Numero_Lote_Ajuste, s.Numero_Pago, s.Monto_Bruto, 
                 s.Monto_Comision_Total, s.Porc_Comision_Total, s.Monto_Comision_Int, s.Porc_Comision_Int, 
                 s.Monto_Retencion_IVA, s.Porc_Retencion_IVA, s.Monto_Retencion_ISR, s.Estatus,
-                a.TipoAjuste, a.Justificacion
-            FROM Tbl_Detalle_Scotia s 
+                s.CentroCosto, a.TipoAjuste, a.Justificacion
+            FROM Tbl_Detalle_Scotia s
             INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
             WHERE c.ConsolidadoTSD IS NULL 
@@ -75,15 +75,16 @@ try {
     // =====================================
     else if ($source === 'tsd') {
         $pdoTSD = TSDDatabase::connect();
+        // Consulta bimodal (Contratos + Reservas)
         $sqlTSD = "
             SELECT
                 P.ID AS [ID_Transaccion],
                 P.KNUM AS [Contrato],
-                C.FNAME + ' ' + C.LNAME AS [Cliente],
+                ISNULL(C.FNAME, R.FNAME) + ' ' + ISNULL(C.LNAME, R.LNAME) AS [Cliente],
                 P.AMOUNT AS [MontoUSD],
-                ISNULL(E.sell, C.USDRate) AS [TC],
-                (ISNULL(E.sell, C.USDRate) * P.AMOUNT) AS [MontoCRC],
-                P.CARD_TYPE AS [Tipo],
+                ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) AS [TC],
+                (ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) * P.AMOUNT) AS [MontoCRC],
+                P.TYPE AS [Tipo],
                 P.Ref AS [Autorizacion],
                 P.RECEIPT AS [Recibo_Detalle],
                 CAST(P.Pay_Date AS DATE) AS [Fecha],
@@ -92,7 +93,8 @@ try {
                 P.LOC_CODE AS [SucursalCod],
                 S.Name AS [Sucursal]
             FROM dbo.Cpay AS P
-            INNER JOIN dbo.Cra001 AS C ON P.KNUM = C.KNUM
+            LEFT JOIN dbo.Cra001 AS C ON P.KNUM = C.KNUM
+            LEFT JOIN dbo.Creser AS R ON P.KNUM = R.KNUM
             LEFT JOIN dbo.Setup AS S ON P.LOC_CODE = S.Location
             LEFT JOIN dbo.Cemp01 AS U ON P.TAKEN_BY = U.EmpID 
             OUTER APPLY (
@@ -113,14 +115,24 @@ try {
         $stmtTSD->execute([':start' => $startDate, ':end' => $endDate]);
         $data = $stmtTSD->fetchAll();
 
-        // Inyectar tarjetas
+        // A. Inyectar Diccionario de Tarjetas
         $stmtTarjetas = $pdoBancos->query("SELECT NumeroContrato, Tarjeta_Ultimos4 FROM Tbl_Historial_Tarjetas");
         $mapaTarjetas = [];
         foreach($stmtTarjetas->fetchAll(PDO::FETCH_ASSOC) as $t) {
             $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']);
         }
+
+        // B. Inyectar Diccionario de Centros de Costo (Mapeo por SucursalCod)
+        $stmtCC = $pdoBancos->query("SELECT DISTINCT CodigoSucursal, CentroCosto FROM Tbl_Diccionario_Afiliados WHERE CodigoSucursal IS NOT NULL AND CodigoSucursal <> '' AND Activo = 1");
+        $mapaCC = [];
+        foreach($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $d) {
+            $mapaCC[strtoupper(trim($d['CodigoSucursal']))] = trim($d['CentroCosto']);
+        }
+
+        // C. Mapeo en Memoria
         foreach ($data as &$row) {
             $row['Tarjeta_Ultimos4'] = $mapaTarjetas[trim($row['Contrato'])] ?? '';
+            $row['CentroCosto'] = $mapaCC[strtoupper(trim($row['SucursalCod']))] ?? '00-00-00';
         }
         unset($row);
     }
