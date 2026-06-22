@@ -78,6 +78,13 @@ window.loadView = function(viewName, pushHistory = true) {
             return response.text();
         })
         .then(html => {
+            // GUARDIÁN ANTI-ZOMBIE: Si el router devolvió el login, la sesión expiró.
+            // No inyectamos el login dentro del <main> (dejaría el navbar vivo): avisamos.
+            if (html.indexOf('<!--SESSION_EXPIRED-->') !== -1) {
+                handleSessionExpired();
+                return;
+            }
+
             app.innerHTML = html;
             
             if (pushHistory) {
@@ -105,6 +112,45 @@ window.loadView = function(viewName, pushHistory = true) {
             console.error(err);
         });
 };
+
+// --- Manejo de Expiración de Sesión (Reactivo) ---
+let _sessionExpiredFired = false; // Evita modales duplicados si varios fetch fallan a la vez
+
+function handleSessionExpired() {
+    if (_sessionExpiredFired) return;
+    _sessionExpiredFired = true;
+
+    const segundos = 30; // Tiempo de gracia antes de redirigir solo
+    let restante = segundos;
+
+    const msg = `Por seguridad, su sesión se ha cerrado tras un período de inactividad.\n\nPresione "Continuar" para volver a ingresar. Será redirigido automáticamente en <b id="sess-count">${restante}</b> segundos.`;
+
+    // Usamos el motor de modales existente (SysUI). Un solo botón de acción.
+    if (window.SysUI) {
+        SysUI._createModal(
+            "Sesión Expirada",
+            msg,
+            [{ text: 'Continuar', value: true, class: 'bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-md transition-colors w-full' }],
+            "warning"
+        ).then(() => {
+            window.location.href = 'logout.php';
+        });
+
+        // Cuenta regresiva visible; al llegar a 0 redirige aunque no haya clic
+        const intervalo = setInterval(() => {
+            restante--;
+            const el = document.getElementById('sess-count');
+            if (el) el.innerText = restante;
+            if (restante <= 0) {
+                clearInterval(intervalo);
+                window.location.href = 'logout.php';
+            }
+        }, 1000);
+    } else {
+        // Fallback extremo si SysUI no cargó
+        window.location.href = 'logout.php';
+    }
+}
 
 // --- Theme Logic ---
 function initTheme() {

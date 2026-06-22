@@ -48,7 +48,7 @@ try {
         // 1. Cargar catálogo de sucursales según el rol
         if ($esGlobal) {
             $pdoTsd = TSDDatabase::connect();
-            $sqlTsd = "SELECT Location AS CodigoSucursal, Name AS NombreSucursal FROM dbo.Setup WHERE DeactivateLocation = 0 AND (Hidden = 0 OR Hidden IS NULL)";
+            $sqlTsd = "SELECT Location AS CodigoSucursal, Name AS NombreSucursal FROM dbo.Setup WHERE DeactivateLocation = 0 AND (Hidden = 0 OR Hidden IS NULL) AND Country = 'CRI'";
             $stmtAllSucs = $pdoTsd->query($sqlTsd);
             $sucursalesHome = $stmtAllSucs->fetchAll(PDO::FETCH_ASSOC);
         } else {

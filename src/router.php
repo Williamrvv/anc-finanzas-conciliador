@@ -7,6 +7,8 @@ $view = preg_replace('/[^a-zA-Z0-9_-]/', '', $raw_view);
 // 1. Si no hay sesión, forzamos login
 if (!isset($_SESSION['user'])) {
     $view = 'login_view';
+    // Señal inequívoca para que la SPA detecte expiración y evite el "navbar zombie"
+    echo '<!--SESSION_EXPIRED-->';
 } else {
     // 2. CONTROL DE ACCESO BASADO EN ROLES (RBAC) - LISTA BLANCA
     $role = $_SESSION['user']['role'] ?? 'visitante';
