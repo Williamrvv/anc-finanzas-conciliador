@@ -44,7 +44,7 @@
             <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
             <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
                 <span class="w-3 h-3 rounded-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600"></span> 
-                Huérfanos / Limbo <span id="count-m4-huer" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5 text-slate-700 dark:text-slate-300">0</span>
+                Excepciones / Pendientes <span id="count-m4-huer" class="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ml-0.5 text-slate-700 dark:text-slate-300">0</span>
             </div>
         </div>
 
@@ -70,7 +70,7 @@
             <div class="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center justify-between shrink-0">
                 <div class="flex items-center gap-2">
                     <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    <h3 class="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">Sugerencias del Algoritmo y Bolsón (Limbo Histórico)</h3>
+                    <h3 class="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">Sugerencias del Algoritmo y Bandeja de Pendientes</h3>
                 </div>
                 <span class="text-[10px] text-amber-600 dark:text-amber-500 font-medium">Doble clic para auditar y aprobar</span>
             </div>

@@ -365,7 +365,7 @@ window.BACLogic = {
                 <div class="flex flex-col justify-center min-w-[160px] pl-3 border-l border-slate-200 dark:border-slate-700 shrink-0">
                     <div class="bg-blue-50 dark:bg-blue-900/30 rounded-xl px-3 py-2 w-full text-center border border-blue-200 dark:border-blue-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
                         <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div>
-                        <span class="text-[9px] text-blue-600 dark:text-blue-400 uppercase font-black block mb-0.5 tracking-widest pl-1">Neto Esperado</span>
+                        <span class="text-[9px] text-blue-600 dark:text-blue-400 uppercase font-black block mb-0.5 tracking-widest pl-1">Pagado</span>
                         <span class="font-mono font-black text-blue-700 dark:text-blue-400 text-2xl block truncate pl-1">${fmt(s.n_aci)}</span>
                     </div>
                 </div>
@@ -1754,23 +1754,17 @@ window.BACLogic = {
                                     elRetR.value = '0.00';
                                     elAci.value = '0.00';
                                 } else if (tipo === 'Contracargo' || tipo === 'Devolución') {
-                                    // Ingeniería Inversa Parcial: Solo aplica 1.95% y el ACI (si lo marcó)
-                                    let factor = 0.0195 + (isAci ? 0.0042 : 0);
-                                    let ventaOriginal = neto / (1 - factor);
-
-                                    elCom.value = (ventaOriginal * 0.0195).toFixed(2);
+                                    // Cálculo Directo sobre el Monto Neto: Solo aplica 1.95% y el ACI (si lo marcó)
+                                    elCom.value = (neto * 0.0195).toFixed(2);
                                     elRetV.value = '0.00'; // Forzado a cero
                                     elRetR.value = '0.00'; // Forzado a cero
-                                    elAci.value = isAci ? (ventaOriginal * 0.0042).toFixed(2) : '0.00';
+                                    elAci.value = isAci ? (neto * 0.0042).toFixed(2) : '0.00';
                                 } else {
-                                    // Ingeniería Inversa Normal (Remisión o Vacío): Aplica TODOS los porcentajes
-                                    let factorRetenciones = 0.0195 + 0.0531 + 0.0176 + (isAci ? 0.0042 : 0);
-                                    let ventaOriginal = neto / (1 - factorRetenciones);
-
-                                    elCom.value = (ventaOriginal * 0.0195).toFixed(2);
-                                    elRetV.value = (ventaOriginal * 0.0531).toFixed(2);
-                                    elRetR.value = (ventaOriginal * 0.0176).toFixed(2);
-                                    elAci.value = isAci ? (ventaOriginal * 0.0042).toFixed(2) : '0.00';
+                                    // Cálculo Directo sobre el Monto Neto: Aplica TODOS los porcentajes
+                                    elCom.value = (neto * 0.0195).toFixed(2);
+                                    elRetV.value = (neto * 0.0531).toFixed(2);
+                                    elRetR.value = (neto * 0.0176).toFixed(2);
+                                    elAci.value = isAci ? (neto * 0.0042).toFixed(2) : '0.00';
                                 }
                             }
 

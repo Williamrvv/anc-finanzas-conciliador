@@ -1521,6 +1521,93 @@ window.CierreCajasLogic = {
         </div>`;
     },
 
+    // NUEVA FUNCIÓN: Modal para Transacciones Exitosas (Auditoría Forense Completa)
+    showCleanMatch: function(row) {
+        const modal = document.getElementById('modal-timeline');
+        const eventContainer = document.getElementById('tl-events');
+        const actionZone = document.getElementById('tl-action-zone');
+        
+        if (!modal || !eventContainer) return;
+
+        actionZone.classList.add('hidden');
+        actionZone.innerHTML = '';
+        
+        document.getElementById('tl-id').innerText = 'MATCH_OK';
+        
+        document.getElementById('tl-contrato').innerHTML = `
+            <span onclick="window.CierreCajasLogic.copiarContrato('${row.Numero_Contrato}', this)" class="cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1 group w-max" title="Clic para copiar">
+                ${row.Numero_Contrato}
+                <svg class="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            </span>`;
+            
+        document.getElementById('tl-cliente').innerText = row.NombreCliente || 'Desconocido';
+        document.getElementById('tl-monto').innerText = `₡${parseFloat(row.MontoCRC || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        document.getElementById('tl-usd').innerText = row.MontoUSD ? `$${parseFloat(row.MontoUSD).toLocaleString('en-US', {minimumFractionDigits: 2})}` : 'S/D';
+
+        eventContainer.className = "relative mt-4";
+        
+        const folioVisual = row.FolioData ? row.FolioData.split('|')[0] : 'S/D';
+        const horaCierre = row.HoraCierre || '-';
+        const sucursal = (row.SucursalReal || '').split(',')[0] || row.Sucursal || '-';
+        const agente = row.Agente || row.RecibidoPor || row.CreadoPor || '-';
+        const auth = row.Numero_Autorizacion || row.Autorizacion || 'S/D';
+        const tarjeta = row.Tipo_Tarjeta || row.Tarjeta_Ultimos4 || 'S/D';
+        const icd = row.ICD || row.ICD_Relacionado || 'S/D';
+        
+        eventContainer.innerHTML = `
+            <div class="bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-6 shadow-sm relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1.5 bg-emerald-500"></div>
+                
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 shadow-inner">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <div>
+                        <h4 class="text-emerald-700 dark:text-emerald-400 font-black text-lg uppercase tracking-wide">Transacción Conciliada</h4>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Match 1:1 procesado sin excepciones en cajas.</p>
+                    </div>
+                </div>
+                
+                <!-- METADATA OPERATIVA (3 Columnas) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-t-xl border border-slate-100 dark:border-slate-700 border-b-0">
+                    <div>
+                        <span class="block text-[9px] uppercase font-bold text-slate-400 mb-1">Sucursal Origen</span>
+                        <span class="font-bold flex items-center gap-1 text-indigo-700 dark:text-indigo-400">🏢 ${sucursal}</span>
+                    </div>
+                    <div>
+                        <span class="block text-[9px] uppercase font-bold text-slate-400 mb-1">Agente Emisor</span>
+                        <span class="font-bold flex items-center gap-1">👤 ${agente}</span>
+                    </div>
+                    <div>
+                        <span class="block text-[9px] uppercase font-bold text-slate-400 mb-1">ICD TSD</span>
+                        <span class="font-mono font-bold bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 shadow-sm w-fit">${icd}</span>
+                    </div>
+                </div>  
+
+                <!-- METADATA BANCARIA Y CIERRE (3 Columnas) -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 p-4 rounded-b-xl border border-slate-100 dark:border-slate-700">
+                    <div>
+                        <span class="block text-[9px] uppercase font-bold text-slate-400 mb-1">Autorización</span>
+                        <span class="font-mono font-bold text-sm bg-slate-100 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-inner">${auth}</span>
+                    </div>
+                    <div>
+                        <span class="block text-[9px] uppercase font-bold text-slate-400 mb-1">Tipo de Tarjeta</span>
+                        <span class="font-bold uppercase">${tarjeta}</span>
+                    </div>
+                    <div>
+                        <span class="block text-[9px] uppercase font-bold text-slate-400 mb-1">Auditoría Cierre de Caja</span>
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">#${folioVisual}</span>
+                            <span class="text-slate-400">⏱️ ${horaCierre}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        modal.classList.remove('hidden');
+    },
+
     showTimeline: async function(idCaso) {
         this.activeTimelineId = idCaso;
         const modal = document.getElementById('modal-timeline');
@@ -1532,6 +1619,8 @@ window.CierreCajasLogic = {
             return SysUI.alert("Error de Interfaz: El modal de gestión no pudo cargarse.", "Error", "error");
         }
 
+        // Restaurar estilos de línea de tiempo
+        eventContainer.className = "relative border-l-2 border-slate-200 dark:border-slate-700 ml-3 md:ml-4 space-y-6 pb-4";
         eventContainer.innerHTML = '<div class="text-slate-400 text-sm animate-pulse">Cargando bitácora...</div>';
         actionZone.classList.add('hidden');
         actionZone.innerHTML = '';
@@ -2092,7 +2181,7 @@ window.CierreCajasLogic = {
                 this.vgAudit = new VanillaGrid('#forense-grid', json.transacciones, cols, {
                     onRowDblClick: (row) => {
                         if (row.IdCaso) this.showTimeline(row.IdCaso);
-                        else SysUI.alert("Esta transacción se concilió con éxito (Match Exacto) y no posee Ticket de error asociado.", "Transacción Limpia", "info");
+                        else this.showCleanMatch(row); // Llama al nuevo Modal de Éxito
                     }
                 });
             } else {

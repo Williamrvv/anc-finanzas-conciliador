@@ -79,10 +79,16 @@ window.loadView = function(viewName, pushHistory = true) {
         })
         .then(html => {
             // GUARDIÁN ANTI-ZOMBIE: Si el router devolvió el login, la sesión expiró.
-            // No inyectamos el login dentro del <main> (dejaría el navbar vivo): avisamos.
+            // PERO solo avisamos si ESTA pestaña tenía una sesión activa. Si ya estamos
+            // en la pantalla de login (sin usuario), inyectamos el login normal y NO
+            // mostramos el modal (evita el bucle infinito de expiración).
             if (html.indexOf('<!--SESSION_EXPIRED-->') !== -1) {
-                handleSessionExpired();
-                return;
+                const teniaSesion = window.CURRENT_USER_ROLE && window.CURRENT_USER_ROLE !== 'visitante';
+                if (teniaSesion) {
+                    handleSessionExpired();
+                    return;
+                }
+                // No había sesión: es la pantalla de login legítima, se muestra normal.
             }
 
             app.innerHTML = html;

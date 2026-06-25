@@ -1313,24 +1313,33 @@ window.ScotiaLogic = {
                         let neto = parseFloat(elNeto.value) || 0;
                         let tasaVal = elTasa.value;
                         let tasaComision = tasaVal === "" ? 0 : parseFloat(tasaVal);
-                        let isMantenimiento = elType.value === 'Mantenimiento';
+                        let tipo = elType.value;
+                        let isMantenimiento = tipo === 'Mantenimiento';
+                        let isParcial = tipo === 'Contracargo' || tipo === 'Devolución';
 
+                        // Si el usuario cambia el Neto, la Tasa o el Tipo de Ajuste, recalculamos
                         if (!e || e.target === elNeto || e.target === elTasa || e.target === elType) {
                             if (isMantenimiento) {
+                                // 0% Comisiones e Impuestos
                                 elCom.value = '0.00'; elIva.value = '0.00'; elIsr.value = '0.00';
+                            } else if (isParcial) {
+                                // Cálculo Directo sobre el Monto Neto: Solo aplica la comisión del banco seleccionada
+                                elCom.value = (neto * tasaComision).toFixed(2);
+                                elIva.value = '0.00'; // Forzado a cero
+                                elIsr.value = '0.00'; // Forzado a cero
                             } else {
-                                // Factor Scotia: Neto = Bruto * (1 - (TasaCom + 0.053 + 0.0176))
-                                let factor = tasaComision + 0.053 + 0.0176;
-                                let bruto = neto / (1 - factor);
-                                elCom.value = (bruto * tasaComision).toFixed(2);
-                                elIva.value = (bruto * 0.053).toFixed(2);
-                                elIsr.value = (bruto * 0.0176).toFixed(2);
+                                // Cálculo Directo sobre el Monto Neto: Aplica TODOS los porcentajes
+                                elCom.value = (neto * tasaComision).toFixed(2);
+                                elIva.value = (neto * 0.0530).toFixed(2);
+                                elIsr.value = (neto * 0.0176).toFixed(2);
                             }
                         }
 
                         let com = parseFloat(elCom.value) || 0;
                         let iva = parseFloat(elIva.value) || 0;
                         let isr = parseFloat(elIsr.value) || 0;
+                        
+                        // Bruto = Neto + Comisiones + Impuestos
                         let brutoFinal = neto + com + iva + isr;
                         elVentaDisp.innerText = fmt(brutoFinal);
 

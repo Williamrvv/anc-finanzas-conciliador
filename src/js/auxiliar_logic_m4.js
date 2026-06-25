@@ -298,20 +298,34 @@ window.AuxiliarLogic = {
         });
 
         // --- HELPERS DE BÚSQUEDA ---
-        const run1to1Phase = (keyGetterT, keyGetterB, matchLabel, reqSameMonto) => {
+        const run1to1Phase = (keyGetterT, keyGetterB, matchLabel, requireSameMonto, maxTolerance = null) => {
             let nextTSD = [];
             pendientesTSD.forEach(tsdRow => {
                 const kT = keyGetterT(tsdRow); 
                 const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
                 let matchIdx = -1;
-                if (kT) matchIdx = bancosDisponibles.findIndex(b => keyGetterB(b) === kT && !isBlacklisted(tsdRow.ID_Transaccion, b.IdTransaccion) && (!reqSameMonto || isSameMonto(b.Monto_Venta_Original, montoTSD)));
+                if (kT) {
+                    matchIdx = bancosDisponibles.findIndex(b => {
+                        const kB = keyGetterB(b);
+                        const montoBanco = parseFloat(b.Monto_Venta_Original) || 0;
+                        let valid = kB === kT && !isBlacklisted(tsdRow.ID_Transaccion, b.IdTransaccion);
+                        
+                        if (requireSameMonto) {
+                            valid = valid && isSameMonto(montoBanco, montoTSD);
+                        } else if (maxTolerance !== null) {
+                            const gap = Math.abs(Math.abs(montoTSD) - Math.abs(montoBanco));
+                            valid = valid && (gap < maxTolerance);
+                        }
+                        return valid;
+                    });
+                }
                 if (matchIdx !== -1) processMatch(tsdRow, bancosDisponibles.splice(matchIdx, 1)[0], matchLabel); 
                 else nextTSD.push(tsdRow);
             });
             pendientesTSD = nextTSD;
         };
 
-        const runGroupPhase = (keyGetterT, keyGetterB, matchLabelExact, matchLabelSolo, strictMonto) => {
+        const runGroupPhase = (keyGetterT, keyGetterB, matchLabelExact, matchLabelSolo, strictMonto, maxTolerance = null) => {
             const groupT = {}, groupB = {};
             pendientesTSD.forEach(r => { const k = keyGetterT(r); if(k) { groupT[k] = groupT[k]||[]; groupT[k].push(r); } });
             bancosDisponibles.forEach(r => { const k = keyGetterB(r); if(k) { groupB[k] = groupB[k]||[]; groupB[k].push(r); } });
@@ -320,16 +334,24 @@ window.AuxiliarLogic = {
                 if (groupB[k]) {
                     const arrT = groupT[k], arrB = groupB[k];
                     if (!arrT.some(t => arrB.some(b => isBlacklisted(t.ID_Transaccion, b.IdTransaccion)))) {
-                        const sumT = arrT.reduce((acc, curr) => acc + (parseFloat(curr.MontoCRC) || 0), 0);
-                        const sumB = arrB.reduce((acc, curr) => acc + (parseFloat(curr.Monto_Venta_Original) || 0), 0);
+                        const sumT = arrT.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+                        const sumB = arrB.map(c => parseFloat(c.Monto_Venta_Original) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
+                        
                         if (isSameMonto(sumT, sumB)) {
                             processMatch(arrT, arrB, matchLabelExact);
                             pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
                             bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
                         } else if (!strictMonto) {
-                            processMatch(arrT, arrB, matchLabelSolo);
-                            pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
-                            bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+                            let valid = true;
+                            if (maxTolerance !== null) {
+                                const gap = Math.abs(Math.abs(sumT) - Math.abs(sumB));
+                                if (gap >= maxTolerance) valid = false;
+                            }
+                            if (valid) {
+                                processMatch(arrT, arrB, matchLabelSolo);
+                                pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
+                                bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+                            }
                         }
                     }
                 }
@@ -351,8 +373,10 @@ window.AuxiliarLogic = {
         
         run1to1Phase(getCardT, getCardB, 'Tarj+Monto', true);           // Fase 5
         runGroupPhase(getCardT, getCardB, 'Tarj Grupal+Monto', '', true); // Fase 6
-        run1to1Phase(getCardT, getCardB, 'Tarj Solo', false);           // Fase 7
-        runGroupPhase(getCardT, getCardB, '', 'Tarj Grupal Solo', false); // Fase 8
+        
+        // --- LIMITE DE TOLERANCIA ESTRICTA (10,000 COLONES) PARA CRUCES SOLO POR TARJETA ---
+        run1to1Phase(getCardT, getCardB, 'Tarj Solo', false, 10000);           // Fase 7
+        runGroupPhase(getCardT, getCardB, '', 'Tarj Grupal Solo', false, 10000); // Fase 8
 
         // Fase 9: Sugerencia Pura (Monto Solo)
         let nextTSD = [];
@@ -367,7 +391,7 @@ window.AuxiliarLogic = {
         });
         pendientesTSD = nextTSD;
         
-        // --- FASE FINAL: HUÉRFANOS ---
+        // --- FASE FINAL: PENDIENTES (Sin Pareja) ---
         [...tsdData].forEach(tsdRow => {
             if (!procesadosTSDIds.includes(tsdRow._id)) {
                 const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
@@ -375,7 +399,7 @@ window.AuxiliarLogic = {
                     _uid: 'row_' + Math.random().toString(36).substr(2, 9), _tsdRaw: tsdRow, _bancoRaw: null, _rowClass: '', _isMulti: false,
                     Contrato: tsdRow.Contrato, Cliente: tsdRow.Cliente, TarjetaTSD: getCard(tsdRow.Tarjeta_Ultimos4) ? `****${getCard(tsdRow.Tarjeta_Ultimos4)}` : 'S/D',
                     Autorizacion: tsdRow.Autorizacion, MontoTSD: { valor: montoTSD, recibo: tsdRow.Recibo_Detalle || '', valueOf: function(){return this.valor;}, toString: function(){return this.valor.toString();} },
-                    EstadoMatch: 'Limbo', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
+                    EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
                 });
             }
         });
@@ -385,9 +409,9 @@ window.AuxiliarLogic = {
                 const m = parseFloat(b.Monto_Venta_Original);
                 gridData.push({
                     _uid: 'row_' + Math.random().toString(36).substr(2, 9), _tsdRaw: null, _bancoRaw: b, _isMulti: false,
-                    _rowClass: 'text-slate-500 italic', Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
+                    _rowClass: 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800', Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
                     TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D', Autorizacion: '-', MontoTSD: 0,
-                    EstadoMatch: 'Limbo', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
+                    EstadoMatch: 'Pendiente', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
                 });
             }
         });
@@ -405,8 +429,8 @@ window.AuxiliarLogic = {
                 if (st.includes('Tarj Grupal+Monto')) return 6;
                 if (st.includes('Tarj Solo')) return 7;
                 if (st.includes('Tarj Grupal Solo')) return 8;
-                if (st.includes('Monto Igual')) return 9; // Se va al Limbo
-                return 10; // Limbo Puro (Fantasmas)
+                if (st.includes('Monto Igual')) return 9; // Sugerencia de Monto
+                return 10; // Pendientes Puros
             };
             const wA = getWeight(a), wB = getWeight(b);
             if (wA !== wB) return wA - wB;
@@ -439,7 +463,7 @@ window.AuxiliarLogic = {
         // SEPARACIÓN FÍSICA APROBACIÓN EXPLÍCITA:
         // Tabla Superior (Aprobadas): SOLAMENTE lo que el usuario ha guardado en el PopUp (Manual)
         this.currentSugData = gridData.filter(r => String(r.EstadoMatch).startsWith('Manual'));
-        // Tabla Inferior (Bandeja): Todo lo demás (Sugerencias 1 a 9 y Limbo)
+        // Tabla Inferior (Bandeja): Todo lo demás (Sugerencias 1 a 9 y Pendientes)
         this.currentLimboData = gridData.filter(r => !String(r.EstadoMatch).startsWith('Manual'));
         
         this.renderGrid();
@@ -468,7 +492,7 @@ window.AuxiliarLogic = {
                     if(val.startsWith('Manual')) return `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
                     if(val.includes('Monto Igual')) return `<span class="text-amber-600 dark:text-amber-400">⚠️ Sug: Monto Igual</span>`;
                     if(val.startsWith('Sugerencia')) return `<span class="text-amber-700 dark:text-amber-300">💡 ${val.replace('Sugerencia: ','')}</span>`;
-                    return `<span class="text-slate-400">👻 Limbo</span>`;
+                    return `<span class="text-slate-500 font-bold">⏳ Pendiente</span>`;
                 }
             },
             { title: "Banco", field: "Banco_Nombre", width: 90, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
@@ -583,9 +607,9 @@ window.AuxiliarLogic = {
                 var fmt = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v).replace(/\\./g, ' ');
                 var clean = (s) => String(s||'').toLowerCase().trim();
 
-                // Extraemos todo el contenido de la tabla inferior (Sugerencias + Limbo) para alimentar el PopUp
+                // Extraemos todo el contenido de la tabla inferior (Sugerencias + Pendientes) para alimentar el PopUp
                 var limboData = parentLogic.currentLimboData || [];
-                // flatMap extrae los arrays de sugerencias grupales, y .filter(Boolean) remueve los nulos (ej: si un Limbo era solo de banco, TSD es null)
+                // flatMap extrae los arrays de sugerencias grupales, y .filter(Boolean) remueve los nulos (ej: si un Pendiente era solo de banco, TSD es null)
                 var allPendientesT = limboData.flatMap(r => Array.isArray(r._tsdRaw) ? r._tsdRaw : [r._tsdRaw]).filter(Boolean);
                 var allPendientesB = limboData.flatMap(r => Array.isArray(r._bancoRaw) ? r._bancoRaw : [r._bancoRaw]).filter(Boolean);
 
@@ -815,7 +839,7 @@ window.AuxiliarLogic = {
             msg += "\nRevise la tabla superior (Sugerencias del Algoritmo) para auditar y aprobar.";
             setTimeout(() => window.SysUI.alert(msg, "¡Nuevas Sugerencias Encontradas!", "info"), 500);
         } else if (this.ws.tsd.length === 0 || this.ws.bancos.length === 0) {
-            if(window.SysUI) window.SysUI.alert("Datos desvinculados correctamente. Han regresado al Limbo Huérfano.", "Separados", "warning");
+            if(window.SysUI) window.SysUI.alert("Datos desvinculados correctamente. Han regresado a la bandeja de pendientes.", "Separados", "warning");
         }
     },
 
@@ -1019,7 +1043,7 @@ window.AuxiliarLogic = {
                 </div>`;
             }).join('') || `
                 <div class="flex flex-col items-center justify-center h-48 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-4 text-center">
-                    <span class="text-4xl mb-4">👻</span>
+                    <span class="text-4xl mb-4 text-slate-300">📄</span>
                     <span class="text-base font-bold text-slate-400">Sin depósito bancario registrado</span>
                     <span class="text-sm text-slate-500">Es posible que sea una transacción de ajuste manual, o el depósito aún no se ha reflejado.</span>
                 </div>`;

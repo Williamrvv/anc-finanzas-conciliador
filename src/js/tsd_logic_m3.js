@@ -74,10 +74,9 @@ window.TSDLogic = {
             let retRenta176 = 0, retVentas531 = 0;
             const comisionesPorCC = {};
 
-            // Recorremos los bancos en RAM. Ahora cada fila YA TRAE su CentroCosto gracias a M2.
+            // Recorremos los bancos en RAM.
             this.lastBancos.forEach(b => {
                 const isBac = b.Banco === 'BAC';
-                // Si por alguna razón la fila no tiene CC, usa el genérico para no perder el dinero
                 const cc = b.CentroCosto || '00-00-00'; 
                 
                 const montoNeto = parseFloat(b.Monto_Neto) || 0;
@@ -86,21 +85,32 @@ window.TSDLogic = {
                 const retRenta = parseFloat(b.Retencion_Renta) || 0;
                 const aci = parseFloat(b.ACI) || 0;
 
+                if (!comisionesPorCC[cc]) comisionesPorCC[cc] = 0;
+
                 if (isBac) {
                     tBacNeto += montoNeto;
-                    tBacAci += aci;
+                    
+                    // EL BUG SOLUCIONADO: El "Monto Neto" de los archivos BAC no trae el ACI deducido, por lo que hay que restarlo del flujo de caja.
+                    // Pero la Calculadora de Ajustes Manuales entrega el "Monto Neto" ya deducido.
+                    // Si le volvemos a restar el ACI a un Ajuste Manual, lo duplicamos.
+                    const isAjuste = (b.TipoAjuste && b.TipoAjuste !== '');
+                    if (!isAjuste) {
+                        tBacAci += aci; 
+                    }
+                    
                     retRenta176 += retRenta;
                     retVentas531 += retVentas;
+                    
+                    // CRÍTICA CONTABLE BAC: Se acumula la Comisión Regular + Ajuste Internacional (ACI) a la cuenta de Gastos del Centro de Costo (Aplica para Ventas y Ajustes)
+                    comisionesPorCC[cc] += (comision + aci);
                 } else {
                     tDaviNeto += montoNeto;
                     retRenta176 += retRenta; 
                     retVentas531 += retVentas; 
+                    
+                    // CRÍTICA CONTABLE DAVIBANK: El banco ya entrega la comisión sumada, no usamos ACI
+                    comisionesPorCC[cc] += comision; 
                 }
-
-                // Agrupamos la comisión directamente por el Centro de Costo que M2 inyectó.
-                // Lógica Contable: Si es BAC, el Ajuste de Comisión Internacional (ACI) se suma al gasto por comisión.
-                if (!comisionesPorCC[cc]) comisionesPorCC[cc] = 0;
-                comisionesPorCC[cc] += comision + (isBac ? aci : 0);
             });
 
             this.lastTSD.forEach(t => tTsdCRC += parseFloat(t.MontoCRC) || 0);
@@ -132,8 +142,7 @@ window.TSDLogic = {
                 const dUSD = dCRC > 0 ? dCRC / avgTC : 0;
                 const cUSD = cCRC > 0 ? cCRC / avgTC : 0;
 
-                // Importante: La matemática global sigue respetando los signos originales para cuadrar la balanza final.
-                // Aquí sumamos los valores "crudos" (positivos y negativos de devoluciones)
+                // La matemática global sigue respetando los signos originales para cuadrar la balanza final
                 sumDebitoGlobal += (Math.round((parseFloat(debito) || 0) * 100) / 100);
                 sumCreditoGlobal += (Math.round((parseFloat(credito) || 0) * 100) / 100);
 
@@ -157,7 +166,7 @@ window.TSDLogic = {
             // Fila 3: Total Tarjetas TSD
             addRow('00-00-00', '101-004-003-000-000-000', 'TARJETAS', 0, tTsdCRC);
 
-            // Filas 4+: Comisiones Agrupadas por Centro de Costo nativo
+            // Filas 4+: Comisiones Agrupadas por Centro de Costo nativo (Ya incluyen el ACI de BAC)
             Object.keys(comisionesPorCC).forEach(cc => {
                 if (Math.abs(comisionesPorCC[cc]) > 0.01) {
                     addRow(cc, '520-005-002-000-000-000', 'DESCUENTO DE TARJETA', comisionesPorCC[cc], 0);
@@ -170,37 +179,47 @@ window.TSDLogic = {
             // Fila Retención Ventas (5.31%)
             if (Math.abs(retVentas531) > 0.01) addRow('00-00-00', '101-004-003-000-000-000', 'RETENCION DE TARJETAS 5.31%', retVentas531, 0);
 
-            // Filas TSD Detallado (Lógica: Positivo = Débito | Negativo = Crédito)
+            // Filas TSD Detallado (Positivo = Débito | Negativo = Crédito)
             this.lastTSD.forEach(t => {
                 const tarj = t.Tarjeta_Ultimos4 ? `TarjetaXXXXXXXX${t.Tarjeta_Ultimos4}` : 'TarjetaXXXXXXXX';
                 const ref = `${t.Contrato||''} ${t.Sucursal||''} Aut ${t.Autorizacion||''} ${tarj}`.substring(0, 100);
-                
                 const montoCRC = parseFloat(t.MontoCRC) || 0;
-                if (montoCRC >= 0) {
-                    addRow('00-00-00', '101-004-003-000-000-000', ref, montoCRC, 0);
-                } else {
-                    addRow('00-00-00', '101-004-003-000-000-000', ref, 0, montoCRC);
-                }
+                
+                if (montoCRC >= 0) addRow('00-00-00', '101-004-003-000-000-000', ref, montoCRC, 0);
+                else addRow('00-00-00', '101-004-003-000-000-000', ref, 0, montoCRC);
             });
 
-            // Filas Bancos Detallado (Lógica: Positivo = Crédito | Negativo = Débito)
+            // Filas Bancos Detallado (Positivo = Crédito | Negativo = Débito)
             this.lastBancos.forEach(b => {
                 const isBac = b.Banco === 'BAC';
                 const ref = `${b.Afiliado_MerID||''} ${b.Nombre_Sucursal_Comercio||''} AUT ${b.Numero_Autorizacion||''} TARJETA ${b.Tarjeta_Ultimos4||''}`.substring(0, 100);
-                
                 const montoVenta = parseFloat(b.Monto_Venta_Original) || 0;
-                if (montoVenta >= 0) {
-                    addRow('00-00-00', '101-004-003-000-000-000', ref, 0, montoVenta);
-                } else {
-                    addRow('00-00-00', '101-004-003-000-000-000', ref, montoVenta, 0);
-                }
+                
+                if (montoVenta >= 0) addRow('00-00-00', '101-004-003-000-000-000', ref, 0, montoVenta);
+                else addRow('00-00-00', '101-004-003-000-000-000', ref, montoVenta, 0);
             });
 
             // FILA FINAL: Diferencial Cambiario
-            const diff = Math.round((sumDebitoGlobal - sumCreditoGlobal) * 100) / 100;
-            if (Math.abs(diff) > 0.01) {
-                if (diff < 0) addRow('00-00-00', '560-005-001-001-000-000', 'Diferencial cambiario', Math.abs(diff), 0);
-                else addRow('00-00-00', '420-010-001-000-000-000', 'Diferencial cambiario', 0, Math.abs(diff));
+            // Lógica Estricta de Cuadratura: Recalculamos la suma exacta que se imprimirá en Excel
+            let sumDebitoExcel = 0;
+            let sumCreditoExcel = 0;
+            
+            // ws2Data[0] es la cabecera, empezamos desde 1
+            for(let i = 1; i < ws2Data.length; i++) {
+                // Columna 7 es Debito Colon, Columna 8 es Credito Colon (Índices basados en 0)
+                let debVal = String(ws2Data[i][7] || '').replace(/,/g, '.');
+                let credVal = String(ws2Data[i][8] || '').replace(/,/g, '.');
+                
+                sumDebitoExcel += parseFloat(debVal) || 0;
+                sumCreditoExcel += parseFloat(credVal) || 0;
+            }
+
+            const diff = Math.abs(sumDebitoExcel - sumCreditoExcel);
+            
+            if (diff > 0.01) {
+                // Según la regla contable requerida, el Diferencial siempre va en la columna Débito Colón y sin signo negativo.
+                // Cuenta: 560-005-001-001-000-000 (Gasto por Diferencial)
+                addRow('00-00-00', '560-005-001-001-000-000', 'Diferencial cambiario', diff, 0);
             }
 
             // 4. ENSAMBLAJE FINAL SHEETJS
