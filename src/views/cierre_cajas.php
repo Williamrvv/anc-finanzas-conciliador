@@ -199,7 +199,7 @@
                     </button>
                 </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Rango de Fechas</label>
                         <div class="relative">
@@ -214,6 +214,16 @@
                             <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
                         <div id="forense-sucursal-dropdown" class="absolute z-50 w-full md:w-64 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl hidden max-h-56 overflow-y-auto custom-scrollbar p-2 origin-top-left animate-fade-in-up">
+                            <div class="p-4 text-center text-xs text-slate-400">Cargando...</div>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estado del Ticket</label>
+                        <button type="button" onclick="window.CierreCajasLogic.toggleEstadoDropdown(event)" class="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white text-left flex justify-between items-center transition-colors">
+                            <span id="forense-estado-btn-text" class="truncate font-bold">Todos los estados</span>
+                            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div id="forense-estado-dropdown" class="absolute z-50 w-full md:w-64 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl hidden max-h-56 overflow-y-auto custom-scrollbar p-2 origin-top-left animate-fade-in-up">
                             <div class="p-4 text-center text-xs text-slate-400">Cargando...</div>
                         </div>
                     </div>

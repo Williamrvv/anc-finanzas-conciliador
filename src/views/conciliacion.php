@@ -50,13 +50,13 @@
             <!-- PANEL DE CONTROL BAC -->
             <div class="grid grid-cols-12 gap-3 h-32 shrink-0">
 
-                <!-- 3. Drop Pagado (2 Cols) -->
-                <div id="drop-bac-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
+                <!-- 3. Drop Pagado (1 Col) -->
+                <div id="drop-bac-pagado" class="col-span-2 xl:col-span-1 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
                     <!-- Agrupamos Imagen y Texto para que ambos hagan el efecto de zoom al pasar el mouse -->
                     <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none group-hover:scale-105 transition-transform duration-300 mt-1">
-                        <img src="assets/arrastra_xlsx_bac_pagado_claro.png" class="h-14 sm:h-16 w-auto object-contain block dark:hidden mb-1.5" alt="Icono Excel">
-                        <img src="assets/arrastra_xlsx_bac_pagado_oscuro.png" class="h-14 sm:h-16 w-auto object-contain hidden dark:block mb-1.5" alt="Icono Excel">
-                        <span class="text-[9px] sm:text-[10px] font-bold text-slate-400 group-hover:text-green-600 uppercase text-center leading-tight">Arrastra<br>XLSX Pagado</span>
+                        <img src="assets/arrastra_xlsx_bac_pagado_claro.png" class="h-10 sm:h-12 w-auto object-contain block dark:hidden mb-1.5" alt="Icono Excel">
+                        <img src="assets/arrastra_xlsx_bac_pagado_oscuro.png" class="h-10 sm:h-12 w-auto object-contain hidden dark:block mb-1.5" alt="Icono Excel">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-slate-400 group-hover:text-green-600 uppercase text-center leading-tight">Arrastra<br>Pagado</span>
                     </div>
                     
                     <input type="file" id="file-bac-pagado" class="hidden pointer-events-auto" accept=".xlsx, .xls">
@@ -66,28 +66,28 @@
                 </div>
 
                 <!-- 4. Tarjeta Pagado (2 Cols) -->
-                <div id="card-bac-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden shadow-sm group transition-all cursor-pointer" onclick="window.ConciliacionFunctions.openPopup('pagado')">
+                <div id="card-bac-pagado" class="col-span-2 xl:col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden shadow-sm group transition-all cursor-pointer" onclick="window.ConciliacionFunctions.openPopup('pagado')">
                     <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('pagado')" class="absolute top-1 right-1 p-1 text-green-600/50 hover:text-green-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-green-50/80 dark:bg-green-900/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                     </button>
-                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(TF)</span>
-                    <span id="sum-depositos" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
+                    <span class="text-[9px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(Depósito)</span>
+                    <span id="sum-depositos" class="text-lg font-bold text-green-700 dark:text-green-400 font-mono">0</span>
                 </div> 
                 
-                <!-- 1. Drop Detalle (2 Cols) -->
-                <div id="drop-bac-detalle" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
+                <!-- 1. Drop Detalle (1 Col) -->
+                <div id="drop-bac-detalle" class="col-span-2 xl:col-span-1 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
                     <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none group-hover:scale-105 transition-transform duration-300 mt-1">
-                        <img src="assets/arrastra_csv_bac_detallado_claro.png" class="h-14 sm:h-16 w-auto object-contain block dark:hidden mb-1.5" alt="Icono CSV">
-                        <img src="assets/arrastra_csv_bac_detallado_oscuro.png" class="h-14 sm:h-16 w-auto object-contain hidden dark:block mb-1.5" alt="Icono CSV">
-                        <span class="text-[9px] sm:text-[10px] font-bold text-slate-400 group-hover:text-red-500 uppercase text-center leading-tight">Arrastra<br>CSV Detallado</span>
+                        <img src="assets/arrastra_csv_bac_detallado_claro.png" class="h-10 sm:h-12 w-auto object-contain block dark:hidden mb-1.5" alt="Icono CSV">
+                        <img src="assets/arrastra_csv_bac_detallado_oscuro.png" class="h-10 sm:h-12 w-auto object-contain hidden dark:block mb-1.5" alt="Icono CSV">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-slate-400 group-hover:text-red-500 uppercase text-center leading-tight">Arrastra<br>Detallado</span>
                     </div>
                     
                     <input type="file" id="file-bac-detalle" class="hidden pointer-events-auto" accept=".csv">
                     <span id="status-bac-detalle" class="text-[9px] text-slate-400 truncate w-full px-1 hidden text-center absolute bottom-0 left-0 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm py-1"></span>
                 </div>
 
-                <!-- 2. Tarjeta Detalle (6 Cols - AHORA MÁS ANCHA) -->
-                <div id="card-bac-detalle" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-lg p-2 relative hidden shadow-sm group transition-all overflow-hidden" onclick="window.ConciliacionFunctions.openPopup('detalle')">
+                <!-- 2. Tarjeta Detalle (8 Cols - ESPACIO MAXIMIZADO) -->
+                <div id="card-bac-detalle" class="col-span-6 xl:col-span-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-lg p-0 relative hidden shadow-sm group transition-all overflow-hidden" onclick="window.ConciliacionFunctions.openPopup('detalle')">
                     <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('detalle')" class="absolute top-1 right-1 p-1 text-slate-400 hover:text-blue-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-white/80 dark:bg-slate-800/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                     </button>
@@ -150,11 +150,11 @@
             <div class="grid grid-cols-12 gap-3 h-32 shrink-0">
 
                 <!-- Drop Pagado -->
-                <div id="drop-scotia-pagado" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
+                <div id="drop-scotia-pagado" class="col-span-2 xl:col-span-1 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-green-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
                     <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none group-hover:scale-105 transition-transform duration-300 mt-1">
-                        <img src="assets/arrastra_xlsx_pagado_scotia_claro.png" class="h-14 sm:h-16 w-auto object-contain block dark:hidden mb-1.5" alt="Icono Excel">
-                        <img src="assets/arrastra_xlsx_pagado_scotia_oscuro.png" class="h-14 sm:h-16 w-auto object-contain hidden dark:block mb-1.5" alt="Icono Excel">
-                        <span class="text-[9px] sm:text-[10px] font-bold text-slate-400 group-hover:text-green-600 uppercase text-center leading-tight">Arrastra<br>XLSX Pagado</span>
+                        <img src="assets/arrastra_xlsx_pagado_scotia_claro.png" class="h-10 sm:h-12 w-auto object-contain block dark:hidden mb-1.5" alt="Icono Excel">
+                        <img src="assets/arrastra_xlsx_pagado_scotia_oscuro.png" class="h-10 sm:h-12 w-auto object-contain hidden dark:block mb-1.5" alt="Icono Excel">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-slate-400 group-hover:text-green-600 uppercase text-center leading-tight">Arrastra<br>Pagado</span>
                     </div>
                     
                     <input type="file" id="file-scotia-pagado" class="hidden pointer-events-auto" accept=".xlsx, .xls">
@@ -162,20 +162,20 @@
                 </div>
 
                 <!-- Tarjeta Pagado -->
-                <div id="card-scotia-pagado" class="col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden group cursor-pointer transition-all" onclick="window.ConciliacionFunctions.openPopup('scotia_pagado')">
-                    <div class="absolute top-2 right-2 p-1 bg-green-100 dark:bg-green-800 rounded-full text-green-600 opacity-0 group-hover:opacity-100 transition-opacity transform group-hover:scale-110">
+                <div id="card-scotia-pagado" class="col-span-2 xl:col-span-2 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 hover:border-green-400 dark:hover:border-green-500 rounded-lg p-2 flex flex-col justify-center items-center relative hidden group cursor-pointer transition-all" onclick="window.ConciliacionFunctions.openPopup('scotia_pagado')">
+                    <button onclick="event.stopPropagation(); window.ConciliacionFunctions.openPopup('scotia_pagado')" class="absolute top-1 right-1 p-1 text-green-600/50 hover:text-green-600 opacity-50 group-hover:opacity-100 transition-opacity z-10 bg-green-50/80 dark:bg-green-900/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
-                    </div>
-                    <span class="text-[10px] text-green-600 uppercase font-bold tracking-wider mb-1">Total Banco</span>
-                    <span id="sc-total-pagado" class="text-xl font-bold text-green-700 dark:text-green-400 font-mono">0</span>
+                    </button>
+                    <span class="text-[9px] text-green-600 uppercase font-bold tracking-wider mb-1 text-center leading-tight">Total Banco<br>(Depósito)</span>
+                    <span id="sc-total-pagado" class="text-lg font-bold text-green-700 dark:text-green-400 font-mono">0</span>
                 </div>
                 
                 <!-- Drop Detalle -->
-                <div id="drop-scotia-detalle" class="col-span-2 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
+                <div id="drop-scotia-detalle" class="col-span-2 xl:col-span-1 border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-red-500 rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-800 transition-all group shadow-sm relative z-50 overflow-hidden">
                     <div class="flex flex-col items-center justify-center w-full h-full pointer-events-none group-hover:scale-105 transition-transform duration-300 mt-1">
-                        <img src="assets/arrastra_xlsx_detallado_scotia_claro.png" class="h-14 sm:h-16 w-auto object-contain block dark:hidden mb-1.5" alt="Icono Excel">
-                        <img src="assets/arrastra_xlsx_detallado_scotia_oscuro.png" class="h-14 sm:h-16 w-auto object-contain hidden dark:block mb-1.5" alt="Icono Excel">
-                        <span class="text-[9px] sm:text-[10px] font-bold text-slate-400 group-hover:text-red-500 uppercase text-center leading-tight">Arrastra<br>XLSX Detallado</span>
+                        <img src="assets/arrastra_xlsx_detallado_scotia_claro.png" class="h-10 sm:h-12 w-auto object-contain block dark:hidden mb-1.5" alt="Icono Excel">
+                        <img src="assets/arrastra_xlsx_detallado_scotia_oscuro.png" class="h-10 sm:h-12 w-auto object-contain hidden dark:block mb-1.5" alt="Icono Excel">
+                        <span class="text-[8px] sm:text-[9px] font-bold text-slate-400 group-hover:text-red-500 uppercase text-center leading-tight">Arrastra<br>Detallado</span>
                     </div>
                     
                     <input type="file" id="file-scotia-detalle" class="hidden pointer-events-auto" accept=".xlsx, .xls">
@@ -183,7 +183,7 @@
                 </div>
 
                 <!-- Tarjeta Detalle -->
-                <div id="card-scotia-detalle" onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')" class="col-span-6 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-400 dark:hover:border-red-500 rounded-lg p-2 relative hidden flex-col group transition-all overflow-hidden">
+                <div id="card-scotia-detalle" onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')" class="col-span-6 xl:col-span-8 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-red-400 dark:hover:border-red-500 rounded-lg p-0 relative hidden flex-col group transition-all overflow-hidden">
                     <button onclick="window.ConciliacionFunctions.openPopup('scotia_detalle')" class="absolute top-1 right-1 p-1 text-slate-400 hover:text-red-600 opacity-50 group-hover:opacity-100 transition-opacity z-20 bg-white/80 dark:bg-slate-800/80 rounded">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                     </button>

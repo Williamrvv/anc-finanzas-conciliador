@@ -209,8 +209,6 @@ window.ScotiaLogic = {
     // Genera la tarjeta HTML de resumen Scotia
     updateScotiaCard: function() {
         const data = this.data.scotia_detalle || [];
-        
-        // Si no hay datos, ocultar la tarjeta y limpiar el contenedor
         if (data.length === 0) {
             const card = document.getElementById('card-scotia-detalle');
             if (card) card.classList.add('hidden');
@@ -218,94 +216,65 @@ window.ScotiaLogic = {
             return;
         }
 
-        const sums = {
-            pos: { bruto:0, com:0, iva:0, isr:0, neto:0 },
-            neg: { bruto:0, com:0, iva:0, isr:0, neto:0 },
-            tot: { bruto:0, com:0, iva:0, isr:0, neto:0 }
-        };
-
-        const headers = this.data.headers.scotia_detalle || [];
-        const getIdx = (name) => headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
+        let s = { v:0, c:0, iva:0, isr:0, n:0, count:0, adj:0 };
         
-        const idxs = {
-            bruto: getIdx('Monto Bruto'),
-            com: getIdx('Monto Comisión'),
-            iva: getIdx('Retención IVA'),
-            isr: getIdx('Retención IS'),
-            neto: getIdx('Monto Neto')
-        };
-
-        this.data.scotia_detalle.forEach(row => {
-            if (!row._enabled) return;
-
-            const netVal = row._neto;
-            const isNeg = netVal < 0;
-            const target = isNeg ? sums.neg : sums.pos;
-
-            const getAbsVal = (idx) => {
-                if(idx === -1) return 0;
-                return Math.abs(row[String(idx)] || 0);
-            };
-
-            target.bruto += getAbsVal(idxs.bruto);
-            target.com += getAbsVal(idxs.com);
-            target.iva += getAbsVal(idxs.iva);
-            target.isr += getAbsVal(idxs.isr);
-            target.neto += Math.abs(netVal);
+        this.data.scotia_detalle.forEach(r => {
+            const isActivo = r._enabled || r._manualMatch !== undefined;
+            if(isActivo) {
+                s.count++;
+                if (r._isAdjustment) {
+                    s.adj++;
+                } else {
+                    s.v += (r._bruto || 0);
+                }
+                s.c += (r._comision || 0);
+                s.iva += (r._iva || 0);
+                s.isr += (r._isr || 0);
+                s.n += (r._neto || 0);
+            }
         });
 
-        Object.keys(sums.tot).forEach(k => sums.tot[k] = sums.pos[k] - sums.neg[k]);
-
-        const fmt = (n) => this.formatMoney(n);
+        const fmt = this.formatMoney;
         
-        const htmlTable = `
-            <table class="w-full text-xs text-right border-collapse">
-                <thead class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 text-[10px] text-slate-400 uppercase font-bold tracking-wider">
-                    <tr>
-                        <th class="px-2 py-1.5 text-left w-1/5">Concepto</th>
-                        <th class="px-2 py-1.5 w-1/5">Bruto</th>
-                        <th class="px-2 py-1.5 w-1/5">Comis.</th>
-                        <th class="px-2 py-1.5 w-1/5">Retenc.</th>
-                        <th class="px-2 py-1.5 w-1/5 text-slate-600 dark:text-slate-300">Neto</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 dark:divide-slate-700 text-slate-600 dark:text-slate-300 font-mono">
-                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td class="px-2 py-1.5 text-left font-sans font-bold text-green-600 dark:text-green-400">
-                            Acreditados (+)
-                        </td>
-                        <td class="px-2">${fmt(sums.pos.bruto)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.pos.com)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.pos.iva + sums.pos.isr)}</td>
-                        <td class="px-2 font-bold text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10 rounded-sm">
-                            ${fmt(sums.pos.neto)}
-                        </td>
-                    </tr>
-                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td class="px-2 py-1.5 text-left font-sans font-bold text-red-500 dark:text-red-400">
-                            Rebajados (-)
-                        </td>
-                        <td class="px-2 text-red-400 dark:text-red-300">-${fmt(sums.neg.bruto)}</td>
-                        <td class="px-2 text-red-400 dark:text-red-300/80">-${fmt(sums.neg.com)}</td>
-                        <td class="px-2 text-red-400 dark:text-red-300/80">-${fmt(sums.neg.iva + sums.neg.isr)}</td>
-                        <td class="px-2 font-bold text-red-500 dark:text-red-400 bg-red-50/50 dark:bg-red-900/10 rounded-sm">
-                            -${fmt(sums.neg.neto)}
-                        </td>
-                    </tr>
-                    <tr class="bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-600 font-bold text-slate-800 dark:text-white">
-                        <td class="px-2 py-2 text-left font-sans">TOTAL FINAL</td>
-                        <td class="px-2">${fmt(sums.tot.bruto)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.tot.com)}</td>
-                        <td class="px-2 opacity-75">${fmt(sums.tot.iva + sums.tot.isr)}</td>
-                        <td class="px-2 text-sm text-blue-700 dark:text-blue-300 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-600">
-                            ${fmt(sums.tot.neto)}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        const html = `
+            <div class="flex flex-row justify-between items-center w-full h-full px-4 py-1.5 gap-6">
+                <!-- 1. VENTAS BRUTAS Y METADATOS -->
+                <div class="flex flex-col justify-center border-r border-slate-200 dark:border-slate-700 pr-6 shrink-0">
+                    <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Ventas Totales</span>
+                    <span class="font-mono font-black text-slate-800 dark:text-white text-2xl drop-shadow-sm">${fmt(s.v)}</span>
+                    <span class="text-[9px] text-slate-400 mt-1 font-medium tracking-wide">
+                        ${s.count} Registros ${s.adj > 0 ? `<span class="text-amber-500 font-bold ml-1">(${s.adj} Ajustes)</span>` : ''}
+                    </span>
+                </div>
+
+                <!-- 2. DEDUCCIONES (Grid Compacto) -->
+                <div class="flex-grow grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs font-mono">
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Comisión</span>
+                        <span class="text-red-500 font-bold">-${fmt(s.c)}</span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Ret. IVA (5.31%)</span>
+                        <span class="text-orange-500 font-bold">-${fmt(s.iva)}</span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Ret. ISR (1.76%)</span>
+                        <span class="text-amber-500 font-bold">-${fmt(s.isr)}</span>
+                    </div>
+                </div>
+
+                <!-- 3. NETO ESPERADO -->
+                <div class="flex flex-col justify-center min-w-[180px] pl-6 border-l border-slate-200 dark:border-slate-700 shrink-0">
+                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-xl px-4 py-2 w-full text-left border border-blue-200 dark:border-blue-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                        <div class="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
+                        <span class="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-black block mb-0.5 tracking-widest pl-2">Neto Esperado</span>
+                        <span class="font-mono font-black text-blue-700 dark:text-blue-400 text-2xl block truncate pl-2">${fmt(s.n)}</span>
+                    </div>
+                </div>
+            </div>
         `;
         
-        document.getElementById('scotia-summary-container').innerHTML = htmlTable;
+        document.getElementById('scotia-summary-container').innerHTML = html;
         document.getElementById('card-scotia-detalle').classList.remove('hidden');
     },
 

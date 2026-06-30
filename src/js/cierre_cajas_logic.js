@@ -1912,8 +1912,12 @@ window.CierreCajasLogic = {
         const checkboxes = document.querySelectorAll('.cb-sucursal');
         const algunDesmarcado = checkboxes.length > 0 && Array.from(checkboxes).some(cb => !cb.checked);
 
+        // Revisar si algún checkbox de estado está desmarcado
+        const cbEstados = document.querySelectorAll('.cb-estado');
+        const algunEstadoDesmarcado = cbEstados.length > 0 && Array.from(cbEstados).some(cb => !cb.checked);
+
         // Si hay cualquier cambio respecto al estado por defecto, mostramos el botón
-        if (fBuscar !== '' || algunDesmarcado || fechasCambiadas) {
+        if (fBuscar !== '' || algunDesmarcado || algunEstadoDesmarcado || fechasCambiadas) {
             btnClear.classList.remove('hidden');
         } else {
             btnClear.classList.add('hidden');
@@ -1939,6 +1943,13 @@ window.CierreCajasLogic = {
         if (cbTodas) cbTodas.checked = true;
 
         this.updateMultiSelectUI();
+
+        // Marcar todos los estados
+        document.querySelectorAll('.cb-estado').forEach(cb => cb.checked = true);
+        const cbTodosEst = document.querySelector('input[onchange*="cb-estado"]');
+        if (cbTodosEst) cbTodosEst.checked = true;
+        this.updateEstadoUI();
+
         this.checkForenseFilters();
         this.resetAndLoadForense();
     },
@@ -1985,6 +1996,45 @@ window.CierreCajasLogic = {
         }
     },
 
+    // Multi-Select de Estados (clona el patrón de sucursales)
+    toggleEstadoDropdown: function(e) {
+        if(e) e.stopPropagation();
+        const dd = document.getElementById('forense-estado-dropdown');
+        if (dd.classList.contains('hidden')) {
+            dd.classList.remove('hidden');
+            const closeDropdown = (evt) => {
+                const btn = document.getElementById('forense-estado-btn-text').parentElement;
+                if (!dd.contains(evt.target) && !btn.contains(evt.target)) {
+                    dd.classList.add('hidden');
+                    document.removeEventListener('click', closeDropdown);
+                    window.CierreCajasLogic.resetAndLoadForense();
+                }
+            };
+            setTimeout(() => document.addEventListener('click', closeDropdown), 10);
+        } else {
+            dd.classList.add('hidden');
+            window.CierreCajasLogic.resetAndLoadForense();
+        }
+    },
+
+    updateEstadoUI: function() {
+        const checkboxes = document.querySelectorAll('.cb-estado');
+        const seleccionados = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+        const btnText = document.getElementById('forense-estado-btn-text');
+        if (!btnText) return "TODOS";
+
+        if (seleccionados.length === 0 || seleccionados.length === checkboxes.length) {
+            btnText.innerText = "Todos los estados";
+            return "TODOS";
+        } else if (seleccionados.length === 1) {
+            btnText.innerText = seleccionados[0].replace(/_/g, ' ');
+            return seleccionados[0];
+        } else {
+            btnText.innerText = `${seleccionados.length} estados`;
+            return seleccionados.join(',');
+        }
+    },  
+
     loadForense: async function() {
         let fDesde = '';
         let fHasta = '';
@@ -2002,6 +2052,12 @@ window.CierreCajasLogic = {
             fSucursal = this.updateMultiSelectUI();
         }
 
+        // Determinar qué estados consultar
+        let fEstado = "TODOS";
+        if (document.querySelectorAll('.cb-estado').length > 0) {
+            fEstado = this.updateEstadoUI();
+        }
+
         if(!fDesde || !fHasta) return SysUI.alert("Debe seleccionar un rango de fechas válido completo (Inicio y Fin).", "Filtros", "warning");
 
         this.checkForenseFilters(); // Mantiene sincronizado el estado del botón Limpiar
@@ -2014,7 +2070,7 @@ window.CierreCajasLogic = {
         document.getElementById('cc-loading').classList.add('flex');
 
         try {
-            let url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&sucursal=${encodeURIComponent(fSucursal)}&page=${this.forensePage}`;
+            let url = `api/get_forense_cc.php?desde=${fDesde}&hasta=${fHasta}&search=${encodeURIComponent(fBuscar)}&sucursal=${encodeURIComponent(fSucursal)}&estado=${encodeURIComponent(fEstado)}&page=${this.forensePage}`;
             
             if (['admin', 'conciliador', 'gerente_operaciones'].includes(window.CURRENT_USER_ROLE) && this.selectedGlobalBranches.length > 0) {
                 url += `&global_sucs=${encodeURIComponent(this.selectedGlobalBranches.join(','))}`;
@@ -2058,6 +2114,23 @@ window.CierreCajasLogic = {
                 
                 // ACTUALIZAR LA UI DEL BOTÓN INMEDIATAMENTE DESPUÉS DE PINTAR
                 this.updateMultiSelectUI();
+            }
+
+            // 1.b Llenar el Multi-Select de Estados (Solo la primera vez, directo de BD)
+            const ddEstados = document.getElementById('forense-estado-dropdown');
+            if (ddEstados && ddEstados.innerHTML.includes('Cargando...') && json.estados_disponibles) {
+                ddEstados.innerHTML = `
+                    <label class="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer rounded-lg border-b border-slate-100 dark:border-slate-700">
+                        <input type="checkbox" onchange="const cbs = document.querySelectorAll('.cb-estado'); cbs.forEach(cb => cb.checked = this.checked); window.CierreCajasLogic.updateEstadoUI();" checked class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500">
+                        <span class="text-sm font-bold text-slate-800 dark:text-white">Seleccionar Todos</span>
+                    </label>
+                ` + json.estados_disponibles.map(e => `
+                    <label class="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer rounded-lg">
+                        <input type="checkbox" value="${e}" class="cb-estado w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" checked onchange="window.CierreCajasLogic.updateEstadoUI();">
+                        <span class="text-sm text-slate-700 dark:text-slate-300">${e.replace(/_/g, ' ')}</span>
+                    </label>
+                `).join('');
+                this.updateEstadoUI();
             }
 
             // 2. Llenar el Dashboard (Matemática pura desacoplada)

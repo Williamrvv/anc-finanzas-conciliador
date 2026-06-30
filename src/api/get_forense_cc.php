@@ -55,7 +55,18 @@ try {
             $params[] = $suc;
             $params[] = '%' . $suc . '%';
         }
-        $whereClause .= " AND (" . implode(" OR ", $sucConditions) . ")";
+         $whereClause .= " AND (" . implode(" OR ", $sucConditions) . ")";
+    }
+
+    // Filtro de Estado del Ticket (multi-select, viene de BD; vacío/TODOS = no filtra)
+    $estadoFiltro = $_GET['estado'] ?? 'TODOS';
+    if ($estadoFiltro !== 'TODOS' && !empty($estadoFiltro)) {
+        $estadosArray = array_filter(array_map('trim', explode(',', $estadoFiltro)));
+        if (!empty($estadosArray)) {
+            $inEstados = str_repeat('?,', count($estadosArray) - 1) . '?';
+            $whereClause .= " AND C.Estado IN ($inEstados)";
+            foreach ($estadosArray as $est) { $params[] = $est; }
+        }
     }
 
     $baseJoins = "FROM Tbl_CierreCaja_Detalle D
@@ -178,9 +189,14 @@ try {
         $listaSucs = $stmtMySucs->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    // Estados disponibles directo de BD (nada quemado). CI collation colapsa duplicados de casing.
+    $stmtEstados = $pdo->query("SELECT DISTINCT Estado FROM Tbl_Casos_TSD WHERE Estado IS NOT NULL AND LTRIM(RTRIM(Estado)) <> '' ORDER BY Estado");
+    $listaEstados = $stmtEstados->fetchAll(PDO::FETCH_COLUMN);
+
     echo json_encode([
         'success' => true,
         'mis_sucursales' => $listaSucs,
+        'estados_disponibles' => $listaEstados,
         'kpis' => [
             'total_tx' => $totalFilas,
             'tx_limpias' => (int)$kpi['TxLimpias'],

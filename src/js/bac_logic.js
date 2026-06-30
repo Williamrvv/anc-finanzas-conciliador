@@ -116,6 +116,7 @@ window.BACLogic = {
                 _comision: cleanNum(row[9]), 
                 _retV: cleanNum(row[10]), 
                 _retR: cleanNum(row[11]), 
+                _aciOrig: valACI, // <-- Propiedad inyectada para el cálculo en la nueva tarjeta
                 _neto: valNeto,
                 _netoACI: valNeto - valACI, 
                 _enabled: true, 
@@ -327,46 +328,62 @@ window.BACLogic = {
             return;
         }
         
-        let s = { v:0, c:0, rv:0, rr:0, n_aci:0 };
+        let s = { v:0, c:0, rv:0, rr:0, aci:0, n_aci:0, count:0, adj:0 };
         this.data.detalle.forEach(r => {
-            if(r._enabled) { s.v+=r._venta; s.c+=r._comision; s.rv+=r._retV; s.rr+=r._retR; s.n_aci+=r._netoACI; }
+            const isActivo = r._enabled || r._manualMatch !== undefined;
+            if(isActivo) { 
+                s.count++;
+                if (r._isAdjustment) {
+                    s.adj++;
+                } else {
+                    s.v += (r._venta || 0); 
+                }
+                s.c += (r._comision || 0); 
+                s.rv += (r._retV || 0); 
+                s.rr += (r._retR || 0); 
+                s.aci += (r._aciOrig || 0);
+                s.n_aci += (r._netoACI || 0); 
+            }
         });
         const fmt = this.formatMoney;
 
         const html = `
-            <div class="flex flex-row justify-between items-center w-full h-full px-2 py-1">
-                <!-- 1. VENTAS BRUTAS -->
-                <div class="flex flex-col justify-center px-3 border-r border-slate-200 dark:border-slate-700 shrink-0">
+            <div class="flex flex-row justify-between items-center w-full h-full px-4 py-1.5 gap-6">
+                <!-- 1. VENTAS BRUTAS Y METADATOS -->
+                <div class="flex flex-col justify-center border-r border-slate-200 dark:border-slate-700 pr-6 shrink-0">
                     <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Ventas Totales</span>
-                    <span class="font-mono font-black text-slate-800 dark:text-white text-2xl truncate drop-shadow-sm">${fmt(s.v)}</span>
+                    <span class="font-mono font-black text-slate-800 dark:text-white text-2xl drop-shadow-sm">${fmt(s.v)}</span>
+                    <span class="text-[9px] text-slate-400 mt-1 font-medium tracking-wide">
+                        ${s.count} Registros ${s.adj > 0 ? `<span class="text-amber-500 font-bold ml-1">(${s.adj} Ajustes)</span>` : ''}
+                    </span>
                 </div>
 
-                <!-- 2. DEDUCCIONES (Línea de Ensamblaje) -->
-                <div class="flex items-center justify-center flex-grow px-2 gap-2 sm:gap-4 overflow-hidden">
-                    <div class="flex flex-col items-center">
-                        <span class="text-[8px] sm:text-[9px] font-bold text-red-500 uppercase bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full mb-1 border border-red-100 dark:border-red-800 tracking-wide">Comis 1.95%</span>
-                        <span class="text-xs font-mono font-bold text-red-600 dark:text-red-400 truncate">-${fmt(s.c)}</span>
+                <!-- 2. DEDUCCIONES (Grid Compacto) -->
+                <div class="flex-grow grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 text-xs font-mono">
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Comisión (1.95%)</span>
+                        <span class="text-red-500 font-bold">-${fmt(s.c)}</span>
                     </div>
-                    <span class="text-slate-300 dark:text-slate-600 text-lg font-light">-</span>
-                    
-                    <div class="flex flex-col items-center">
-                        <span class="text-[8px] sm:text-[9px] font-bold text-orange-500 uppercase bg-orange-50 dark:bg-orange-900/30 px-2 py-0.5 rounded-full mb-1 border border-orange-100 dark:border-orange-800 tracking-wide">R.Ven 5.31%</span>
-                        <span class="text-xs font-mono font-bold text-orange-600 dark:text-orange-400 truncate">-${fmt(s.rv)}</span>
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Ret. Ventas (5.31%)</span>
+                        <span class="text-orange-500 font-bold">-${fmt(s.rv)}</span>
                     </div>
-                    <span class="text-slate-300 dark:text-slate-600 text-lg font-light">-</span>
-                    
-                    <div class="flex flex-col items-center">
-                        <span class="text-[8px] sm:text-[9px] font-bold text-amber-600 uppercase bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full mb-1 border border-amber-100 dark:border-amber-800 tracking-wide">R.Ren 1.76%</span>
-                        <span class="text-xs font-mono font-bold text-amber-600 dark:text-amber-400 truncate">-${fmt(s.rr)}</span>
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Ret. Renta (1.76%)</span>
+                        <span class="text-amber-500 font-bold">-${fmt(s.rr)}</span>
+                    </div>
+                    <div class="flex flex-col bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700/50 shadow-sm">
+                        <span class="text-[9px] font-bold text-slate-400 uppercase font-sans mb-0.5">Ajuste ACI (0.42%)</span>
+                        <span class="text-purple-500 font-bold">-${fmt(s.aci)}</span>
                     </div>
                 </div>
 
                 <!-- 3. NETO ESPERADO -->
-                <div class="flex flex-col justify-center min-w-[160px] pl-3 border-l border-slate-200 dark:border-slate-700 shrink-0">
-                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-xl px-3 py-2 w-full text-center border border-blue-200 dark:border-blue-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div>
-                        <span class="text-[9px] text-blue-600 dark:text-blue-400 uppercase font-black block mb-0.5 tracking-widest pl-1">Pagado</span>
-                        <span class="font-mono font-black text-blue-700 dark:text-blue-400 text-2xl block truncate pl-1">${fmt(s.n_aci)}</span>
+                <div class="flex flex-col justify-center min-w-[180px] pl-6 border-l border-slate-200 dark:border-slate-700 shrink-0">
+                    <div class="bg-blue-50 dark:bg-blue-900/30 rounded-xl px-4 py-2 w-full text-left border border-blue-200 dark:border-blue-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                        <div class="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
+                        <span class="text-[10px] text-blue-600 dark:text-blue-400 uppercase font-black block mb-0.5 tracking-widest pl-2">Neto Esperado</span>
+                        <span class="font-mono font-black text-blue-700 dark:text-blue-400 text-2xl block truncate pl-2">${fmt(s.n_aci)}</span>
                     </div>
                 </div>
             </div>
