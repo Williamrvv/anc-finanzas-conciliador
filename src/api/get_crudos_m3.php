@@ -30,7 +30,7 @@ try {
                 b.FECHA_PAGO AS Fecha_Pago_Excel, b.FECHA_TRANSACCION, b.FECHA_CIERRE_DATAFONO, 
                 b.COMISION, b.RETENCION_VENTAS, b.RETENCION_RENTA, b.NUMERO_LIQUIDACION, 
                 b.NUMERO_CUENTA, b.TIPO_CAMBIO, b.AJUSTE_COMISION_INTERNACIONAL, b.TIPO_TARJETA,
-                b.CentroCosto, a.TipoAjuste, a.Justificacion
+                b.CentroCosto, a.TipoAjuste, a.Justificacion, a.EvidenciaB64
             FROM Tbl_Detalle_BAC b
             INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
@@ -57,7 +57,7 @@ try {
                 s.Fecha_Lote_Ajuste, s.Numero_Lote_Ajuste, s.Numero_Pago, s.Monto_Bruto, 
                 s.Monto_Comision_Total, s.Porc_Comision_Total, s.Monto_Comision_Int, s.Porc_Comision_Int, 
                 s.Monto_Retencion_IVA, s.Porc_Retencion_IVA, s.Monto_Retencion_ISR, s.Estatus,
-                s.CentroCosto, a.TipoAjuste, a.Justificacion
+                s.CentroCosto, a.TipoAjuste, a.Justificacion, a.EvidenciaB64
             FROM Tbl_Detalle_Scotia s
             INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion

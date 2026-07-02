@@ -71,13 +71,15 @@ window.AuxiliarLogic = {
                 if (!groups[id]) {
                     groups[id] = {
                         IdMatchTSD: id, TipoCruce: r.TipoCruceTSD, Folio: r.Folio || 'S/D', FechaFolio: r.FechaFolio || '-',
-                        Justificacion: r.Justificacion || '', tsdArr: [], bancoArr: []
+                        Justificacion: r.Justificacion || '', EvidenciaB64: r.EvidenciaB64 || null, tsdArr: [], bancoArr: []
                     };
                 }
                 if (r.Banco === 'TSD') groups[id].tsdArr.push(r);
                 else groups[id].bancoArr.push(r);
                 if (r.Justificacion) groups[id].Justificacion = r.Justificacion;
+                if (r.EvidenciaB64) groups[id].EvidenciaB64 = r.EvidenciaB64;
             });
+
 
             this.currentHistorialData = Object.values(groups).map(g => {
                 const tsdArr = g.tsdArr;
@@ -105,7 +107,7 @@ window.AuxiliarLogic = {
                     TarjetaTSD: tarjetaRep,
                     Autorizacion: t0.Autorizacion || '-',
                     MontoTSD: { valor: sumT, recibo: isMulti ? '' : (t0.Recibo_Detalle || ''), valueOf: function(){return this.valor;} },
-                    TipoCruce: { tipo: g.TipoCruce, justificacion: g.Justificacion, valueOf: function(){return this.tipo;} },
+                    TipoCruce: { tipo: g.TipoCruce, justificacion: g.Justificacion, evidencia: g.EvidenciaB64, valueOf: function(){return this.tipo;} },
                     Banco_Nombre: isMulti ? (bancoArr.length > 1 ? `Múltiples Bancos` : (b0.Banco || '-')) : (b0.Banco || 'Solo TSD'),
                     Banco_Auth: b0.Autorizacion || '-',
                     Banco_Monto: sumB,
@@ -148,9 +150,13 @@ window.AuxiliarLogic = {
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     const tipoString = val && typeof val === 'object' ? val.tipo : val;
                     const justString = val && typeof val === 'object' ? val.justificacion : '';
+                    const evString = val && typeof val === 'object' ? val.evidencia : null;
                     
-                    const justHtml = justString ? `<div class="text-[9px] text-green-700 dark:text-green-400 font-normal mt-0.5 truncate max-w-[160px] mx-auto italic" title="${justString}">"${justString}"</div>` : '';
-                    return `<div class="flex flex-col items-center"><span class="text-green-800 dark:text-green-300 uppercase tracking-widest text-[10px]">✅ ${tipoString.replace('[AUX] ', '')}</span>${justHtml}</div>`;
+                    let extrasHtml = justString ? `<div class="text-[9px] text-green-700 dark:text-green-400 font-normal mt-0.5 truncate max-w-[160px] mx-auto italic" title="${justString}">"${justString}"</div>` : '';
+                    if (evString) {
+                        extrasHtml += `<div class="text-[9px] text-blue-600 dark:text-blue-400 font-bold mt-0.5 flex items-center gap-1 justify-center"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> Evidencia Visual</div>`;
+                    }
+                    return `<div class="flex flex-col items-center"><span class="text-green-800 dark:text-green-300 uppercase tracking-widest text-[10px]">✅ ${tipoString.replace('[AUX] ', '')}</span>${extrasHtml}</div>`;
                 }
             },
             { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
@@ -1001,6 +1007,13 @@ window.AuxiliarLogic = {
                             <span>Afiliado: ${isBac ? d.NUMERO_AFILIADO : d.MerID}</span>
                             <span>Terminal: ${isBac ? d.BacTerm : d.ScoTerm}</span>
                         </div>
+                        ${d.EvidenciaB64 ? `
+                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-center">
+                            <button onclick="window.showForenseEvidence(this.getAttribute('data-img'))" data-img="${d.EvidenciaB64}" class="w-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg text-xs font-bold border border-blue-200 dark:border-blue-800 flex items-center justify-center gap-2 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> 
+                                Ver Evidencia Visual del Ajuste
+                            </button>
+                        </div>` : ''}
                     </div>
                 </div>`;
             }).join('');
@@ -1125,6 +1138,31 @@ window.AuxiliarLogic = {
                     .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
                     .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
                 </style>
+                <script>
+                    // Motor Interactivo del Modal Forense para ver Evidencias
+                    window.showForenseEvidence = function(b64) {
+                        const overlay = document.createElement('div');
+                        overlay.className = 'fixed inset-0 z-[999999] bg-slate-900/90 backdrop-blur-md flex justify-center items-center p-4 opacity-0 transition-opacity duration-300';
+                        overlay.innerHTML = \`
+                            <div class="bg-white dark:bg-slate-800 p-2 rounded-xl shadow-2xl relative max-w-5xl w-full flex flex-col transform scale-95 transition-transform duration-300">
+                                <div class="flex justify-between items-center p-3 mb-2 border-b border-slate-200 dark:border-slate-700">
+                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2"><span class="text-blue-500">🖼️</span> Evidencia del Ajuste Manual</h3>
+                                    <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-1.5 transition-colors">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                    </button>
+                                </div>
+                                <div class="overflow-auto flex justify-center items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-2" style="max-height: 80vh;">
+                                    <img src="\${b64}" class="max-w-full h-auto object-contain rounded">
+                                </div>
+                            </div>
+                        \`;
+                        document.body.appendChild(overlay);
+                        requestAnimationFrame(() => {
+                            overlay.classList.remove('opacity-0');
+                            overlay.querySelector('div').classList.remove('scale-95');
+                        });
+                    };
+                </script>
             `;
             
             document.body.appendChild(modal);

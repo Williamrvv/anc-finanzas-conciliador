@@ -20,7 +20,7 @@ try {
             t.Cliente, t.Recibo_Detalle,
             COALESCE(t.Tarjeta_Ultimos4, b.NUMERO_DE_TARJETA, s.Numero_Tarjeta, m.Tarjeta) AS Tarjeta,
             c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio,
-            a.Justificacion
+            a.Justificacion, a.EvidenciaB64
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Conciliacion_Cierres c ON m.IdCierre = c.IdCierre
         LEFT JOIN Tbl_Ajustes_Auditoria a ON m.IdTransaccion = a.IdTransaccion

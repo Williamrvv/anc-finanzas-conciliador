@@ -108,6 +108,15 @@ $end = $_GET['end'] ?? '';
         function autoGenerateColumns(data) {
             if (!data || data.length === 0) return [];
             return Object.keys(data[0]).map(k => {
+                if (k === 'EvidenciaB64') {
+                    return {
+                        title: "Evidencia", field: k, width: 90, hozAlign: "center", headerFilter: false,
+                        formatter: (cell) => {
+                            const val = cell.getValue();
+                            return val ? `<button onclick="window.showEvidence(this.getAttribute('data-img'))" data-img="${val}" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1 rounded text-[10px] font-bold shadow-sm transition-colors flex items-center gap-1 mx-auto"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> Ver</button>` : `<span class="text-slate-300">-</span>`;
+                        }
+                    };
+                }
                 const isMoney = k.toLowerCase().match(/monto|comision|retencion|saldo|tc/);
                 return {
                     title: k.replace(/_/g, ' '), 
@@ -120,6 +129,30 @@ $end = $_GET['end'] ?? '';
                 };
             });
         }
+
+        // Motor Global de Renderizado de Imágenes en Base64
+        window.showEvidence = function(b64) {
+            const overlay = document.createElement('div');
+            overlay.className = 'fixed inset-0 z-[99999] bg-slate-900/90 backdrop-blur-sm flex justify-center items-center p-4 opacity-0 transition-opacity duration-300';
+            overlay.innerHTML = `
+                <div class="bg-white dark:bg-slate-800 p-2 rounded-xl shadow-2xl relative max-w-5xl w-full flex flex-col transform scale-95 transition-transform duration-300">
+                    <div class="flex justify-between items-center p-3 mb-2 border-b border-slate-200 dark:border-slate-700">
+                        <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2"><span class="text-blue-500">🖼️</span> Evidencia Visual del Ajuste</h3>
+                        <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-1.5 transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                    <div class="overflow-auto flex justify-center items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-2" style="max-height: 80vh;">
+                        <img src="${b64}" class="max-w-full h-auto object-contain rounded">
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            requestAnimationFrame(() => {
+                overlay.classList.remove('opacity-0');
+                overlay.querySelector('div').classList.remove('scale-95');
+            });
+        };
 
         async function fetchSource(sourceName) {
             document.getElementById(`spin-${sourceName}`).classList.remove('hidden');
