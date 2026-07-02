@@ -54,8 +54,8 @@ try {
             CAST(RIGHT(RTRIM(LTRIM(COALESCE(b.NUMERO_DE_TARJETA, m.Tarjeta))), 4) AS VARCHAR(4)) AS Tarjeta_Ultimos4,
             CAST(COALESCE(b.AUTORIZACION, m.Autorizacion) AS VARCHAR(50)) AS Numero_Autorizacion, 
             CAST(m.MontoBruto AS DECIMAL(18,2)) AS Monto_Venta_Original, 
-            CAST(COALESCE(b.FECHA_PAGO, m.FechaTransaccion) AS VARCHAR(50)) AS Fecha_Pago_Excel,
-            CAST(a.TipoAjuste AS VARCHAR(50)) AS TipoAjuste, 
+            COALESCE(b.FECHA_PAGO, CAST(m.FechaTransaccion AS VARCHAR(50))) AS Fecha_Pago_Excel,
+            CAST(a.TipoAjuste AS VARCHAR(50)) AS TipoAjuste,
             CAST(a.Justificacion AS NVARCHAR(MAX)) AS Justificacion
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion
@@ -77,8 +77,8 @@ try {
             CAST(RIGHT(RTRIM(LTRIM(COALESCE(MAX(s.Numero_Tarjeta), MAX(m.Tarjeta)))), 4) AS VARCHAR(4)) AS Tarjeta_Ultimos4,
             CAST(COALESCE(MAX(s.Numero_Autorizacion), MAX(m.Autorizacion)) AS VARCHAR(50)) AS Numero_Autorizacion, 
             CAST(MAX(m.MontoBruto) AS DECIMAL(18,2)) AS Monto_Venta_Original, 
-            CAST(COALESCE(MAX(s.Fecha_Pago), MAX(m.FechaTransaccion)) AS VARCHAR(50)) AS Fecha_Pago_Excel,
-            CAST(MAX(a.TipoAjuste) AS VARCHAR(50)) AS TipoAjuste, 
+            COALESCE(MAX(s.Fecha_Pago), CAST(MAX(m.FechaTransaccion) AS VARCHAR(50))) AS Fecha_Pago_Excel,
+            CAST(MAX(a.TipoAjuste) AS VARCHAR(50)) AS TipoAjuste,
             CAST(MAX(a.Justificacion) AS NVARCHAR(MAX)) AS Justificacion
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion

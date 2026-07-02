@@ -8,7 +8,7 @@
                 </span>
                 Auxiliar Contable
             </h2>
-            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Bandeja de resolución de transacciones históricas pendientes.</p>
+            <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Bandeja de resolución de transacciones históricas y pendientes.</p>
         </div>
         
         <!-- Botonera de Acción Flotante -->
@@ -22,8 +22,8 @@
 
     <!-- Pestañas de Navegación -->
     <div class="flex gap-2 mb-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg w-fit shrink-0 border border-slate-200 dark:border-slate-700">
-        <button id="tab-m4-bandeja" onclick="window.AuxiliarLogic.switchTab('bandeja')" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2">⚖️ Bandeja de Resolución</button>
-        <button id="tab-m4-historial" onclick="window.AuxiliarLogic.switchTab('historial')" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">📚 Historial de Aprobados</button>
+        <button id="tab-m4-bandeja" onclick="window.AuxiliarLogic.switchTab('bandeja')" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2">⚖️ Pendientes de conciliar</button>
+        <button id="tab-m4-historial" onclick="window.AuxiliarLogic.switchTab('historial')" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">📚 Historial de conciliados</button>
     </div>
 
     <!-- VISTA 1: BANDEJA PRINCIPAL (Por defecto) -->

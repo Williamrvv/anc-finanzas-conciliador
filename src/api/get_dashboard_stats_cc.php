@@ -86,14 +86,8 @@ try {
     // ==========================================
     // 4. GRÁFICO: Estados de los Tickets (Dentro del Rango)
     // ==========================================
-    $baseJoinsCasosRango = "FROM Tbl_CierreCaja_Detalle D
-                  INNER JOIN Tbl_CierreCaja_Header H ON D.IdCierre = H.IdCierre
-                  LEFT JOIN (
-                      SELECT IdCierreOrigen, NumeroContrato, MAX(IdCaso) AS IdCaso
-                      FROM Tbl_Casos_TSD
-                      GROUP BY IdCierreOrigen, NumeroContrato
-                  ) C_Unico ON D.Numero_Contrato = C_Unico.NumeroContrato AND C_Unico.IdCierreOrigen = H.IdCierre
-                  INNER JOIN Tbl_Casos_TSD C ON C.IdCaso = C_Unico.IdCaso";
+    $baseJoinsCasosRango = "FROM Tbl_Casos_TSD C
+                  INNER JOIN Tbl_CierreCaja_Header H ON C.IdCierreOrigen = H.IdCierre";
 
     $sqlEstados = "
         SELECT 

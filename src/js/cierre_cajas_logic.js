@@ -1029,24 +1029,17 @@ window.CierreCajasLogic = {
         };
 
         if (crearCasos) {
-            const agrupadosPorContrato = {};
-            
-            unselected.forEach(t => {
-                if (!agrupadosPorContrato[t.Numero_Contrato]) {
-                    agrupadosPorContrato[t.Numero_Contrato] = {
-                        contrato: t.Numero_Contrato,
-                        cliente: `${t.Nombre} ${t.Apellido}`.trim(),
-                        monto_crc: 0,
-                        icd: t.ICD || "PENDIENTE TSD",
-                        sucursal: t.Sucursal,
-                        motivo: ""
-                    };
-                }
-                // Si el contrato tiene varias líneas, sumamos sus montos en un solo gran ticket
-                agrupadosPorContrato[t.Numero_Contrato].monto_crc += parseFloat(t.Conversion || 0);
-            });
-            
-            payload.casos_borrador = Object.values(agrupadosPorContrato);
+            // FASE 1: Un ticket por LÍNEA pendiente (ya no se agrupan ni se suman por contrato).
+            // El backend ya inserta 1 fila en Tbl_Casos_TSD por cada elemento de casos_borrador,
+            // así que esta fase no requiere cambios en el guardado ni en la base de datos.
+            payload.casos_borrador = unselected.map(t => ({
+                contrato: t.Numero_Contrato,
+                cliente: `${t.Nombre} ${t.Apellido}`.trim(),
+                monto_crc: parseFloat(t.Conversion || 0),
+                icd: t.ICD || "PENDIENTE TSD",
+                sucursal: t.Sucursal,
+                motivo: ""
+            }));
         }
 
         const btn = document.getElementById('btn-save-cierre');

@@ -108,7 +108,7 @@ try {
                     ISNULL(SUM(D.MontoUSD), 0) AS TotalUSD,
                     SUM(CASE WHEN D.MatchExitoso = 1 THEN 1 ELSE 0 END) AS TxLimpias,
                     SUM(CASE WHEN D.MatchExitoso = 0 THEN 1 ELSE 0 END) AS TxError,
-                    COUNT(DISTINCT C.IdCaso) AS TotalTickets,
+                    SUM(CASE WHEN D.MatchExitoso = 0 THEN 1 ELSE 0 END) AS TotalTickets,
                     ISNULL(SUM(CASE WHEN D.MatchExitoso = 0 THEN D.MontoCRC ELSE 0 END), 0) AS MontoTicketsCRC
                $baseJoins 
                $whereClause";
@@ -142,9 +142,12 @@ try {
                     ISNULL(C.Sucursal_Relacionada, H.Sucursal) AS SucursalReal,
                     ISNULL(RTRIM(U.Nombre + ' ' + ISNULL(U.Apellidos, '')), H.EmailUsuario) AS Agente,
                     H.Comentario AS ComentarioCierre,
-                    C.IdCaso, C.Estado AS EstadoTicket,
+                    -- El estado limpio/ticket es POR LÍNEA (D.MatchExitoso), no por contrato.
+                    -- En líneas limpias anulamos los datos del caso hermano para no contaminar el grid.
+                    CASE WHEN D.MatchExitoso = 1 THEN NULL ELSE C.IdCaso END AS IdCaso,
+                    CASE WHEN D.MatchExitoso = 1 THEN NULL ELSE C.Estado END AS EstadoTicket,
                     CASE 
-                        WHEN C.IdCaso IS NULL THEN 'LIMPIO|' + ISNULL(H.Comentario, '')
+                        WHEN D.MatchExitoso = 1 THEN 'LIMPIO|' + ISNULL(H.Comentario, '')
                         ELSE 'TICKET|' + ISNULL(J.TextoVisor, '') + '|' + ISNULL(C.MotivoAgente, '')
                     END AS MotivoTramiteSQL
                 $baseJoins
