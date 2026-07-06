@@ -913,6 +913,13 @@ class VanillaGrid {
             menu.remove();
         };
         document.getElementById('ctx-copy').onclick = () => { navigator.clipboard.writeText(val); menu.remove(); };
+
+        // Espacio para invitados: la pantalla dueña de la tabla puede agregar sus
+        // propias opciones a ESTE MISMO menú. Si no lo pide, todo queda como siempre.
+        if (this.options.onRowContextMenu) {
+            const r = parseInt(cell.dataset.r);
+            if (!isNaN(r) && this.displayData[r]) this.options.onRowContextMenu(this.displayData[r], e, menu);
+        }
     }
 
     handleArrowKey(e) {

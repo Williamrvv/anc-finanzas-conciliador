@@ -4,6 +4,63 @@ window.AuxiliarLogic = {
     currentSugData: [], currentLimboData: [], currentHistorialData: [],
 
     // Diccionario Universal de Tailwind para evitar purga
+    // Nombre en español y color de muestra de cada tono (también se usa al exportar)
+    COLORES_ES: {
+        'red': { nombre: 'Rojo', hex: '#fecaca' }, 'orange': { nombre: 'Naranja', hex: '#fed7aa' },
+        'amber': { nombre: 'Ámbar', hex: '#fde68a' }, 'yellow': { nombre: 'Amarillo', hex: '#fef08a' },
+        'lime': { nombre: 'Lima', hex: '#d9f99d' }, 'emerald': { nombre: 'Esmeralda', hex: '#a7f3d0' },
+        'teal': { nombre: 'Turquesa', hex: '#99f6e4' }, 'cyan': { nombre: 'Cian', hex: '#a5f3fc' },
+        'sky': { nombre: 'Celeste', hex: '#bae6fd' }, 'blue': { nombre: 'Azul', hex: '#bfdbfe' },
+        'indigo': { nombre: 'Índigo', hex: '#c7d2fe' }, 'violet': { nombre: 'Violeta', hex: '#ddd6fe' },
+        'purple': { nombre: 'Morado', hex: '#e9d5ff' }, 'fuchsia': { nombre: 'Fucsia', hex: '#f5d0fe' },
+        'pink': { nombre: 'Rosado', hex: '#fbcfe8' }, 'rose': { nombre: 'Rosa intenso', hex: '#fecdd3' },
+        'slate': { nombre: 'Gris', hex: '#e2e8f0' }
+    },
+
+    // Devuelve el color de fondo (hex) que le toca a una fila al exportarla
+    getColorExport: function(row) {
+        let color = null;
+        if (row._categoriaId === 1 || row._categoriaId === 2) {
+            const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+            const tag = this.customTags.find(t => Number(t.EsSistema) === 1 && t.Nombre === nombre);
+            color = tag ? tag.ColorCSS : (row._categoriaId === 1 ? 'rose' : 'fuchsia');
+        } else if (row._colorEtiq) {
+            const tag = this.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+            if (tag) color = tag.ColorCSS;
+        }
+        return color && this.COLORES_ES[color] ? this.COLORES_ES[color].hex : null;
+    },
+
+    // Tonos FUERTES para filas de Contracargos/Devoluciones (clases literales, a prueba de Tailwind)
+    TW_COLORS_FUERTE: {
+        'red': 'bg-red-100 text-red-800 border-l-[3px] border-l-red-500 border-b border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-b-red-800',
+        'orange': 'bg-orange-100 text-orange-800 border-l-[3px] border-l-orange-500 border-b border-orange-300 dark:bg-orange-900/30 dark:text-orange-300 dark:border-b-orange-800',
+        'amber': 'bg-amber-100 text-amber-800 border-l-[3px] border-l-amber-500 border-b border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-b-amber-800',
+        'yellow': 'bg-yellow-100 text-yellow-800 border-l-[3px] border-l-yellow-500 border-b border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-b-yellow-800',
+        'lime': 'bg-lime-100 text-lime-800 border-l-[3px] border-l-lime-500 border-b border-lime-300 dark:bg-lime-900/30 dark:text-lime-300 dark:border-b-lime-800',
+        'emerald': 'bg-emerald-100 text-emerald-800 border-l-[3px] border-l-emerald-500 border-b border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-b-emerald-800',
+        'teal': 'bg-teal-100 text-teal-800 border-l-[3px] border-l-teal-500 border-b border-teal-300 dark:bg-teal-900/30 dark:text-teal-300 dark:border-b-teal-800',
+        'cyan': 'bg-cyan-100 text-cyan-800 border-l-[3px] border-l-cyan-500 border-b border-cyan-300 dark:bg-cyan-900/30 dark:text-cyan-300 dark:border-b-cyan-800',
+        'sky': 'bg-sky-100 text-sky-800 border-l-[3px] border-l-sky-500 border-b border-sky-300 dark:bg-sky-900/30 dark:text-sky-300 dark:border-b-sky-800',
+        'blue': 'bg-blue-100 text-blue-800 border-l-[3px] border-l-blue-500 border-b border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-b-blue-800',
+        'indigo': 'bg-indigo-100 text-indigo-800 border-l-[3px] border-l-indigo-500 border-b border-indigo-300 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-b-indigo-800',
+        'violet': 'bg-violet-100 text-violet-800 border-l-[3px] border-l-violet-500 border-b border-violet-300 dark:bg-violet-900/30 dark:text-violet-300 dark:border-b-violet-800',
+        'purple': 'bg-purple-100 text-purple-800 border-l-[3px] border-l-purple-500 border-b border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-b-purple-800',
+        'fuchsia': 'bg-fuchsia-100 text-fuchsia-800 border-l-[3px] border-l-fuchsia-500 border-b border-fuchsia-300 dark:bg-fuchsia-900/30 dark:text-fuchsia-300 dark:border-b-fuchsia-800',
+        'pink': 'bg-pink-100 text-pink-800 border-l-[3px] border-l-pink-500 border-b border-pink-300 dark:bg-pink-900/30 dark:text-pink-300 dark:border-b-pink-800',
+        'rose': 'bg-rose-100 text-rose-800 border-l-[3px] border-l-rose-500 border-b border-rose-300 dark:bg-rose-900/30 dark:text-rose-300 dark:border-b-rose-800',
+        'slate': 'bg-slate-200 text-slate-800 border-l-[3px] border-l-slate-500 border-b border-slate-300 dark:bg-slate-800/80 dark:text-slate-300 dark:border-b-slate-700'
+    },
+
+    // Lee el color guardado de la etiqueta del sistema y lo devuelve en tono fuerte
+    getEstiloSistema: function(catId, italic) {
+        const nombre = catId === 1 ? 'Contracargos' : 'Devoluciones';
+        const tag = (this.customTags || []).find(t => Number(t.EsSistema) === 1 && t.Nombre === nombre);
+        const color = tag ? tag.ColorCSS : (catId === 1 ? 'rose' : 'fuchsia');
+        const base = this.TW_COLORS_FUERTE[color] || this.TW_COLORS_FUERTE[catId === 1 ? 'rose' : 'fuchsia'];
+        return base + (italic ? ' italic' : '');
+    },
+
     TW_COLORS: {
         'red': 'bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900',
         'orange': 'bg-orange-50 text-orange-700 border-orange-300 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-900',
@@ -369,10 +426,13 @@ window.AuxiliarLogic = {
             let isContra = false; let isDevol = false;
             const checkStr = (str) => String(str || '').toLowerCase();
             
+            // Se quitan tildes y se busca la RAÍZ de la palabra: "Devolución", "devolucion",
+            // "DEVOLUCIONES", "devuelto/a" o "reembolsos" caen igual, sin importar cómo lo escriban.
+            const sinTildes = (s) => checkStr(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             (tArr || []).forEach(t => {
-                const rec = checkStr(t.Recibo_Detalle);
-                if (rec.includes('contracargo') || rec.includes('chargeback')) isContra = true;
-                if (rec.includes('devolucion') || rec.includes('devolución') || rec.includes('refund') || rec.includes('reembolso')) isDevol = true;
+                const rec = sinTildes(t.Recibo_Detalle);
+                if (rec.includes('contracargo') || rec.includes('contra cargo') || rec.includes('chargeback') || rec.includes('charge back')) isContra = true;
+                if (rec.includes('devoluc') || rec.includes('devuelt') || rec.includes('reembols') || rec.includes('refund')) isDevol = true;
             });
             
             (bArr || []).forEach(b => {
@@ -591,8 +651,7 @@ window.AuxiliarLogic = {
                 const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700' };
 
                 let bgClass = '';
-                if (catId === 1) bgClass = 'bg-rose-50 dark:bg-rose-900/10 border-l-[3px] border-l-rose-500 border-b border-rose-200 dark:border-rose-900';
-                else if (catId === 2) bgClass = 'bg-fuchsia-50 dark:bg-fuchsia-900/10 border-l-[3px] border-l-fuchsia-500 border-b border-fuchsia-200 dark:border-fuchsia-900';
+                if (catId === 1 || catId === 2) bgClass = this.getEstiloSistema(catId, false);
                 else if (tsdRow.ColorEtiqueta) {
                     const tagObj = this.customTags.find(t => t.IdEtiqueta.toString() === tsdRow.ColorEtiqueta.toString());
                     if (tagObj) bgClass = this.TW_COLORS[tagObj.ColorCSS] || '';
@@ -616,8 +675,7 @@ window.AuxiliarLogic = {
                 const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-400 italic border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 italic border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-400 italic border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 text-lime-700 dark:text-lime-400 italic border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 italic border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400 italic border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 text-cyan-700 dark:text-cyan-400 italic border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 italic border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-400 italic border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 italic border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 text-slate-700 dark:text-slate-400 italic border-b border-slate-300 dark:border-slate-700' };
 
                 let bgClass = 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800';
-                if (catId === 1) bgClass = 'bg-rose-50 dark:bg-rose-900/10 border-l-[3px] border-l-rose-500 text-rose-700 dark:text-rose-300 italic border-b border-rose-200 dark:border-rose-900';
-                else if (catId === 2) bgClass = 'bg-fuchsia-50 dark:bg-fuchsia-900/10 border-l-[3px] border-l-fuchsia-500 text-fuchsia-700 dark:text-fuchsia-300 italic border-b border-fuchsia-200 dark:border-fuchsia-900';
+                if (catId === 1 || catId === 2) bgClass = this.getEstiloSistema(catId, true);
                 else if (b.ColorEtiqueta) {
                     const tagObj = this.customTags.find(t => t.IdEtiqueta.toString() === b.ColorEtiqueta.toString());
                     if (tagObj) bgClass = this.TW_COLORS[tagObj.ColorCSS] + ' italic';
@@ -707,10 +765,13 @@ window.AuxiliarLogic = {
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     let badge = '';
                     
-                    if (row._categoriaId === 1) {
-                        badge = `<span class="block mb-1 text-[9px] font-black uppercase text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30 px-1 py-0.5 rounded w-max border border-rose-200 dark:border-rose-800 tracking-wider shadow-sm select-none">🛑 Contracargo</span>`;
-                    } else if (row._categoriaId === 2) {
-                        badge = `<span class="block mb-1 text-[9px] font-black uppercase text-fuchsia-600 dark:text-fuchsia-400 bg-fuchsia-100 dark:bg-fuchsia-900/30 px-1 py-0.5 rounded w-max border border-fuchsia-200 dark:border-fuchsia-800 tracking-wider shadow-sm select-none">🔄 Devolución</span>`;
+                    if (row._categoriaId === 1 || row._categoriaId === 2) {
+                        // La insignia toma el color GUARDADO de la etiqueta del sistema
+                        const nombreSis = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+                        const tagSis = window.AuxiliarLogic.customTags.find(t => Number(t.EsSistema) === 1 && t.Nombre === nombreSis);
+                        const cssSis = window.AuxiliarLogic.TW_COLORS[tagSis ? tagSis.ColorCSS : (row._categoriaId === 1 ? 'rose' : 'fuchsia')] || '';
+                        const icono = row._categoriaId === 1 ? '🛑' : '🔄';
+                        badge = `<span class="block mb-1 text-[9px] font-black uppercase ${cssSis} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none">${icono} ${nombreSis}</span>`;
                     } else if (row._colorEtiq) {
                         const tagObj = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
                         if (tagObj) {
@@ -797,7 +858,12 @@ window.AuxiliarLogic = {
         else this.gridSug = new VanillaGrid("#table-sug-m4", this.currentSugData, columns, { searchInputId: "search-m4", onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r) });
 
         if (this.gridLimbo) this.gridLimbo.updateData(this.currentLimboData);
-        else this.gridLimbo = new VanillaGrid("#table-limbo-m4", this.currentLimboData, columns, { searchInputId: "search-m4", onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r) });
+        else this.gridLimbo = new VanillaGrid("#table-limbo-m4", this.currentLimboData, columns, { 
+            searchInputId: "search-m4", 
+            onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r),
+            onRowContextMenu: (r, e, menu) => window.AuxiliarLogic.abrirMenuEtiquetas(r, e, menu),
+            exportRowColor: (r) => window.AuxiliarLogic.getColorExport(r)
+        });
     },
 
     openTransactionModal: function(row) {
@@ -1474,7 +1540,15 @@ window.AuxiliarLogic = {
                     <span class="${css} px-2 py-0.5 rounded text-[10px] font-bold shadow-sm border select-none">🏷️ ${tag.Nombre}</span>
                     <div class="text-[9px] text-slate-500 mt-1">${tag.Descripcion || 'Sin descripción'}</div>
                 </div>
-                <button onclick="window.AuxiliarLogic.deleteTag(${tag.IdEtiqueta})" class="text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 p-1.5 rounded transition-colors" title="Eliminar">🗑️</button>
+                <div class="flex items-center gap-1.5">
+                    <select onchange="window.AuxiliarLogic.updateTagColor(${tag.IdEtiqueta}, this.value)" title="Cambiar color" class="text-[10px] border border-slate-200 dark:border-slate-600 rounded p-1 outline-none cursor-pointer text-slate-800" style="background-color:${(window.AuxiliarLogic.COLORES_ES[tag.ColorCSS] || {}).hex || '#e2e8f0'}">
+                        ${Object.entries(window.AuxiliarLogic.COLORES_ES).map(([c, info]) => `<option value="${c}" style="background-color:${info.hex};color:#1e293b" ${tag.ColorCSS === c ? 'selected' : ''}>⬤ ${info.nombre}</option>`).join('')}
+                    </select>
+                    <button onclick="window.AuxiliarLogic.editTag(${tag.IdEtiqueta})" class="text-blue-500 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 p-1.5 rounded transition-colors" title="Editar nombre y descripción">✏️</button>
+                    ${Number(tag.EsSistema) === 1
+                        ? `<span class="text-slate-400 bg-slate-100 dark:bg-slate-700 p-1.5 rounded select-none" title="Etiqueta del sistema: no se puede eliminar">🔒</span>`
+                        : `<button onclick="window.AuxiliarLogic.deleteTag(${tag.IdEtiqueta})" class="text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 p-1.5 rounded transition-colors" title="Eliminar">🗑️</button>`}
+                </div>
             </div>`;
         });
         htmlList += `</div>`;
@@ -1542,6 +1616,63 @@ window.AuxiliarLogic = {
         };
     },
 
+    editTag: async function(id) {
+        const tag = this.customTags.find(t => t.IdEtiqueta.toString() === id.toString());
+        if (!tag) return;
+        const esSis = Number(tag.EsSistema) === 1;
+        if (this._tagModalOverlay) this._tagModalOverlay.remove();
+
+        const html = `
+            <div class="space-y-3 text-left">
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Nombre ${esSis ? '(fijo: etiqueta del sistema)' : ''}</label>
+                    <input id="edit-tag-nombre" value="${tag.Nombre}" ${esSis ? 'disabled' : ''} maxlength="50" class="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold uppercase text-slate-500">Descripción</label>
+                    <input id="edit-tag-desc" value="${tag.Descripcion || ''}" maxlength="150" class="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>`;
+
+        const choice = await window.SysUI._createModal("✏️ Editar Etiqueta", html, [
+            {text: 'Cancelar', value: null, class: 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white px-4 py-2 rounded-lg font-bold transition-colors'},
+            {text: 'Guardar', value: 'save', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
+        ], "info");
+
+        if (choice === 'save') {
+            try {
+                const res = await fetch('api/mantenimiento_etiquetas_m4.php', {
+                    method: 'PUT', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        IdEtiqueta: tag.IdEtiqueta,
+                        ColorCSS: tag.ColorCSS,
+                        Nombre: document.getElementById('edit-tag-nombre').value.trim(),
+                        Descripcion: document.getElementById('edit-tag-desc').value.trim()
+                    })
+                });
+                const json = await res.json();
+                if(!json.success) throw new Error(json.error);
+                await this.fetchTags();
+                if (this.lastTSD && this.lastBancos) this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+            } catch(e) { window.SysUI.alert("No se pudo editar: " + e.message, "Fallo", "error"); }
+        }
+        this.openTagManager(); // Vuelve a la ventana de mantenimiento
+    },
+
+    updateTagColor: async function(id, color) {
+        try {
+            const res = await fetch('api/mantenimiento_etiquetas_m4.php', {
+                method: 'PUT', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ IdEtiqueta: id, ColorCSS: color })
+            });
+            const json = await res.json();
+            if(!json.success) throw new Error(json.error);
+
+            await this.fetchTags(); // Recarga etiquetas y leyenda con el color nuevo
+            if (this.lastTSD && this.lastBancos) this.runMatchingAlgorithm(this.lastTSD, this.lastBancos); // Repinta las filas
+        } catch(e) { window.SysUI.alert("No se pudo cambiar el color: " + e.message, "Fallo", "error"); }
+    },
+
     deleteTag: async function(id) {
         if(!confirm("¿Eliminar esta etiqueta? Las transacciones que la tengan volverán a la normalidad.")) return;
         try {
@@ -1557,6 +1688,61 @@ window.AuxiliarLogic = {
             this.openTagManager();
             this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
         } catch(e) { window.SysUI.alert("Error: " + e.message); }
+    },
+
+    // --- SECCIÓN DE ETIQUETAS DENTRO DEL MENÚ NATIVO DE LA TABLA ---
+    abrirMenuEtiquetas: function(row, e, menu) {
+        if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan con el botón 🏷️
+
+        // Contracargos/Devoluciones automáticas: la clasificación no cambia, pero SÍ se agregan datos
+        if (row._categoriaId === 1 || row._categoriaId === 2) {
+            const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+            menu.insertAdjacentHTML('beforeend', `
+                <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🔒 Automática: <b>${nombre}</b></div>
+                <div onclick="document.getElementById('vg-context-menu')?.remove(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">✏️ Agregar nota / datos...</div>`);
+            return;
+        }
+
+        const css = (c) => this.TW_COLORS[c] || this.TW_COLORS['slate'];
+        const items = this.customTags.map(tag => `
+            <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '${tag.IdEtiqueta}')"
+                 class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="${tag.Descripcion || ''}">
+                <span class="w-3 h-3 rounded-full border ${css(tag.ColorCSS)}"></span>
+                <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
+            </div>`).join('');
+
+        menu.insertAdjacentHTML('beforeend', `
+            <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+            <div class="px-3 py-1 text-[10px] font-bold uppercase text-slate-400">🏷️ Etiquetar</div>
+            ${items || '<div class="px-3 py-1.5 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
+            <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">🚫 Quitar etiqueta</div>
+            <div onclick="document.getElementById('vg-context-menu')?.remove(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">✏️ Etiqueta con nota...</div>`);
+    },
+
+    asignarEtiquetaRapida: async function(uid, idEtiqueta) {
+        document.getElementById('vg-context-menu')?.remove();
+        const row = this.currentLimboData.find(r => r._uid === uid);
+        if (!row || !row._dbId) return;
+
+        try {
+            const res = await fetch('api/save_etiqueta_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: row._dbId, color: idEtiqueta, nota: row._notaEtiq || '' }) // La nota escrita se conserva
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error);
+
+            // Actualiza la memoria para que el repintado no pierda el cambio
+            const tMatch = this.lastTSD.find(t => t.ID_Transaccion === row._dbId);
+            if (tMatch) { tMatch.ColorEtiqueta = idEtiqueta || null; }
+            const bMatch = this.lastBancos.find(b => b.IdTransaccion === row._dbId);
+            if (bMatch) { bMatch.ColorEtiqueta = idEtiqueta || null; }
+
+            this.runMatchingAlgorithm(this.lastTSD, this.lastBancos); // Repinta y reagrupa solo
+        } catch (err) {
+            window.SysUI.alert("No se pudo guardar la etiqueta: " + err.message, "Fallo", "error");
+        }
     },
 
     openEtiquetaModal: async function(uid) {

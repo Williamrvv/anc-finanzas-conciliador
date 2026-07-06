@@ -28,6 +28,15 @@ try {
         ]);
         echo json_encode(['success' => true]);
     }
+    else if ($method === 'PUT') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!$input || empty($input['IdEtiqueta']) || empty($input['ColorCSS'])) {
+            echo json_encode(['success' => false, 'error' => 'Faltan datos']); exit;
+        }
+        $stmt = $pdo->prepare("UPDATE Tbl_Etiquetas_M4 SET ColorCSS = ? WHERE IdEtiqueta = ?");
+        $stmt->execute([$input['ColorCSS'], $input['IdEtiqueta']]);
+        echo json_encode(['success' => true]);
+    }
     else if ($method === 'DELETE') {
         $input = json_decode(file_get_contents('php://input'), true);
         $stmt = $pdo->prepare("UPDATE Tbl_Etiquetas_M4 SET Activo = 0 WHERE IdEtiqueta = ?");
