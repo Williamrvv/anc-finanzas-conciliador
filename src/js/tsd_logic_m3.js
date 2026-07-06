@@ -116,10 +116,12 @@ window.TSDLogic = {
             this.lastTSD.forEach(t => tTsdCRC += parseFloat(t.MontoCRC) || 0);
 
             // 3. CONSTRUCTOR DE FILAS SOFTLAND
-            const fmtS = (num) => Number(num).toFixed(2).replace('.', ',');
+            // Número JS puro a 2 decimales (celda tipo Número real en Excel)
+            const num2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
             const dParts = startDate.split('-'); 
-            const fechaAsiento = `${parseInt(dParts[2])}/${parseInt(dParts[1])}/${dParts[0]}`; 
-            const fuenteVal = `T${dParts[2]}${dParts[1]}${dParts[0]}`; 
+            // Fecha NATIVA de Excel desde el filtro (medianoche local, sin corrimiento de zona)
+            const fechaAsiento = new Date(parseInt(dParts[0]), parseInt(dParts[1]) - 1, parseInt(dParts[2]));
+            const fuenteVal = `T${dParts[2]}${dParts[1]}${dParts[0]}`;
 
             const ws1Data = [
                 ["Asiento", "Paquete", "Tipo Asiento", "Fecha", "Contabilidad"],
@@ -147,12 +149,12 @@ window.TSDLogic = {
                 sumCreditoGlobal += (Math.round((parseFloat(credito) || 0) * 100) / 100);
 
                 ws2Data.push([
-                    asientoId, consecutivo++, "", `'${cc}`, cuenta, fuenteVal, ref,
-                    dCRC > 0 ? fmtS(dCRC) : "", 
-                    cCRC > 0 ? fmtS(cCRC) : "",
-                    dUSD > 0 ? fmtS(dUSD) : "", 
-                    cUSD > 0 ? fmtS(cUSD) : "",
-                    !tcInyectado ? Number(avgTC).toFixed(4).replace('.', ',') : ""
+                    asientoId, consecutivo++, "", `${cc}`, cuenta, fuenteVal, ref,
+                    dCRC > 0 ? num2(dCRC) : null, 
+                    cCRC > 0 ? num2(cCRC) : null,
+                    dUSD > 0 ? num2(dUSD) : null, 
+                    cUSD > 0 ? num2(cUSD) : null,
+                    !tcInyectado ? num2(avgTC) : null
                 ]);
                 tcInyectado = true;
             };
@@ -207,11 +209,9 @@ window.TSDLogic = {
             // ws2Data[0] es la cabecera, empezamos desde 1
             for(let i = 1; i < ws2Data.length; i++) {
                 // Columna 7 es Debito Colon, Columna 8 es Credito Colon (Índices basados en 0)
-                let debVal = String(ws2Data[i][7] || '').replace(/,/g, '.');
-                let credVal = String(ws2Data[i][8] || '').replace(/,/g, '.');
-                
-                sumDebitoExcel += parseFloat(debVal) || 0;
-                sumCreditoExcel += parseFloat(credVal) || 0;
+                // Las celdas ya son Números nativos: suma directa, sin traducir comas
+                sumDebitoExcel += Number(ws2Data[i][7]) || 0;
+                sumCreditoExcel += Number(ws2Data[i][8]) || 0;
             }
 
             const diff = Math.abs(sumDebitoExcel - sumCreditoExcel);
@@ -224,8 +224,20 @@ window.TSDLogic = {
 
             // 4. ENSAMBLAJE FINAL SHEETJS
             const wb = XLSX.utils.book_new();
-            const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+            const ws1 = XLSX.utils.aoa_to_sheet(ws1Data, { cellDates: true });
             const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+
+            // Hoja 1: formato incorporado 14 = categoría "Fecha corta"
+            if (ws1['D2']) { ws1['D2'].t = 'd'; ws1['D2'].z = 'm/d/yy'; }
+
+            // Hoja 2: Debito Colon (H), Credito Colon (I), Debito Dolar (J), Credito Dolar (K), TC (L) como Número
+            const rngT = XLSX.utils.decode_range(ws2['!ref']);
+            for (let R = 2; R <= rngT.e.r + 1; R++) {
+                ['H', 'I', 'J', 'K', 'L'].forEach(col => {
+                    const cell = ws2[col + R];
+                    if (cell && cell.t === 'n') cell.z = '#,##0.00';
+                });
+            }
             
             ws2['!cols'] = ws2Data[0].map(h => ({wch: Math.max(15, h.length + 5)}));
 
@@ -276,21 +288,22 @@ window.TSDLogic = {
         
         // Parseo Inteligente para "Fuente" (Hoja 2) -> Sigue usando la fecha del filtro original
         const dPart = startDate.split('-');
-        const fechaFuente = dPart.length === 3 ? `'${dPart[2]}${dPart[1]}${dPart[0]}` : startDate; 
+        const fechaFuente = dPart.length === 3 ? `${dPart[2]}${dPart[1]}${dPart[0]}` : startDate;
 
         // Generar Fecha Actual Pura (Hoja 1) -> Obligatorio para Softland (Formato DD/M/YYYY)
+        // Fecha NATIVA de Excel (medianoche local para evitar corrimiento por zona horaria)
         const hoy = new Date();
-        const dia = String(hoy.getDate()).padStart(2, '0');
-        const mes = hoy.getMonth() + 1; // Sin padStart para evitar ceros a la izquierda
-        const anio = hoy.getFullYear();
-        const fechaActualSoftland = `${dia}/${mes}/${anio}`;
+        const fechaAsiento = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+
+        // Helper: número JS puro redondeado a 2 decimales (celda tipo Número real en Excel)
+        const num2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
         // ==========================================
         // CONSTRUCCIÓN HOJA 1: ASIENTO
         // ==========================================
         const ws1Data = [
             ["Asiento", "Paquete", "Tipo Asiento", "Fecha", "Contabilidad"],
-            [asientoId, "CB", "CB", fechaActualSoftland, "A"]
+            [asientoId, "CB", "CB", fechaAsiento, "A"]
         ];
 
         // ==========================================
@@ -311,23 +324,20 @@ window.TSDLogic = {
             sumDebitoDolar += debitoDol;
         });
 
-        // Función Helper para Softland: Formatea el número a 2 o 4 decimales y cambia el punto por coma.
-        const fmtSft = (num, dec = 2) => Number(num).toFixed(dec).replace('.', ',');
-
         // Fila 1 (La Cabecera Totalizadora - Única que lleva el TC)
         ws2Data.push([
             asientoId, 
             1, 
             "", // Nit
-            "'00-00-00", // Softland obliga comilla simple
+            "00-00-00", // Texto nativo limpio (SheetJS lo escribe como celda de texto, sin apóstrofe)
             cfg.cuentaCabecera,
             fechaFuente, 
             cfg.referenciaCabecera, 
-            "", // Debito Colon
-            "", // Debito Dolar
-            fmtSft(sumDebitoColon, 2), // Credito Colon
-            fmtSft(sumDebitoDolar, 2), // Credito Dolar
-            fmtSft(tcPromedio, 2)      // TC Promedio con 2 decimales, como lo pide ERP
+            null, // Debito Colon (celda genuinamente vacía)
+            null, // Debito Dolar
+            num2(sumDebitoColon), // Credito Colon (Número nativo)
+            num2(sumDebitoDolar), // Credito Dolar (Número nativo)
+            num2(tcPromedio)      // TC (Número nativo)
         ]);
 
         // Filas Dinámicas (Los Detalles / Débitos)
@@ -340,15 +350,15 @@ window.TSDLogic = {
                 asientoId,
                 cons,
                 "", // Nit
-                "'00-00-00",
+                "00-00-00",
                 cfg.cuentaDetalle,
                 row.Fuente || "", 
                 row.Referencia || "", 
-                fmtSft(debitoCol, 2), // Debito Colon
-                fmtSft(debitoDol, 2), // Debito Dolar
-                "", // Credito Colon
-                "", // Credito Dolar
-                ""  // TC (Vacío en las filas de detalle según requerimiento)
+                num2(debitoCol), // Debito Colon (Número nativo)
+                num2(debitoDol), // Debito Dolar (Número nativo)
+                null, // Credito Colon
+                null, // Credito Dolar
+                null  // TC (Vacío real en filas de detalle)
             ]);
             cons++;
         });
@@ -357,8 +367,20 @@ window.TSDLogic = {
         // ENSAMBLAJE FINAL SHEETJS
         // ==========================================
         const wb = XLSX.utils.book_new();
-        const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+        const ws1 = XLSX.utils.aoa_to_sheet(ws1Data, { cellDates: true });
         const ws2 = XLSX.utils.aoa_to_sheet(ws2Data);
+
+        // Hoja 1: formato incorporado 14 de Excel = categoría "Fecha corta" (se adapta a la config regional)
+        if (ws1['D2']) { ws1['D2'].t = 'd'; ws1['D2'].z = 'm/d/yy'; }
+
+        // Hoja 2: Debito Colon (H), Debito Dolar (I), Credito Colon (J), Credito Dolar (K), TC (L) como Número
+        const rng2 = XLSX.utils.decode_range(ws2['!ref']);
+        for (let R = 2; R <= rng2.e.r + 1; R++) {
+            ['H', 'I', 'J', 'K', 'L'].forEach(col => {
+                const cell = ws2[col + R];
+                if (cell && cell.t === 'n') cell.z = '#,##0.00';
+            });
+        }
 
         XLSX.utils.book_append_sheet(wb, ws1, "Asiento");
         XLSX.utils.book_append_sheet(wb, ws2, "Desglose");
@@ -1173,7 +1195,7 @@ window.TSDLogic = {
                 function buildTsdCard(t, isSelected) {
                     const actionBtn = isSelected 
                         ? \`<button onclick="parentLogic.wsRemove('tsd', '\${t._id}'); renderUI();" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-0.5 rounded font-black text-lg transition-colors" title="Quitar">&times;</button>\`
-                        : \`<button onclick="parentLogic.wsAdd('tsd', '\${t._id}'); renderUI();" class="bg-purple-100 text-purple-700 rounded px-2 font-bold shadow-sm text-sm hover:bg-purple-200 transition-colors" title="Añadir">+</button>\`;
+                        : \`<button onclick="event.stopPropagation(); parentLogic.wsAdd('tsd', '\${t._id}'); renderUI();" class="bg-purple-100 text-purple-700 rounded px-2 font-bold shadow-sm text-sm hover:bg-purple-200 transition-colors" title="Añadir">+</button>\`;
                         
                     const wrapperClass = isSelected 
                         ? "flex flex-col p-2 bg-white dark:bg-slate-700 border-l-4 border-purple-500 border-y border-r border-slate-200 dark:border-slate-600 rounded-lg shadow-sm" 
@@ -1221,7 +1243,7 @@ window.TSDLogic = {
                 function buildBancoCard(b, isSelected) {
                     const actionBtn = isSelected 
                         ? \`<button onclick="parentLogic.wsRemove('bancos', '\${b._id}'); renderUI();" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 px-2 py-0.5 rounded font-black text-lg transition-colors" title="Quitar">&times;</button>\`
-                        : \`<button onclick="parentLogic.wsAdd('bancos', '\${b._id}'); renderUI();" class="bg-blue-100 text-blue-700 rounded px-2 font-bold shadow-sm text-sm hover:bg-blue-200 transition-colors" title="Añadir">+</button>\`;
+                        : \`<button onclick="event.stopPropagation(); parentLogic.wsAdd('bancos', '\${b._id}'); renderUI();" class="bg-blue-100 text-blue-700 rounded px-2 font-bold shadow-sm text-sm hover:bg-blue-200 transition-colors" title="Añadir">+</button>\`;
                         
                     const wrapperClass = isSelected 
                         ? "flex flex-col p-2 bg-white dark:bg-slate-700 border-l-4 border-blue-500 border-y border-r border-slate-200 dark:border-slate-600 rounded-lg shadow-sm" 
@@ -1354,8 +1376,14 @@ window.TSDLogic = {
 
     // Funciones puente llamadas desde la ventana hija
     wsAdd: function(side, id) {
-        if (side === 'tsd') this.ws.tsd.push(this.lastTSD.find(t => t._id === id));
-        else this.ws.bancos.push(this.lastBancos.find(b => b._id === id));
+        if (side === 'tsd') {
+            const found = this.lastTSD.find(t => t && t._id === id);
+            // Cortafuegos: ignora si no existe o si ya está en la estación (previene duplicados por doble clic/bubbling)
+            if (found && !this.ws.tsd.some(x => x._id === id)) this.ws.tsd.push(found);
+        } else {
+            const found = this.lastBancos.find(b => b && b._id === id);
+            if (found && !this.ws.bancos.some(x => x._id === id)) this.ws.bancos.push(found);
+        }
     },
 
     wsRemove: function(side, id) {

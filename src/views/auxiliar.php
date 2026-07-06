@@ -20,10 +20,15 @@
         </div>
     </div>
 
-    <!-- Pestañas de Navegación -->
-    <div class="flex gap-2 mb-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg w-fit shrink-0 border border-slate-200 dark:border-slate-700">
-        <button id="tab-m4-bandeja" onclick="window.AuxiliarLogic.switchTab('bandeja')" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2">⚖️ Pendientes de conciliar</button>
-        <button id="tab-m4-historial" onclick="window.AuxiliarLogic.switchTab('historial')" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">📚 Historial de conciliados</button>
+    <!-- Pestañas de Navegación y Herramientas -->
+    <div class="flex justify-between items-center w-full mb-2 shrink-0">
+        <div class="flex gap-2 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg w-fit border border-slate-200 dark:border-slate-700">
+            <button id="tab-m4-bandeja" onclick="window.AuxiliarLogic.switchTab('bandeja')" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2">⚖️ Pendientes de conciliar</button>
+            <button id="tab-m4-historial" onclick="window.AuxiliarLogic.switchTab('historial')" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">📚 Historial de conciliados</button>
+        </div>
+        <button id="btn-manage-tags" onclick="window.AuxiliarLogic.openTagManager()" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-2">
+            ⚙️ Configurar Etiquetas
+        </button>
     </div>
 
     <!-- VISTA 1: BANDEJA PRINCIPAL (Por defecto) -->
@@ -99,11 +104,29 @@
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha de Folio:</span>
                 <input type="text" id="m4-historial-date" class="bg-slate-50 dark:bg-slate-900 text-sm font-bold text-slate-700 dark:text-white px-3 py-1 outline-none cursor-pointer w-52 text-center rounded border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500" placeholder="Seleccione fechas...">
                 <button onclick="window.AuxiliarLogic.fetchHistorial()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm">Buscar</button>
+                <span id="m4-hist-global-badge" class="hidden items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2 py-1 rounded-lg text-[10px] font-bold">
+                    🌐 Búsqueda global — fechas ignoradas
+                    <button onclick="window.AuxiliarLogic.exitGlobalMode()" title="Volver al rango de fechas" class="hover:text-red-500 font-black px-1 transition-colors">✕</button>
+                </span>
             </div>
             
-            <div class="relative">
-                <input type="text" id="search-m4-historial" placeholder="Filtrar Historial..." class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 w-72 shadow-sm text-slate-700 dark:text-white">
-                <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <div class="flex items-stretch bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-sm overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
+                <select id="m4-hist-scope" title="Ámbito de búsqueda" class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-600 px-2 outline-none cursor-pointer hover:text-slate-700 dark:hover:text-white transition-colors">
+                    <option value="all">Todo</option>
+                    <option value="contrato">Contrato</option>
+                    <option value="afiliado">Afiliado</option>
+                    <option value="auth">Autorización</option>
+                    <option value="tarjeta">Tarjeta</option>
+                    <option value="cliente">Cliente</option>
+                    <option value="banco">Banco</option>
+                    <option value="liquidacion">Liquidación</option>
+                </select>
+                <div class="relative">
+                    <input type="text" id="search-m4-historial" placeholder="Buscar en todo el historial..." class="pl-8 pr-4 py-1.5 text-xs bg-transparent outline-none w-64 text-slate-700 dark:text-white">
+                    <button onclick="window.AuxiliarLogic.triggerHistorialSearch()" title="Buscar" class="absolute left-1 top-0.5 p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </button>
+                </div>
             </div>
         </div>
         

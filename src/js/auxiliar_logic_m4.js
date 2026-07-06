@@ -1,13 +1,63 @@
 window.AuxiliarLogic = {
-    lastTSD: [], lastBancos: [], blacklist: [], manualMatches: [],
+    lastTSD: [], lastBancos: [], blacklist: [], manualMatches: [], customTags: [],
     gridSug: null, gridLimbo: null, gridHistorial: null,
     currentSugData: [], currentLimboData: [], currentHistorialData: [],
 
-    init: function() {
+    // Diccionario Universal de Tailwind para evitar purga
+    TW_COLORS: {
+        'red': 'bg-red-50 text-red-700 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900',
+        'orange': 'bg-orange-50 text-orange-700 border-orange-300 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-900',
+        'amber': 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-900',
+        'yellow': 'bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-900',
+        'lime': 'bg-lime-50 text-lime-700 border-lime-300 dark:bg-lime-900/20 dark:text-lime-400 dark:border-lime-900',
+        'emerald': 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-900',
+        'teal': 'bg-teal-50 text-teal-700 border-teal-300 dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-900',
+        'cyan': 'bg-cyan-50 text-cyan-700 border-cyan-300 dark:bg-cyan-900/20 dark:text-cyan-400 dark:border-cyan-900',
+        'sky': 'bg-sky-50 text-sky-700 border-sky-300 dark:bg-sky-900/20 dark:text-sky-400 dark:border-sky-900',
+        'blue': 'bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900',
+        'indigo': 'bg-indigo-50 text-indigo-700 border-indigo-300 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-900',
+        'violet': 'bg-violet-50 text-violet-700 border-violet-300 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-900',
+        'purple': 'bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-900',
+        'fuchsia': 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-300 dark:bg-fuchsia-900/20 dark:text-fuchsia-400 dark:border-fuchsia-900',
+        'pink': 'bg-pink-50 text-pink-700 border-pink-300 dark:bg-pink-900/20 dark:text-pink-400 dark:border-pink-900',
+        'slate': 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800/80 dark:text-slate-400 dark:border-slate-700'
+    },
+
+    fetchTags: async function() {
+        try {
+            const res = await fetch('api/mantenimiento_etiquetas_m4.php');
+            const json = await res.json();
+            if(json.success) this.customTags = json.data;
+            this.injectLegend();
+        } catch(e) { console.error("Error al cargar etiquetas", e); }
+    },
+
+    injectLegend: function() {
+        const container = document.getElementById('m4-view-bandeja');
+        if (!container) return;
+        const old = document.getElementById('etiq-legend');
+        if (old) old.remove();
+
+        if (this.customTags.length === 0) return;
+        
+        let html = '<div id="etiq-legend" class="flex flex-wrap gap-2 p-2 mb-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 items-center animate-fade-in-up"><span class="text-[10px] font-bold uppercase text-slate-500 mr-1">Etiquetas de Transacción:</span>';
+        this.customTags.forEach(tag => {
+            const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
+            html += `<span class="${css} border-b-2 px-2 py-0.5 rounded text-[9px] font-bold whitespace-nowrap shadow-sm select-none" title="${tag.Descripcion}">🏷️ ${tag.Nombre}</span>`;
+        });
+        html += '</div>';
+        container.children[0].insertAdjacentHTML('afterend', html);
+    },
+
+    init: async function() {
         console.log("⚖️ Módulo Auxiliar Contable (M4) Inicializado");
         if(this.gridSug) { if (typeof this.gridSug.destroy === 'function') this.gridSug.destroy(); this.gridSug = null; }
         if(this.gridLimbo) { if (typeof this.gridLimbo.destroy === 'function') this.gridLimbo.destroy(); this.gridLimbo = null; }
         if(this.gridHistorial) { if (typeof this.gridHistorial.destroy === 'function') this.gridHistorial.destroy(); this.gridHistorial = null; }
+        
+        this.blacklist = [];
+        this.manualMatches = [];
+        await this.fetchTags();
         
         this.blacklist = [];
         this.manualMatches = [];
@@ -20,6 +70,7 @@ window.AuxiliarLogic = {
         }
         
         this.switchTab('bandeja');
+        this.injectLegend();
         this.fetchPendientes();
     },
 
@@ -52,15 +103,22 @@ window.AuxiliarLogic = {
         }
     },
 
-    fetchHistorial: async function() {
-        const dateVal = document.getElementById('m4-historial-date').value;
-        if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
-        let start = dateVal, end = dateVal;
-        if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
+    fetchHistorial: async function(global = null) {
+        let url = 'api/get_historial_m4.php';
+        if (global) {
+            url += `?field=${global.field}&term=${encodeURIComponent(global.term)}`;
+        } else {
+            const dateVal = document.getElementById('m4-historial-date').value;
+            if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
+            let start = dateVal, end = dateVal;
+            if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
+            url += `?start=${start}&end=${end}`;
+        }
+        this.isGlobalMode = !!global;
 
         document.body.classList.add('cursor-wait');
         try {
-            const res = await fetch(`api/get_historial_m4.php?start=${start}&end=${end}`);
+            const res = await fetch(url);
             const json = await res.json();
             if (!json.success) throw new Error(json.error);
 
@@ -99,8 +157,23 @@ window.AuxiliarLogic = {
                 let tarjetaLimpia = String(t0.Tarjeta || '').replace(/[^a-zA-Z0-9]/g, '');
                 const tarjetaRep = tarjetaLimpia.length >= 4 ? `****${tarjetaLimpia.slice(-4)}` : 'S/D';
 
+                // Índice de búsqueda profunda: expone TODOS los miembros del grupo (visible aun si la celda dice "Varios")
+                const norm = (v) => String(v ?? '').toLowerCase();
+                const todos = [...tsdArr, ...bancoArr];
+                const _filtro = {
+                    contrato: tsdArr.map(c => norm(c.Contrato)).join(' '),
+                    afiliado: todos.map(c => norm(c.Afiliado)).join(' '),
+                    auth: todos.map(c => norm(c.Autorizacion)).join(' '),
+                    tarjeta: todos.map(c => norm(c.Tarjeta).replace(/[^a-z0-9]/g, '')).join(' '),
+                    cliente: tsdArr.map(c => norm(c.Cliente)).join(' '),
+                    banco: bancoArr.map(c => norm(c.Banco)).join(' '),
+                    liquidacion: bancoArr.map(c => norm(c.Liquidacion)).join(' ')
+                };
+                _filtro.all = Object.values(_filtro).join(' ');
+
                 return {
                     _uid: g.IdMatchTSD,
+                    _filtro,
                     _rowClass: 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
                     Contrato: isMulti ? `Varios (${tsdArr.length} reg)` : (t0.Contrato || 'Solo Banco'),
                     Cliente: isMulti ? `Agrupación Múltiple` : (t0.Cliente || '-'),
@@ -117,7 +190,11 @@ window.AuxiliarLogic = {
                 };
             });
 
-            this.renderHistorialGrid();
+            this.historialMaster = this.currentHistorialData;
+            // En modo global SQL ya filtró (colación incluida): render directo, sin re-filtrar en JS
+            if (this.isGlobalMode) this.renderHistorialGrid();
+            else this.applyHistorialFilter();
+            this.updateGlobalBadge();
         } catch (error) {
             window.SysUI.alert("Error al cargar historial: " + error.message, "Fallo", "error");
         } finally {
@@ -184,10 +261,73 @@ window.AuxiliarLogic = {
         ];
 
         if (this.gridHistorial) this.gridHistorial.updateData(this.currentHistorialData);
-        else this.gridHistorial = new VanillaGrid("#table-historial-m4", this.currentHistorialData, columns, { 
-            searchInputId: "search-m4-historial",
-            onRowDblClick: (r) => window.AuxiliarLogic.openForenseModal(r) 
+        else {
+            this.gridHistorial = new VanillaGrid("#table-historial-m4", this.currentHistorialData, columns, { 
+                onRowDblClick: (r) => window.AuxiliarLogic.openForenseModal(r) 
+            });
+            this.bindHistorialFilter();
+        }
+    },
+
+    // --- FILTRO PROFUNDO DEL HISTORIAL (M4) ---
+    bindHistorialFilter: function() {
+        const input = document.getElementById('search-m4-historial');
+        const scope = document.getElementById('m4-hist-scope');
+        if (!input || !scope || input.dataset.bound) return;
+        input.dataset.bound = '1';
+
+        const labels = { contrato:'Contrato', afiliado:'Afiliado', auth:'Autorización', tarjeta:'Tarjeta', cliente:'Cliente', banco:'Banco', liquidacion:'Liquidación' };
+        let timer = null;
+        input.addEventListener('input', () => {
+            if (scope.value !== 'all') return; // Ámbitos específicos = SQL bajo demanda (Enter/lupa), jamás por tecla
+            clearTimeout(timer);
+            timer = setTimeout(() => this.applyHistorialFilter(), 250);
         });
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.triggerHistorialSearch(); });
+        scope.addEventListener('change', () => {
+            input.placeholder = scope.value === 'all' ? 'Buscar en todo el historial...' : `Buscar por ${labels[scope.value]} en toda la BD...`;
+            input.focus();
+            if (scope.value === 'all') this.applyHistorialFilter();
+        });
+    },
+
+    triggerHistorialSearch: function() {
+        const scope = document.getElementById('m4-hist-scope')?.value || 'all';
+        const term = (document.getElementById('search-m4-historial')?.value || '').trim();
+        if (scope === 'all') return this.applyHistorialFilter();
+        if (term.length < 3) return window.SysUI.alert("Ingrese al menos 3 caracteres para la búsqueda global.");
+        this.fetchHistorial({ field: scope, term });
+    },
+
+    updateGlobalBadge: function() {
+        const badge = document.getElementById('m4-hist-global-badge');
+        const dateBox = document.getElementById('m4-historial-date');
+        if (!badge) return;
+        badge.classList.toggle('hidden', !this.isGlobalMode);
+        badge.classList.toggle('inline-flex', !!this.isGlobalMode);
+        if (dateBox) dateBox.classList.toggle('opacity-40', !!this.isGlobalMode);
+    },
+
+    exitGlobalMode: function() {
+        this.isGlobalMode = false;
+        const input = document.getElementById('search-m4-historial');
+        if (input) input.value = '';
+        this.updateGlobalBadge();
+        if (document.getElementById('m4-historial-date').value) this.fetchHistorial();
+        else { this.historialMaster = []; this.currentHistorialData = []; this.renderHistorialGrid(); }
+    },
+
+    applyHistorialFilter: function() {
+        const term = (document.getElementById('search-m4-historial')?.value || '').toLowerCase().trim();
+        const scope = document.getElementById('m4-hist-scope')?.value || 'all';
+        // Tarjetas: comparación sin símbolos para que "1234" haga match con "****1234"
+        const needle = scope === 'tarjeta' ? term.replace(/[^a-z0-9]/g, '') : term;
+
+        this.currentHistorialData = !needle
+            ? (this.historialMaster || [])
+            : (this.historialMaster || []).filter(r => r._filtro && r._filtro[scope].includes(needle));
+
+        this.renderHistorialGrid();
     },
 
     fetchPendientes: async function() {
@@ -223,6 +363,30 @@ window.AuxiliarLogic = {
         const getCard = (str) => { const c = cleanStr(str).slice(-4); return c.length === 4 ? c : null; };
         const isBlacklisted = (idTsd, idTrans) => this.blacklist.includes(String(idTsd).trim() + '|' + String(idTrans).trim());
         const isSameMonto = (m1, m2) => Math.abs(parseFloat(m1) - parseFloat(m2)) < 2; 
+
+        // DETECTOR INTELIGENTE DE CATEGORÍAS (Contracargos / Devoluciones)
+        const detectCategory = (tArr, bArr) => {
+            let isContra = false; let isDevol = false;
+            const checkStr = (str) => String(str || '').toLowerCase();
+            
+            (tArr || []).forEach(t => {
+                const rec = checkStr(t.Recibo_Detalle);
+                if (rec.includes('contracargo') || rec.includes('chargeback')) isContra = true;
+                if (rec.includes('devolucion') || rec.includes('devolución') || rec.includes('refund') || rec.includes('reembolso')) isDevol = true;
+            });
+            
+            (bArr || []).forEach(b => {
+                const tipo = checkStr(b.TipoAjuste);
+                const desc = checkStr(b.Nombre_Sucursal_Comercio);
+                const just = checkStr(b.Justificacion);
+                if (tipo.includes('contracargo') || desc.includes('contracargo') || just.includes('contracargo')) isContra = true;
+                if (tipo.includes('devoluci') || desc.includes('devoluci') || just.includes('devoluci') || tipo.includes('remisión') || tipo.includes('remision')) isDevol = true;
+            });
+            
+            if (isContra) return 1; // Prioridad 1: Contracargos
+            if (isDevol) return 2;  // Prioridad 2: Devoluciones
+            return 3;               // Prioridad 3: Operación Regular
+        };
 
         // MOTOR DE DIBUJO (M4: Todo lo automático es sugerencia)
         const processMatch = (tsdRow, bancoRow, reason, justificacion = '') => {
@@ -283,10 +447,31 @@ window.AuxiliarLogic = {
                 diffReal = montoBanco < 0 ? -gap : gap;
             }
 
+            const catId = detectCategory(tsdArr, bancoArr);
+
+            // Propagar etiquetas a las sugerencias (Prioridad TSD, luego Banco)
+            const colorEtiq = t0.ColorEtiqueta || b0.ColorEtiqueta || null;
+            const notaEtiq = t0.NotaUsuario || b0.NotaUsuario || null;
+            const dbId = t0.ID_Transaccion || b0.IdTransaccion || null;
+
+            // Diccionario explícito para que Tailwind no borre las clases
+            const rowStyles = {
+                'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 border-b border-yellow-200 dark:border-yellow-900',
+                'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 border-b border-emerald-200 dark:border-emerald-900',
+                'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 border-b border-cyan-200 dark:border-cyan-900',
+                'slate': 'bg-slate-200 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700'
+            };
+
+            // Pintar color de fondo si tiene etiqueta y no es de alta prioridad (Contracargo/Devolución/Manual)
+            if (catId === 3 && colorEtiq && !bgColorClass.includes('font-bold')) { 
+                bgColorClass = rowStyles[colorEtiq] || bgColorClass;
+            }
+
             gridData.push({
                 _uid: 'row_' + Math.random().toString(36).substr(2, 9),
                 _tsdRaw: isMulti ? tsdArr : tsdArr[0], _bancoRaw: isMulti ? bancoArr : bancoArr[0], _isMulti: isMulti,
                 _rowClass: bgColorClass,
+                _categoriaId: catId, _dbId: dbId, _colorEtiq: colorEtiq, _notaEtiq: notaEtiq,
                 Contrato: contratoRep, Cliente: clienteRep, TarjetaTSD: tarjetaRep, Autorizacion: authTSDRep,
                 MontoTSD: { valor: montoTSD, recibo: isMulti ? '' : (t0.Recibo_Detalle || ''), valueOf: function() { return this.valor; }, toString: function() { return this.valor.toString(); } }, 
                 EstadoMatch: finalMatchType, Banco_Nombre: bancoRep, Banco_Auth: authBancoRep, Banco_Monto: montoBanco, 
@@ -401,8 +586,21 @@ window.AuxiliarLogic = {
         [...tsdData].forEach(tsdRow => {
             if (!procesadosTSDIds.includes(tsdRow._id)) {
                 const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+                const catId = detectCategory([tsdRow], []);
+                
+                const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700' };
+
+                let bgClass = '';
+                if (catId === 1) bgClass = 'bg-rose-50 dark:bg-rose-900/10 border-l-[3px] border-l-rose-500 border-b border-rose-200 dark:border-rose-900';
+                else if (catId === 2) bgClass = 'bg-fuchsia-50 dark:bg-fuchsia-900/10 border-l-[3px] border-l-fuchsia-500 border-b border-fuchsia-200 dark:border-fuchsia-900';
+                else if (tsdRow.ColorEtiqueta) {
+                    const tagObj = this.customTags.find(t => t.IdEtiqueta.toString() === tsdRow.ColorEtiqueta.toString());
+                    if (tagObj) bgClass = this.TW_COLORS[tagObj.ColorCSS] || '';
+                }
+
                 gridData.push({
-                    _uid: 'row_' + Math.random().toString(36).substr(2, 9), _tsdRaw: tsdRow, _bancoRaw: null, _rowClass: '', _isMulti: false,
+                    _uid: 'row_' + Math.random().toString(36).substr(2, 9), _tsdRaw: tsdRow, _bancoRaw: null, _rowClass: bgClass, _isMulti: false,
+                    _categoriaId: catId, _dbId: tsdRow.ID_Transaccion, _colorEtiq: tsdRow.ColorEtiqueta, _notaEtiq: tsdRow.NotaUsuario,
                     Contrato: tsdRow.Contrato, Cliente: tsdRow.Cliente, TarjetaTSD: getCard(tsdRow.Tarjeta_Ultimos4) ? `****${getCard(tsdRow.Tarjeta_Ultimos4)}` : 'S/D',
                     Autorizacion: tsdRow.Autorizacion, MontoTSD: { valor: montoTSD, recibo: tsdRow.Recibo_Detalle || '', valueOf: function(){return this.valor;}, toString: function(){return this.valor.toString();} },
                     EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
@@ -413,17 +611,39 @@ window.AuxiliarLogic = {
         [...bancosData].forEach(b => {
             if (!procesadosBancosIds.includes(b._id)) {
                 const m = parseFloat(b.Monto_Venta_Original);
+                const catId = detectCategory([], [b]);
+                
+                const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-400 italic border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 italic border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-400 italic border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 text-lime-700 dark:text-lime-400 italic border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 italic border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400 italic border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 text-cyan-700 dark:text-cyan-400 italic border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 italic border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-400 italic border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 italic border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 text-slate-700 dark:text-slate-400 italic border-b border-slate-300 dark:border-slate-700' };
+
+                let bgClass = 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800';
+                if (catId === 1) bgClass = 'bg-rose-50 dark:bg-rose-900/10 border-l-[3px] border-l-rose-500 text-rose-700 dark:text-rose-300 italic border-b border-rose-200 dark:border-rose-900';
+                else if (catId === 2) bgClass = 'bg-fuchsia-50 dark:bg-fuchsia-900/10 border-l-[3px] border-l-fuchsia-500 text-fuchsia-700 dark:text-fuchsia-300 italic border-b border-fuchsia-200 dark:border-fuchsia-900';
+                else if (b.ColorEtiqueta) {
+                    const tagObj = this.customTags.find(t => t.IdEtiqueta.toString() === b.ColorEtiqueta.toString());
+                    if (tagObj) bgClass = this.TW_COLORS[tagObj.ColorCSS] + ' italic';
+                }
+
                 gridData.push({
                     _uid: 'row_' + Math.random().toString(36).substr(2, 9), _tsdRaw: null, _bancoRaw: b, _isMulti: false,
-                    _rowClass: 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800', Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
-                    TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D', Autorizacion: '-', MontoTSD: 0,
+                    _categoriaId: catId, _dbId: b.IdTransaccion, _colorEtiq: b.ColorEtiqueta, _notaEtiq: b.NotaUsuario,
+                    _rowClass: bgClass, Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
+                    TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D', Autorizacion: '-', MontoTSD: { valor: 0, recibo: '', valueOf: function(){return this.valor;} },
                     EstadoMatch: 'Pendiente', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
                 });
             }
         });
 
-        // --- ORDENAMIENTO ESTRICTO DE 9 FASES ---
+        // --- ORDENAMIENTO ESTRICTO DE 9 FASES Y BLOQUES ---
         gridData.sort((a, b) => {
+            // 1. Categoría Principal (1: Contracargos, 2: Devoluciones, 3: Regulares)
+            if (a._categoriaId !== b._categoriaId) return a._categoriaId - b._categoriaId;
+            
+            // 2. Agrupación Semántica (Agrupar por ID de etiqueta, los etiquetados van primero)
+            const idA = a._colorEtiq ? parseInt(a._colorEtiq) : 999999;
+            const idB = b._colorEtiq ? parseInt(b._colorEtiq) : 999999;
+            if (idA !== idB) return idA - idB;
+
+            // 3. Peso original del algoritmo (Para los que tienen el mismo color o no tienen)
             const getWeight = (row) => {
                 const st = String(row.EstadoMatch);
                 if (st.startsWith('Manual')) return 0;
@@ -479,15 +699,81 @@ window.AuxiliarLogic = {
         const fmtMoney = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v||0).replace(/\./g, ' ');
 
         const columns = [
-            { title: "Contrato", field: "Contrato", width: 120, cssClass: "font-mono font-bold" },
-            { title: "Cliente", field: "Cliente", width: 160, cssClass: "truncate text-[10px]" },
+            { 
+                title: "Contrato", field: "Contrato", width: 150, cssClass: "font-mono font-bold pt-1",
+                formatter: (cell) => {
+                    // CÓDIGO CORREGIDO PARA VANILLAGRID
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    let badge = '';
+                    
+                    if (row._categoriaId === 1) {
+                        badge = `<span class="block mb-1 text-[9px] font-black uppercase text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30 px-1 py-0.5 rounded w-max border border-rose-200 dark:border-rose-800 tracking-wider shadow-sm select-none">🛑 Contracargo</span>`;
+                    } else if (row._categoriaId === 2) {
+                        badge = `<span class="block mb-1 text-[9px] font-black uppercase text-fuchsia-600 dark:text-fuchsia-400 bg-fuchsia-100 dark:bg-fuchsia-900/30 px-1 py-0.5 rounded w-max border border-fuchsia-200 dark:border-fuchsia-800 tracking-wider shadow-sm select-none">🔄 Devolución</span>`;
+                    } else if (row._colorEtiq) {
+                        const tagObj = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+                        if (tagObj) {
+                            const css = window.AuxiliarLogic.TW_COLORS[tagObj.ColorCSS] || window.AuxiliarLogic.TW_COLORS['slate'];
+                            badge = `<span class="block mb-1 text-[9px] font-black uppercase ${css} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none" title="${tagObj.Descripcion || ''}">🏷️ ${tagObj.Nombre}</span>`;
+                        }
+                    }
+                    
+                    const contHtml = String(val).includes('Varios') ? `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs inline-block mt-0.5">🔗 ${val}</span>` : val;
+                    return `<div>${badge}${contHtml}</div>`;
+                }
+            },
+            { 
+                title: "Cliente / Notas", field: "Cliente", width: 180, cssClass: "text-[10px]",
+                formatter: (cell) => {
+                    // CÓDIGO CORREGIDO PARA VANILLAGRID
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    const cleanVal = val || '-';
+
+                    // Evitar etiquetar agrupaciones múltiples para no desfasar IDs
+                    if(row._isMulti || !row._dbId) return `<div class="truncate" title="${cleanVal}">${cleanVal}</div>`;
+                    
+                    const noteStyles = { 'orange': 'text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700', 'amber': 'text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-700', 'yellow': 'text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700', 'lime': 'text-lime-600 dark:text-lime-400 border-lime-200 dark:border-lime-700', 'emerald': 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700', 'teal': 'text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-700', 'cyan': 'text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-700', 'blue': 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-700', 'indigo': 'text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-700', 'purple': 'text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-700', 'slate': 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-600' };
+                    const cssNota = noteStyles[row._colorEtiq] || noteStyles['slate'];
+                    
+                    // Usamos text wrapping para evitar que notas muy largas rompan la tabla
+                    // Color de la letra de la nota (Misma lógica pero extrayendo solo el color de texto)
+                    let textClass = 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-600';
+                    if (row._colorEtiq) {
+                        const tObj = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+                        if (tObj) textClass = `text-${tObj.ColorCSS}-700 dark:text-${tObj.ColorCSS}-300 border-${tObj.ColorCSS}-300 dark:border-${tObj.ColorCSS}-700`;
+                    }
+                    let notaHtml = row._notaEtiq ? `<div class="mt-1 text-[9px] font-bold ${textClass} italic leading-tight bg-white/50 dark:bg-black/20 p-1.5 rounded border shadow-sm break-words whitespace-normal max-w-full"><span class="mr-1">💬</span>${row._notaEtiq}</div>` : '';
+                    
+                    // Diseño mejorado: Botón sutil siempre visible (opacity-40) anclado a la derecha
+                    return `
+                    <div class="flex flex-col relative pr-6 min-h-[20px]">
+                        <div class="flex justify-between items-center">
+                            <span class="truncate" title="${val}">${val}</span>
+                        </div>
+                        <button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="absolute right-0 top-0 opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>
+                        ${notaHtml}
+                    </div>`;
+                }
+            },
+
             { title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center" },
             { 
-                title: "Monto TSD", field: "MontoTSD", width: 130, hozAlign: "right", bottomCalc: "sum", bottomCalcFormatter: "money",
+                title: "Monto TSD / Detalle", field: "MontoTSD", width: 150, hozAlign: "right", bottomCalc: "sum",
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
                 formatter: (cell) => {
-                    const val = cell.getValue();
-                    const valor = val && 'valor' in val ? val.valor : val;
-                    return `<span class="font-bold">${fmtMoney(valor)}</span>`;
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    const valor = typeof val === 'object' && val !== null && 'valor' in val ? val.valor : val;
+                    const recibo = typeof val === 'object' && val !== null && 'recibo' in val ? val.recibo : '';
+                    
+                    const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
+                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
+                },
+                // Filtro personalizado: Busca tanto por número como por el texto del recibo
+                headerFilterFunc: (term, val) => {
+                    const strVal = typeof val === 'object' && val !== null ? `${val.valor} ${val.recibo}` : String(val);
+                    return String(strVal).toLowerCase().includes(String(term).toLowerCase());
                 }
             },
             { 
@@ -1171,6 +1457,169 @@ window.AuxiliarLogic = {
             window.SysUI.alert("Error al cargar la trazabilidad: " + error.message, "Fallo", "error");
         } finally {
             document.body.classList.remove('cursor-wait');
+        }
+    },
+
+    openTagManager: async function() {
+        const paleta = ['slate', 'red', 'orange', 'amber', 'yellow', 'lime', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose'];
+        
+        let htmlList = `<div class="space-y-2 mb-4 max-h-[30vh] overflow-y-auto pr-2 custom-scrollbar">`;
+        if (this.customTags.length === 0) htmlList += `<div class="text-xs text-center text-slate-400 italic">No hay etiquetas creadas.</div>`;
+        
+        this.customTags.forEach(tag => {
+            const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
+            htmlList += `
+            <div class="flex justify-between items-center bg-white dark:bg-slate-700/50 p-2 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm">
+                <div>
+                    <span class="${css} px-2 py-0.5 rounded text-[10px] font-bold shadow-sm border select-none">🏷️ ${tag.Nombre}</span>
+                    <div class="text-[9px] text-slate-500 mt-1">${tag.Descripcion || 'Sin descripción'}</div>
+                </div>
+                <button onclick="window.AuxiliarLogic.deleteTag(${tag.IdEtiqueta})" class="text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/30 dark:hover:bg-red-900/50 p-1.5 rounded transition-colors" title="Eliminar">🗑️</button>
+            </div>`;
+        });
+        htmlList += `</div>`;
+
+        let colorPicker = `<div class="flex flex-wrap gap-2 mb-3">`;
+        paleta.forEach(c => {
+            colorPicker += `<div onclick="document.querySelectorAll('.pal-color').forEach(el=>el.classList.remove('ring-4', 'ring-slate-400', 'scale-110')); this.classList.add('ring-4', 'ring-slate-400', 'scale-110'); document.getElementById('new-tag-color').value='${c}';" class="pal-color w-6 h-6 rounded-full cursor-pointer transition-all bg-${c}-400 hover:bg-${c}-500 shadow-sm"></div>`;
+        });
+        colorPicker += `</div><input type="hidden" id="new-tag-color" value="">`;
+
+        const html = `
+            ${htmlList}
+            <div class="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                <h4 class="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-3">Crear Nueva Etiqueta</h4>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <input type="text" id="new-tag-name" placeholder="Nombre (Ej: Urgente)" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white outline-none">
+                    <input type="text" id="new-tag-desc" placeholder="Descripción (Opcional)" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-white outline-none">
+                </div>
+                <div class="text-[10px] font-bold text-slate-500 uppercase mb-2">Color del Sistema</div>
+                ${colorPicker}
+                <button id="btn-create-tag" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg text-xs shadow-md transition-colors mt-2">Guardar Nueva Etiqueta</button>
+            </div>
+        `;
+
+        // Eliminamos el overlay anterior si existe
+        if (this._tagModalOverlay) this._tagModalOverlay.remove();
+
+        const overlay = document.createElement('div');
+        this._tagModalOverlay = overlay;
+        overlay.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 opacity-0 transition-opacity duration-300 select-none';
+        
+        overlay.innerHTML = `
+            <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-lg overflow-hidden transform scale-95 transition-transform duration-300 flex flex-col">
+                <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
+                    <h3 class="text-base font-bold text-slate-800 dark:text-white">⚙️ Administrador de Etiquetas</h3>
+                    <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-red-500 transition-colors">✖</button>
+                </div>
+                <div class="p-6">${html}</div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        requestAnimationFrame(() => { overlay.classList.remove('opacity-0'); overlay.querySelector('div').classList.remove('scale-95'); });
+
+        // Evento de crear
+        document.getElementById('btn-create-tag').onclick = async () => {
+            const nombre = document.getElementById('new-tag-name').value.trim();
+            const desc = document.getElementById('new-tag-desc').value.trim();
+            const color = document.getElementById('new-tag-color').value;
+
+            if (!nombre || !color) return window.SysUI.alert("El nombre y el color son obligatorios.");
+
+            try {
+                const res = await fetch('api/mantenimiento_etiquetas_m4.php', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ Nombre: nombre, Descripcion: desc, ColorCSS: color })
+                });
+                const json = await res.json();
+                if(!json.success) throw new Error(json.error);
+                
+                overlay.remove();
+                await this.fetchTags(); // Recarga BD y Leyenda
+                this.openTagManager();  // Reabre para ver los cambios
+                this.runMatchingAlgorithm(this.lastTSD, this.lastBancos); // Reordenar tabla
+            } catch(e) { window.SysUI.alert("Error: " + e.message); }
+        };
+    },
+
+    deleteTag: async function(id) {
+        if(!confirm("¿Eliminar esta etiqueta? Las transacciones que la tengan volverán a la normalidad.")) return;
+        try {
+            const res = await fetch('api/mantenimiento_etiquetas_m4.php', {
+                method: 'DELETE', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ IdEtiqueta: id })
+            });
+            const json = await res.json();
+            if(!json.success) throw new Error(json.error);
+            
+            if (this._tagModalOverlay) this._tagModalOverlay.remove();
+            await this.fetchTags();
+            this.openTagManager();
+            this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+        } catch(e) { window.SysUI.alert("Error: " + e.message); }
+    },
+
+    openEtiquetaModal: async function(uid) {
+        // Buscar fila en Limbo Data
+        const row = this.currentLimboData.find(r => r._uid === uid);
+        if (!row || !row._dbId) return;
+
+        let selectHtml = `<div class="flex flex-wrap gap-2 mb-4 justify-center">`;
+        
+        // Botón "Sin Etiqueta"
+        selectHtml += `
+            <div onclick="document.querySelectorAll('.etiq-btn').forEach(el=>el.classList.remove('ring-2', 'ring-slate-500', 'scale-105')); this.classList.add('ring-2', 'ring-slate-500', 'scale-105'); document.getElementById('modal-etiq-color').value='';" 
+                 class="etiq-btn px-3 py-1.5 rounded-full cursor-pointer transition-all border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold shadow-sm select-none ${!row._colorEtiq ? 'ring-2 ring-slate-500 scale-105' : ''}">
+                 🚫 Sin Etiqueta
+            </div>`;
+
+        // Generar Píldoras con nombres desde BD
+        this.customTags.forEach(tag => {
+            const isSel = row._colorEtiq && row._colorEtiq.toString() === tag.IdEtiqueta.toString();
+            const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
+            selectHtml += `
+            <div onclick="document.querySelectorAll('.etiq-btn').forEach(el=>el.classList.remove('ring-2', 'ring-slate-500', 'scale-105')); this.classList.add('ring-2', 'ring-slate-500', 'scale-105'); document.getElementById('modal-etiq-color').value='${tag.IdEtiqueta}';" 
+                 class="etiq-btn px-3 py-1.5 rounded-full cursor-pointer transition-all shadow-sm border select-none ${css} ${isSel ? 'ring-2 ring-slate-500 scale-105' : ''}" title="${tag.Descripcion || ''}">
+                 ${tag.Nombre}
+            </div>`;
+        });
+        selectHtml += `</div><input type="hidden" id="modal-etiq-color" value="${row._colorEtiq || ''}">`;
+
+        const html = `
+            <div class="text-sm text-slate-600 dark:text-slate-300 mb-3 text-center">Clasifique la transacción para agruparla y escriba un detalle.</div>
+            ${selectHtml}
+            <textarea id="modal-etiq-nota" class="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none resize-none h-24 focus:ring-2 focus:ring-blue-500 shadow-inner" placeholder="Escriba su nota/investigación aquí...">${row._notaEtiq || ''}</textarea>
+        `;
+
+        const choice = await window.SysUI._createModal("🏷️ Etiqueta de Seguimiento", html, [
+            {text: 'Cancelar', value: null, class: 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white px-4 py-2 rounded-lg font-bold transition-colors'},
+            {text: 'Guardar Etiqueta', value: 'save', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
+        ], "info");
+
+        if (choice === 'save') {
+            const color = document.getElementById('modal-etiq-color').value;
+            const nota = document.getElementById('modal-etiq-nota').value.trim();
+
+            try {
+                const res = await fetch('api/save_etiqueta_m4.php', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: row._dbId, color: color, nota: nota })
+                });
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error);
+
+                // Modificar el origen real (RAM maestra) para que no se pierda al re-dibujar
+                const tMatch = this.lastTSD.find(t => t.ID_Transaccion === row._dbId);
+                if (tMatch) { tMatch.ColorEtiqueta = color; tMatch.NotaUsuario = nota; }
+                
+                const bMatch = this.lastBancos.find(b => b.IdTransaccion === row._dbId);
+                if (bMatch) { bMatch.ColorEtiqueta = color; bMatch.NotaUsuario = nota; }
+
+                // Re-evaluar todo el algoritmo para que las filas, sugerencias y CSS se regeneren automáticamente
+                this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+            } catch (err) {
+                window.SysUI.alert("Error al guardar la etiqueta: " + err.message, "Fallo", "error");
+            }
         }
     }
 };
