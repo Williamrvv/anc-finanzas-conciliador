@@ -1765,13 +1765,12 @@ window.AuxiliarLogic = {
     abrirMenuEtiquetas: function(row, e, menu) {
         if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan con el botón 🏷️
 
-        // Contracargos/Devoluciones automáticas: la clasificación no cambia, pero SÍ se agregan datos
+        // Contracargos/Devoluciones son SUGERENCIAS: se avisa, pero se pueden reemplazar abajo
         if (row._categoriaId === 1 || row._categoriaId === 2) {
             const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
             menu.insertAdjacentHTML('beforeend', `
                 <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
-                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🔒 Automática: <b>${nombre}</b> — para notas, marque la fila y use 📝 Agregar nota</div>`);
-            return;
+                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🤖 Sugerencia automática: <b>${nombre}</b>. Elegir otra etiqueta la reemplaza; quitarla la devuelve.</div>`);
         }
 
         const css = (c) => this.TW_COLORS[c] || this.TW_COLORS['slate'];
