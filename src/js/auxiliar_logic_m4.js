@@ -95,13 +95,12 @@ window.AuxiliarLogic = {
         const old = document.getElementById('etiq-legend');
         if (old) old.remove();
 
-        if (this.customTags.length === 0) return;
-        
-        let html = '<div id="etiq-legend" class="flex flex-wrap gap-2 p-2 mb-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 items-center animate-fade-in-up"><span class="text-[10px] font-bold uppercase text-slate-500 mr-1">Etiquetas de Transacción:</span>';
+        let html = '<div id="etiq-legend" class="flex flex-wrap gap-2.5 p-2.5 mb-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 items-center animate-fade-in-up"><span class="text-xs font-bold uppercase text-slate-500 mr-1">Etiquetas:</span>';
         this.customTags.forEach(tag => {
             const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
-            html += `<span class="${css} border-b-2 px-2 py-0.5 rounded text-[9px] font-bold whitespace-nowrap shadow-sm select-none" title="${tag.Descripcion}">🏷️ ${tag.Nombre}</span>`;
+            html += `<span onclick="window.AuxiliarLogic.openTagManager()" class="${css} border-b-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-pointer hover:scale-105 hover:shadow-md transition-transform" title="${tag.Descripcion || ''} — Clic para administrar etiquetas">🏷️ ${tag.Nombre}</span>`;
         });
+        html += `<span onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="border border-dashed border-blue-300 dark:border-blue-700 text-blue-500 hover:text-white hover:bg-blue-500 hover:border-blue-500 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap cursor-pointer select-none transition-colors" title="Escribe una nota para las transacciones marcadas con ✓ en la tabla de pendientes">📝 Agregar nota</span>`;
         html += '</div>';
         container.children[0].insertAdjacentHTML('afterend', html);
     },
@@ -264,7 +263,18 @@ window.AuxiliarLogic = {
 
         const columns = [
             { title: "Contrato", field: "Contrato", width: 120, cssClass: "font-mono font-bold" },
-            { title: "Cliente", field: "Cliente", width: 160, cssClass: "truncate text-[10px]" },
+            { 
+                title: "Cliente / Notas", field: "Cliente", width: 180, cssClass: "text-[10px]",
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    const val = (typeof cell === 'object' && cell.getValue ? cell.getValue() : cell) || '-';
+                    let nota = '';
+                    if (row._notaEtiq) {
+                        nota = `<div class="mt-1 text-[9px] font-bold italic leading-tight text-slate-600 dark:text-slate-300 bg-white/60 dark:bg-black/20 p-1 rounded border border-slate-200 dark:border-slate-600 break-words whitespace-normal max-w-full"><span class="mr-1">💬</span>${row._notaEtiq}</div>`;
+                    }
+                    return `<div><span class="truncate" title="${val}">${val}</span>${nota}</div>`;
+                }
+            },
             { title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center" },
             { 
                 title: "Monto TSD", field: "MontoTSD", width: 130, hozAlign: "right", bottomCalc: "sum",
@@ -507,10 +517,13 @@ window.AuxiliarLogic = {
                 diffReal = montoBanco < 0 ? -gap : gap;
             }
 
-            const catId = detectCategory(tsdArr, bancoArr);
+            let catId = detectCategory(tsdArr, bancoArr);
 
             // Propagar etiquetas a las sugerencias (Prioridad TSD, luego Banco)
             const colorEtiq = t0.ColorEtiqueta || b0.ColorEtiqueta || null;
+            // La etiqueta puesta por el usuario MANDA sobre la sugerencia automática
+            if (colorEtiq && (catId === 1 || catId === 2)) catId = 3;
+
             const notaEtiq = t0.NotaUsuario || b0.NotaUsuario || null;
             const dbId = t0.ID_Transaccion || b0.IdTransaccion || null;
 
@@ -646,7 +659,9 @@ window.AuxiliarLogic = {
         [...tsdData].forEach(tsdRow => {
             if (!procesadosTSDIds.includes(tsdRow._id)) {
                 const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
-                const catId = detectCategory([tsdRow], []);
+                let catId = detectCategory([tsdRow], []);
+                // La etiqueta puesta por el usuario MANDA sobre la sugerencia automática
+                if (tsdRow.ColorEtiqueta && (catId === 1 || catId === 2)) catId = 3;
                 
                 const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700' };
 
@@ -670,7 +685,9 @@ window.AuxiliarLogic = {
         [...bancosData].forEach(b => {
             if (!procesadosBancosIds.includes(b._id)) {
                 const m = parseFloat(b.Monto_Venta_Original);
-                const catId = detectCategory([], [b]);
+                let catId = detectCategory([], [b]);
+                // La etiqueta puesta por el usuario MANDA sobre la sugerencia automática
+                if (b.ColorEtiqueta && (catId === 1 || catId === 2)) catId = 3;
                 
                 const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-400 italic border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 italic border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-400 italic border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 text-lime-700 dark:text-lime-400 italic border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 italic border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400 italic border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 text-cyan-700 dark:text-cyan-400 italic border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 italic border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-400 italic border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 italic border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 text-slate-700 dark:text-slate-400 italic border-b border-slate-300 dark:border-slate-700' };
 
@@ -851,7 +868,15 @@ window.AuxiliarLogic = {
             { title: "Banco", field: "Banco_Nombre", width: 90, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
             { title: "Auth Banco", field: "Banco_Auth", width: 90, cssClass: "font-mono", hozAlign: "center" },
             { title: "Monto", field: "Banco_Monto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
-            { title: "Dif", field: "Diferencia", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-500" }
+            { title: "Dif", field: "Diferencia", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-500" },
+            {
+                title: "📝 Nota", field: "_notaEtiq", width: 200, cssClass: "text-[10px]",
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val) return '<span class="text-slate-300 dark:text-slate-600">-</span>';
+                    return `<div class="italic font-medium text-slate-600 dark:text-slate-300 break-words whitespace-normal leading-tight" title="${val}">💬 ${val}</div>`;
+                }
+            }
         ];
 
         if (this.gridSug) this.gridSug.updateData(this.currentSugData);
@@ -1541,7 +1566,7 @@ window.AuxiliarLogic = {
                     <div class="text-[9px] text-slate-500 mt-1">${tag.Descripcion || 'Sin descripción'}</div>
                 </div>
                 <div class="flex items-center gap-1.5">
-                    <select onchange="window.AuxiliarLogic.updateTagColor(${tag.IdEtiqueta}, this.value)" title="Cambiar color" class="text-[10px] border border-slate-200 dark:border-slate-600 rounded p-1 outline-none cursor-pointer text-slate-800" style="background-color:${(window.AuxiliarLogic.COLORES_ES[tag.ColorCSS] || {}).hex || '#e2e8f0'}">
+                    <select onchange="this.style.backgroundColor=(window.AuxiliarLogic.COLORES_ES[this.value]||{}).hex||'#e2e8f0'; window.AuxiliarLogic.updateTagColor(${tag.IdEtiqueta}, this.value)" title="Cambiar color" class="text-[10px] border border-slate-200 dark:border-slate-600 rounded p-1 outline-none cursor-pointer text-slate-800" style="background-color:${(window.AuxiliarLogic.COLORES_ES[tag.ColorCSS] || {}).hex || '#e2e8f0'}">
                         ${Object.entries(window.AuxiliarLogic.COLORES_ES).map(([c, info]) => `<option value="${c}" style="background-color:${info.hex};color:#1e293b" ${tag.ColorCSS === c ? 'selected' : ''}>⬤ ${info.nombre}</option>`).join('')}
                     </select>
                     <button onclick="window.AuxiliarLogic.editTag(${tag.IdEtiqueta})" class="text-blue-500 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 p-1.5 rounded transition-colors" title="Editar nombre y descripción">✏️</button>
@@ -1690,6 +1715,52 @@ window.AuxiliarLogic = {
         } catch(e) { window.SysUI.alert("Error: " + e.message); }
     },
 
+    // --- NOTA MASIVA: aplica una nota a todas las filas marcadas con ✓ ---
+    abrirNotaMasiva: async function() {
+        // Lee la selección REAL de la tabla (las celdas pintadas de azul, como en Excel)
+        const idx = new Set();
+        if (this.gridLimbo && this.gridLimbo.selection) {
+            this.gridLimbo.selection.forEach(td => { if (td.dataset && td.dataset.r !== undefined) idx.add(parseInt(td.dataset.r)); });
+        }
+        const sel = [...idx].map(i => this.gridLimbo.displayData[i]).filter(r => r && r._dbId);
+        if (sel.length === 0) {
+            return window.SysUI.alert("Primero seleccione una o varias celdas (clic o arrastre) en las filas de la tabla de pendientes.", "Sin selección", "info");
+        }
+
+        // Precarga la nota existente de la primera seleccionada (si la hay)
+        this._notaTmp = sel[0]._notaEtiq || '';
+        const html = `
+            <div class="text-left space-y-2">
+                <div class="text-xs text-slate-500">La nota se aplicará a <b>${sel.length}</b> transacción(es). Si alguna ya tenía nota, se actualizará.</div>
+                <textarea oninput="window.AuxiliarLogic._notaTmp = this.value" rows="3" maxlength="255" placeholder="Escriba la nota..." class="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">${this._notaTmp}</textarea>
+            </div>`;
+
+        const choice = await window.SysUI._createModal("📝 Agregar / Actualizar Nota", html, [
+            {text: 'Cancelar', value: null, class: 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white px-4 py-2 rounded-lg font-bold transition-colors'},
+            {text: 'Guardar Nota', value: 'save', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
+        ], "info");
+        if (choice !== 'save') return;
+
+        const nota = (this._notaTmp || '').trim();
+        try {
+            // Guarda en base de datos (conservando el color que ya tenga cada fila)
+            await Promise.all(sel.map(r => fetch('api/save_etiqueta_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: r._dbId, color: r._colorEtiq || '', nota: nota })
+            }).then(x => x.json()).then(j => { if (!j.success) throw new Error(j.error); })));
+
+            // La fila visible se estampa de una vez, y la memoria queda al día para el repintado
+            sel.forEach(r => {
+                r._notaEtiq = nota;
+                const t = this.lastTSD.find(x => x.ID_Transaccion === r._dbId); if (t) t.NotaUsuario = nota;
+                const b = this.lastBancos.find(x => x.IdTransaccion === r._dbId); if (b) b.NotaUsuario = nota;
+            });
+            this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+        } catch (e) {
+            window.SysUI.alert("No se pudo guardar la nota: " + e.message, "Fallo", "error");
+        }
+    },
+
     // --- SECCIÓN DE ETIQUETAS DENTRO DEL MENÚ NATIVO DE LA TABLA ---
     abrirMenuEtiquetas: function(row, e, menu) {
         if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan con el botón 🏷️
@@ -1699,8 +1770,7 @@ window.AuxiliarLogic = {
             const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
             menu.insertAdjacentHTML('beforeend', `
                 <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
-                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🔒 Automática: <b>${nombre}</b></div>
-                <div onclick="document.getElementById('vg-context-menu')?.remove(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">✏️ Agregar nota / datos...</div>`);
+                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🔒 Automática: <b>${nombre}</b> — para notas, marque la fila y use 📝 Agregar nota</div>`);
             return;
         }
 
@@ -1716,8 +1786,7 @@ window.AuxiliarLogic = {
             <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
             <div class="px-3 py-1 text-[10px] font-bold uppercase text-slate-400">🏷️ Etiquetar</div>
             ${items || '<div class="px-3 py-1.5 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
-            <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">🚫 Quitar etiqueta</div>
-            <div onclick="document.getElementById('vg-context-menu')?.remove(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">✏️ Etiqueta con nota...</div>`);
+            <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">🚫 Quitar etiqueta</div>`);
     },
 
     asignarEtiquetaRapida: async function(uid, idEtiqueta) {

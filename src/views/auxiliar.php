@@ -26,9 +26,6 @@
             <button id="tab-m4-bandeja" onclick="window.AuxiliarLogic.switchTab('bandeja')" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all flex items-center gap-2">⚖️ Pendientes de conciliar</button>
             <button id="tab-m4-historial" onclick="window.AuxiliarLogic.switchTab('historial')" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">📚 Historial de conciliados</button>
         </div>
-        <button id="btn-manage-tags" onclick="window.AuxiliarLogic.openTagManager()" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-2">
-            ⚙️ Configurar Etiquetas
-        </button>
     </div>
 
     <!-- VISTA 1: BANDEJA PRINCIPAL (Por defecto) -->
