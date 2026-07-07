@@ -77,6 +77,7 @@ window.AuxiliarLogic = {
         'purple': 'bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-900',
         'fuchsia': 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-300 dark:bg-fuchsia-900/20 dark:text-fuchsia-400 dark:border-fuchsia-900',
         'pink': 'bg-pink-50 text-pink-700 border-pink-300 dark:bg-pink-900/20 dark:text-pink-400 dark:border-pink-900',
+        'rose': 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-900',
         'slate': 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800/80 dark:text-slate-400 dark:border-slate-700'
     },
 
@@ -227,9 +228,21 @@ window.AuxiliarLogic = {
                 };
                 _filtro.all = Object.values(_filtro).join(' ');
 
+                // Dimensiones para los filtros universales y miembros para los gráficos
+                const uniq = (arr) => [...new Set(arr.filter(x => x))];
+                const _dims = {
+                    bancos: uniq(bancoArr.map(c => c.Banco)),
+                    tarjetas: uniq(todos.map(c => c.TipoTarjeta)),
+                    ccs: uniq(todos.map(c => c.CentroCosto)),
+                    sucs: uniq(todos.map(c => c.Sucursal))
+                };
+
                 return {
                     _uid: g.IdMatchTSD,
                     _filtro,
+                    _dims,
+                    _tsdArr: tsdArr,
+                    _bancoArr: bancoArr,
                     _rowClass: 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
                     Contrato: isMulti ? `Varios (${tsdArr.length} reg)` : (t0.Contrato || 'Solo Banco'),
                     Cliente: isMulti ? `Agrupación Múltiple` : (t0.Cliente || '-'),
@@ -247,9 +260,8 @@ window.AuxiliarLogic = {
             });
 
             this.historialMaster = this.currentHistorialData;
-            // En modo global SQL ya filtró (colación incluida): render directo, sin re-filtrar en JS
-            if (this.isGlobalMode) this.renderHistorialGrid();
-            else this.applyHistorialFilter();
+            this.poblarFiltrosHist(); // Los selects se llenan con lo que trae la propia información
+            this.applyHistorialFilter(); // Filtros universales + búsqueda + dashboards, en modo normal y global
             this.updateGlobalBadge();
         } catch (error) {
             window.SysUI.alert("Error al cargar historial: " + error.message, "Fallo", "error");
@@ -390,11 +402,127 @@ window.AuxiliarLogic = {
         // Tarjetas: comparación sin símbolos para que "1234" haga match con "****1234"
         const needle = scope === 'tarjeta' ? term.replace(/[^a-z0-9]/g, '') : term;
 
-        this.currentHistorialData = !needle
+        let data = !needle
             ? (this.historialMaster || [])
             : (this.historialMaster || []).filter(r => r._filtro && r._filtro[scope].includes(needle));
 
+        // FILTROS UNIVERSALES: la tabla y los gráficos beben de la misma agua
+        const fv = (id) => document.getElementById(id)?.value || '';
+        const fB = fv('fh-banco'), fT = fv('fh-tarjeta'), fC = fv('fh-cc'), fS = fv('fh-sucursal');
+        if (fB) data = data.filter(r => r._dims && r._dims.bancos.includes(fB));
+        if (fT) data = data.filter(r => r._dims && r._dims.tarjetas.includes(fT));
+        if (fC) data = data.filter(r => r._dims && r._dims.ccs.includes(fC));
+        if (fS) data = data.filter(r => r._dims && r._dims.sucs.includes(fS));
+
+        this.currentHistorialData = data;
         this.renderHistorialGrid();
+        this.renderHistorialDash(data);
+    },
+
+    // Llena los selects con lo que trae la propia información (nada viene de afuera)
+    poblarFiltrosHist: function() {
+        const master = this.historialMaster || [];
+        const juntar = (k) => [...new Set(master.flatMap(r => (r._dims && r._dims[k]) || []))].sort();
+        const llenar = (id, lista, etiqueta) => {
+            const sel = document.getElementById(id);
+            if (!sel) return;
+            const prev = sel.value;
+            sel.innerHTML = `<option value="">${etiqueta}: Todos</option>` + lista.map(v => `<option value="${v}">${v}</option>`).join('');
+            if (lista.includes(prev)) sel.value = prev; // Conserva la selección si sigue existiendo
+        };
+        llenar('fh-banco', juntar('bancos'), '🏦 Banco');
+        llenar('fh-tarjeta', juntar('tarjetas'), '💳 Tarjeta');
+        llenar('fh-cc', juntar('ccs'), '🏢 Centro de Costo');
+        llenar('fh-sucursal', juntar('sucs'), '📍 Sucursal');
+    },
+
+    limpiarFiltrosHist: function() {
+        ['fh-banco', 'fh-tarjeta', 'fh-cc', 'fh-sucursal'].forEach(id => {
+            const s = document.getElementById(id); if (s) s.value = '';
+        });
+        this.applyHistorialFilter();
+    },
+
+    // Dashboards con barras hechas en casa (sin librerías, todo del propio sistema)
+    renderHistorialDash: function(data) {
+        const cont = document.getElementById('dash-m4-hist');
+        if (!cont) return;
+        const fmt = (n) => '₡' + Math.round(n).toLocaleString('es-CR');
+
+        if (!data || data.length === 0) {
+            cont.innerHTML = '<div class="col-span-full text-center text-xs italic text-slate-400 py-6">Sin datos para los filtros seleccionados.</div>';
+            return;
+        }
+
+        // --- INGRESOS POR CENTRO DE COSTO (Top 12 + Otros) ---
+        const porCC = {};
+        data.forEach(r => {
+            if (r._tsdArr && r._tsdArr.length > 0) {
+                r._tsdArr.forEach(t => { const k = t.CentroCosto || 'Sin CC'; porCC[k] = (porCC[k] || 0) + (Number(t.MontoCRC) || 0); });
+            } else {
+                (r._bancoArr || []).forEach(b => { const k = b.CentroCosto || 'Sin CC'; porCC[k] = (porCC[k] || 0) + (Number(b.MontoBrutoBanco) || 0); });
+            }
+        });
+        let listaCC = Object.entries(porCC).sort((a, b) => b[1] - a[1]);
+        let otros = 0, otrosN = 0;
+        if (listaCC.length > 12) {
+            listaCC.slice(12).forEach(x => { otros += x[1]; otrosN++; });
+            listaCC = listaCC.slice(0, 12);
+        }
+        const maxCC = Math.max(...listaCC.map(x => Math.abs(x[1])), Math.abs(otros), 1);
+        let htmlCC = listaCC.map(([cc, val]) => `
+            <div class="flex items-center gap-2 text-[10px]">
+                <span class="w-24 truncate font-mono text-slate-500" title="${cc}">${cc}</span>
+                <div class="flex-1 bg-slate-100 dark:bg-slate-700 rounded h-3.5 overflow-hidden">
+                    <div style="width:${Math.max(2, Math.abs(val) / maxCC * 100)}%;background:#6366f1;height:100%"></div>
+                </div>
+                <span class="w-24 text-right font-bold text-slate-700 dark:text-slate-200">${fmt(val)}</span>
+            </div>`).join('');
+        if (otrosN > 0) htmlCC += `
+            <div class="flex items-center gap-2 text-[10px] opacity-70">
+                <span class="w-24 truncate font-mono text-slate-400">Otros (${otrosN} CC)</span>
+                <div class="flex-1 bg-slate-100 dark:bg-slate-700 rounded h-3.5 overflow-hidden">
+                    <div style="width:${Math.max(2, Math.abs(otros) / maxCC * 100)}%;background:#94a3b8;height:100%"></div>
+                </div>
+                <span class="w-24 text-right font-bold text-slate-500">${fmt(otros)}</span>
+            </div>`;
+
+        // --- POR BANCO: Bruto, Comisiones, Retenciones, Neto ---
+        const porBanco = {};
+        data.forEach(r => (r._bancoArr || []).forEach(b => {
+            const k = b.Banco || '?';
+            if (!porBanco[k]) porBanco[k] = { bruto: 0, com: 0, ret: 0, neto: 0 };
+            porBanco[k].bruto += Number(b.MontoBrutoBanco) || 0;
+            porBanco[k].com  += Number(b.Comision) || 0;
+            porBanco[k].ret  += Number(b.Retenciones) || 0;
+            porBanco[k].neto += Number(b.MontoNetoBanco) || 0;
+        }));
+        const barra = (label, val, base, color) => `
+            <div class="flex items-center gap-2 text-[10px]">
+                <span class="w-20 text-slate-500">${label}</span>
+                <div class="flex-1 bg-slate-100 dark:bg-slate-700 rounded h-3 overflow-hidden">
+                    <div style="width:${Math.max(2, Math.min(100, Math.abs(val) / Math.max(Math.abs(base), 1) * 100))}%;background:${color};height:100%"></div>
+                </div>
+                <span class="w-24 text-right font-bold text-slate-700 dark:text-slate-200">${fmt(val)}</span>
+            </div>`;
+        const htmlBancos = Object.entries(porBanco).map(([banco, v]) => `
+            <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-2 space-y-1.5">
+                <div class="text-xs font-black uppercase text-slate-600 dark:text-slate-300">🏦 ${banco}</div>
+                ${barra('Bruto', v.bruto, v.bruto, '#3b82f6')}
+                ${barra('Comisiones', v.com, v.bruto, '#f59e0b')}
+                ${barra('Retenciones', v.ret, v.bruto, '#ef4444')}
+                ${barra('Neto', v.neto, v.bruto, '#10b981')}
+            </div>`).join('') || '<div class="text-xs italic text-slate-400 p-2">Sin transacciones bancarias en la selección.</div>';
+
+        cont.innerHTML = `
+            <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                <div class="text-xs font-bold uppercase text-slate-500 mb-2">💰 Ingresos por Centro de Costo</div>
+                <div class="space-y-1.5 max-h-64 overflow-y-auto pr-1">${htmlCC}</div>
+            </div>
+            <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                <div class="text-xs font-bold uppercase text-slate-500 mb-2">🏦 Por Banco: Bruto · Comisiones · Retenciones · Neto</div>
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-2">${htmlBancos}</div>
+            </div>`;
     },
 
     fetchPendientes: async function() {
@@ -537,7 +665,11 @@ window.AuxiliarLogic = {
 
             // Pintar color de fondo si tiene etiqueta y no es de alta prioridad (Contracargo/Devolución/Manual)
             if (catId === 3 && colorEtiq && !bgColorClass.includes('font-bold')) { 
-                bgColorClass = rowStyles[colorEtiq] || bgColorClass;
+                // colorEtiq guarda el NÚMERO de la etiqueta: se traduce a su color real en la paleta
+                const tagSug = this.customTags.find(t => t.IdEtiqueta.toString() === colorEtiq.toString());
+                if (tagSug && this.TW_COLORS[tagSug.ColorCSS]) {
+                    bgColorClass = this.TW_COLORS[tagSug.ColorCSS] + ' border-b';
+                }
             }
 
             gridData.push({

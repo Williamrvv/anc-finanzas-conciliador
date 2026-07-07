@@ -38,6 +38,13 @@ try {
             COALESCE(t.Tarjeta_Ultimos4, b.NUMERO_DE_TARJETA, s.Numero_Tarjeta, m.Tarjeta) AS Tarjeta,
             COALESCE(m.Afiliado_MerID, CAST(b.NUMERO_AFILIADO AS VARCHAR(50)), CAST(s.MerID AS VARCHAR(50))) AS Afiliado,
             COALESCE(CAST(b.NUMERO_LIQUIDACION AS VARCHAR(50)), CAST(s.Numero_Pago AS VARCHAR(50))) AS Liquidacion,
+            COALESCE(t.CentroCosto, b.CentroCosto, s.CentroCosto) AS CentroCosto,
+            COALESCE(t.SucursalNombre, d.NombreSucursal) AS Sucursal,
+            COALESCE(t.TipoTarjeta, b.TIPO_TARJETA) AS TipoTarjeta,
+            COALESCE(b.MONTO_VENTA, s.Monto_Bruto) AS MontoBrutoBanco,
+            COALESCE(b.COMISION, s.Monto_Comision_Total) AS Comision,
+            (ISNULL(b.RETENCION_VENTAS,0) + ISNULL(b.RETENCION_RENTA,0) + ISNULL(s.Monto_Retencion_IVA,0) + ISNULL(s.Monto_Retencion_ISR,0)) AS Retenciones,
+            COALESCE(b.MONTONETO, s.Monto_Neto) AS MontoNetoBanco,
             c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio,
             a.Justificacion, a.EvidenciaB64
         FROM Tbl_Transacciones_Maestra m
@@ -46,7 +53,8 @@ try {
         LEFT JOIN Tbl_Detalle_TSD t ON m.IdTransaccion = t.IdTransaccion AND m.Banco = 'TSD'
         LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion AND m.Banco = 'BAC'
         LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion AND m.Banco = 'Davibank'
-        WHERE m.IdMatchTSD IS NOT NULL 
+        LEFT JOIN Tbl_Diccionario_Afiliados d ON d.Afiliado = m.Afiliado_MerID
+        WHERE m.IdMatchTSD IS NOT NULL
           AND m.TipoCruceTSD LIKE '%[AUX]%'
           AND c.ConsolidadoTSD IS NOT NULL
     ";

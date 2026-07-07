@@ -132,6 +132,18 @@
                 <span class="text-lg">📚</span>
                 <h3 class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Historial de Ajustes Manuales y Conciliaciones (M4)</h3>
             </div>
+            <!-- FILTROS UNIVERSALES + DASHBOARDS DEL HISTORIAL -->
+            <div class="p-3 space-y-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs font-bold uppercase text-slate-500">Filtros:</span>
+                    <select id="fh-banco" onchange="window.AuxiliarLogic.applyHistorialFilter()" class="text-xs p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-white outline-none cursor-pointer"></select>
+                    <select id="fh-tarjeta" onchange="window.AuxiliarLogic.applyHistorialFilter()" class="text-xs p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-white outline-none cursor-pointer"></select>
+                    <select id="fh-cc" onchange="window.AuxiliarLogic.applyHistorialFilter()" class="text-xs p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-white outline-none cursor-pointer"></select>
+                    <select id="fh-sucursal" onchange="window.AuxiliarLogic.applyHistorialFilter()" class="text-xs p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-white outline-none cursor-pointer"></select>
+                    <button onclick="window.AuxiliarLogic.limpiarFiltrosHist()" class="text-xs font-bold text-slate-500 hover:text-red-500 border border-slate-300 dark:border-slate-600 px-2 py-1.5 rounded-lg transition-colors">✕ Limpiar</button>
+                </div>
+                <div id="dash-m4-hist" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+            </div>
             <div id="table-historial-m4" style="height: 600px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
     </div> <!-- FIN VISTA 2 -->
