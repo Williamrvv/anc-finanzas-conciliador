@@ -445,84 +445,116 @@ window.AuxiliarLogic = {
 
     // Dashboards con barras hechas en casa (sin librerías, todo del propio sistema)
     renderHistorialDash: function(data) {
-        const cont = document.getElementById('dash-m4-hist');
-        if (!cont) return;
+        if (typeof Chart === 'undefined') return;
         const fmt = (n) => '₡' + Math.round(n).toLocaleString('es-CR');
+        const dark = document.documentElement.classList.contains('dark');
+        const tick = dark ? '#94a3b8' : '#475569';
 
-        if (!data || data.length === 0) {
-            cont.innerHTML = '<div class="col-span-full text-center text-xs italic text-slate-400 py-6">Sin datos para los filtros seleccionados.</div>';
-            return;
-        }
-
-        // --- INGRESOS POR CENTRO DE COSTO (Top 12 + Otros) ---
+        // Anti-duplicidad: cada lado se cuenta UNA vez. TSD desde _tsdArr, banco desde _bancoArr.
+        let totalTSD = 0, totalBanco = 0, totalCom = 0, totalRet = 0;
         const porCC = {};
-        data.forEach(r => {
-            if (r._tsdArr && r._tsdArr.length > 0) {
-                r._tsdArr.forEach(t => { const k = t.CentroCosto || 'Sin CC'; porCC[k] = (porCC[k] || 0) + (Number(t.MontoCRC) || 0); });
-            } else {
-                (r._bancoArr || []).forEach(b => { const k = b.CentroCosto || 'Sin CC'; porCC[k] = (porCC[k] || 0) + (Number(b.MontoBrutoBanco) || 0); });
+        const ccNombre = {}; // Traducción: código de CC -> nombre de sucursal
+        const porEntidad = {}; // { 'BAC': {tsd, banco}, ... }
+        const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
+
+        (data || []).forEach(r => {
+            (r._tsdArr || []).forEach(t => { totalTSD += Number(t.MontoCRC) || 0; });
+            (r._bancoArr || []).forEach(b => {
+                const monto = Number(b.MontoBrutoBanco) || 0;
+                totalBanco += monto;
+                totalCom += Number(b.Comision) || 0;
+                totalRet += Number(b.Retenciones) || 0;
+                // Centro de Costo: SOLO del banco (única fuente real)
+                const cc = b.CentroCosto || 'Sin CC';
+                porCC[cc] = (porCC[cc] || 0) + monto;
+                if (cc !== 'Sin CC' && b.Sucursal) ccNombre[cc] = b.Sucursal; // Guarda el nombre para mostrarlo
+                const bk = b.Banco || '?';
+                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
+                porBanco[bk].bruto += monto;
+                porBanco[bk].com += Number(b.Comision) || 0;
+                porBanco[bk].ret += Number(b.Retenciones) || 0;
+                porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
+                if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 };
+                porEntidad[bk].banco += monto;
+            });
+            // El TSD del grupo se atribuye a la(s) entidad(es) bancaria(s) con que casó
+            const bancosGrupo = [...new Set((r._bancoArr || []).map(b => b.Banco).filter(Boolean))];
+            const tsdGrupo = (r._tsdArr || []).reduce((a, t) => a + (Number(t.MontoCRC) || 0), 0);
+            if (bancosGrupo.length && tsdGrupo) {
+                const parte = tsdGrupo / bancosGrupo.length;
+                bancosGrupo.forEach(bk => { if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 }; porEntidad[bk].tsd += parte; });
+            } else if (tsdGrupo) {
+                if (!porEntidad['Solo TSD']) porEntidad['Solo TSD'] = { tsd: 0, banco: 0 };
+                porEntidad['Solo TSD'].tsd += tsdGrupo;
             }
         });
-        let listaCC = Object.entries(porCC).sort((a, b) => b[1] - a[1]);
-        let otros = 0, otrosN = 0;
-        if (listaCC.length > 12) {
-            listaCC.slice(12).forEach(x => { otros += x[1]; otrosN++; });
-            listaCC = listaCC.slice(0, 12);
+
+        // --- FILA DE KPIs (las dos verdades + la brecha) ---
+        const brecha = totalTSD - totalBanco;
+        const kpis = document.getElementById('dash-m4-kpis');
+        if (kpis) {
+            const card = (label, val, color) => `
+                <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5">
+                    <div class="text-[9px] font-bold uppercase text-slate-400">${label}</div>
+                    <div class="text-sm font-black ${color}">${fmt(val)}</div>
+                </div>`;
+            kpis.innerHTML =
+                card('📋 Facturado (TSD)', totalTSD, 'text-blue-600 dark:text-blue-400') +
+                card('🏦 Reportado (Banco)', totalBanco, 'text-emerald-600 dark:text-emerald-400') +
+                card(Math.abs(brecha) < 1 ? '✅ Brecha (cuadrado)' : '⚠️ Brecha', brecha, Math.abs(brecha) < 1 ? 'text-slate-500' : 'text-red-500') +
+                card('✂️ Comisiones + Retenc.', totalCom + totalRet, 'text-amber-600 dark:text-amber-400');
         }
-        const maxCC = Math.max(...listaCC.map(x => Math.abs(x[1])), Math.abs(otros), 1);
-        let htmlCC = listaCC.map(([cc, val]) => `
-            <div class="flex items-center gap-2 text-[10px]">
-                <span class="w-24 truncate font-mono text-slate-500" title="${cc}">${cc}</span>
-                <div class="flex-1 bg-slate-100 dark:bg-slate-700 rounded h-3.5 overflow-hidden">
-                    <div style="width:${Math.max(2, Math.abs(val) / maxCC * 100)}%;background:#6366f1;height:100%"></div>
-                </div>
-                <span class="w-24 text-right font-bold text-slate-700 dark:text-slate-200">${fmt(val)}</span>
-            </div>`).join('');
-        if (otrosN > 0) htmlCC += `
-            <div class="flex items-center gap-2 text-[10px] opacity-70">
-                <span class="w-24 truncate font-mono text-slate-400">Otros (${otrosN} CC)</span>
-                <div class="flex-1 bg-slate-100 dark:bg-slate-700 rounded h-3.5 overflow-hidden">
-                    <div style="width:${Math.max(2, Math.abs(otros) / maxCC * 100)}%;background:#94a3b8;height:100%"></div>
-                </div>
-                <span class="w-24 text-right font-bold text-slate-500">${fmt(otros)}</span>
-            </div>`;
 
-        // --- POR BANCO: Bruto, Comisiones, Retenciones, Neto ---
-        const porBanco = {};
-        data.forEach(r => (r._bancoArr || []).forEach(b => {
-            const k = b.Banco || '?';
-            if (!porBanco[k]) porBanco[k] = { bruto: 0, com: 0, ret: 0, neto: 0 };
-            porBanco[k].bruto += Number(b.MontoBrutoBanco) || 0;
-            porBanco[k].com  += Number(b.Comision) || 0;
-            porBanco[k].ret  += Number(b.Retenciones) || 0;
-            porBanco[k].neto += Number(b.MontoNetoBanco) || 0;
-        }));
-        const barra = (label, val, base, color) => `
-            <div class="flex items-center gap-2 text-[10px]">
-                <span class="w-20 text-slate-500">${label}</span>
-                <div class="flex-1 bg-slate-100 dark:bg-slate-700 rounded h-3 overflow-hidden">
-                    <div style="width:${Math.max(2, Math.min(100, Math.abs(val) / Math.max(Math.abs(base), 1) * 100))}%;background:${color};height:100%"></div>
-                </div>
-                <span class="w-24 text-right font-bold text-slate-700 dark:text-slate-200">${fmt(val)}</span>
-            </div>`;
-        const htmlBancos = Object.entries(porBanco).map(([banco, v]) => `
-            <div class="border border-slate-200 dark:border-slate-600 rounded-lg p-2 space-y-1.5">
-                <div class="text-xs font-black uppercase text-slate-600 dark:text-slate-300">🏦 ${banco}</div>
-                ${barra('Bruto', v.bruto, v.bruto, '#3b82f6')}
-                ${barra('Comisiones', v.com, v.bruto, '#f59e0b')}
-                ${barra('Retenciones', v.ret, v.bruto, '#ef4444')}
-                ${barra('Neto', v.neto, v.bruto, '#10b981')}
-            </div>`).join('') || '<div class="text-xs italic text-slate-400 p-2">Sin transacciones bancarias en la selección.</div>';
+        // Limpia gráficos previos (evita superposición de Chart.js)
+        ['_chCC', '_chVS', '_chBanco'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
 
-        cont.innerHTML = `
-            <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                <div class="text-xs font-bold uppercase text-slate-500 mb-2">💰 Ingresos por Centro de Costo</div>
-                <div class="space-y-1.5 max-h-64 overflow-y-auto pr-1">${htmlCC}</div>
-            </div>
-            <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                <div class="text-xs font-bold uppercase text-slate-500 mb-2">🏦 Por Banco: Bruto · Comisiones · Retenciones · Neto</div>
-                <div class="grid grid-cols-1 xl:grid-cols-2 gap-2">${htmlBancos}</div>
-            </div>`;
+        // --- DONA: Ingresos por CC (Top 10 + Otros) ---
+        const ctxCC = document.getElementById('ch-hist-cc');
+        if (ctxCC) {
+            let lista = Object.entries(porCC).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+            let otros = 0;
+            if (lista.length > 10) { lista.slice(10).forEach(x => otros += x[1]); lista = lista.slice(0, 10); }
+            const codigos = lista.map(x => x[0]).concat(otros ? ['—'] : []);
+            // Rótulo = nombre de sucursal (si no hay, cae al código del CC)
+            const labels = lista.map(x => ccNombre[x[0]] || x[0]).concat(otros ? ['Otros'] : []);
+            const vals = lista.map(x => Math.abs(x[1])).concat(otros ? [Math.abs(otros)] : []);
+            const palette = ['#6366f1','#3b82f6','#0ea5e9','#14b8a6','#10b981','#84cc16','#eab308','#f59e0b','#f97316','#ef4444','#94a3b8'];
+            this._chCC = new Chart(ctxCC.getContext('2d'), {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data: vals, backgroundColor: palette.slice(0, labels.length), borderWidth: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: tick, font: { size: 10 }, boxWidth: 12 } }, tooltip: { callbacks: { label: (c) => c.label + (codigos[c.dataIndex] && codigos[c.dataIndex] !== '—' ? ' · CC ' + codigos[c.dataIndex] : '') + ': ' + fmt(c.raw) } } } }
+            });
+        }
+
+        // --- BARRAS: TSD vs Banco por entidad ---
+        const ctxVS = document.getElementById('ch-hist-vs');
+        if (ctxVS) {
+            const ents = Object.keys(porEntidad);
+            this._chVS = new Chart(ctxVS.getContext('2d'), {
+                type: 'bar',
+                data: { labels: ents, datasets: [
+                    { label: 'Facturado (TSD)', data: ents.map(e => porEntidad[e].tsd), backgroundColor: '#3b82f6' },
+                    { label: 'Reportado (Banco)', data: ents.map(e => porEntidad[e].banco), backgroundColor: '#10b981' }
+                ] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tick, font: { size: 10 } } }, tooltip: { callbacks: { label: (c) => c.dataset.label + ': ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+            });
+        }
+
+        // --- BARRAS SEPARADAS: Bruto · Comisiones · Retenciones · Neto por banco ---
+        const ctxB = document.getElementById('ch-hist-banco');
+        if (ctxB) {
+            const bancos = Object.keys(porBanco);
+            this._chBanco = new Chart(ctxB.getContext('2d'), {
+                type: 'bar',
+                data: { labels: bancos, datasets: [
+                    { label: 'Ingreso Bruto', data: bancos.map(b => porBanco[b].bruto), backgroundColor: '#3b82f6' },
+                    { label: 'Comisiones', data: bancos.map(b => porBanco[b].com), backgroundColor: '#f59e0b' },
+                    { label: 'Retenciones', data: bancos.map(b => porBanco[b].ret), backgroundColor: '#ef4444' },
+                    { label: 'Ingreso Neto', data: bancos.map(b => porBanco[b].neto), backgroundColor: '#10b981' }
+                ] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tick, font: { size: 10 } } }, tooltip: { callbacks: { label: (c) => c.dataset.label + ': ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+            });
+        }
     },
 
     fetchPendientes: async function() {

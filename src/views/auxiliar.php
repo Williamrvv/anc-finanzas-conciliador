@@ -142,7 +142,21 @@
                     <select id="fh-sucursal" onchange="window.AuxiliarLogic.applyHistorialFilter()" class="text-xs p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-white outline-none cursor-pointer"></select>
                     <button onclick="window.AuxiliarLogic.limpiarFiltrosHist()" class="text-xs font-bold text-slate-500 hover:text-red-500 border border-slate-300 dark:border-slate-600 px-2 py-1.5 rounded-lg transition-colors">✕ Limpiar</button>
                 </div>
-                <div id="dash-m4-hist" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+                <div id="dash-m4-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3"></div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">💰 Ingresos por Centro de Costo <span class="text-[9px] normal-case font-normal text-slate-400">(según banco)</span></div>
+                        <div style="height:240px"><canvas id="ch-hist-cc"></canvas></div>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">⚖️ TSD vs Banco <span class="text-[9px] normal-case font-normal text-slate-400">(la brecha = pendiente de conciliar)</span></div>
+                        <div style="height:240px"><canvas id="ch-hist-vs"></canvas></div>
+                    </div>
+                    <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
+                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">🏦 Por Banco: Bruto · Comisiones · Retenciones · Neto</div>
+                        <div style="height:260px"><canvas id="ch-hist-banco"></canvas></div>
+                    </div>
+                </div>
             </div>
             <div id="table-historial-m4" style="height: 600px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
