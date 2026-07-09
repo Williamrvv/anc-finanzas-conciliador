@@ -469,10 +469,12 @@ window.AuxiliarLogic = {
                 porCC[cc] = (porCC[cc] || 0) + monto;
                 if (cc !== 'Sin CC' && b.Sucursal) ccNombre[cc] = b.Sucursal; // Guarda el nombre para mostrarlo
                 const bk = b.Banco || '?';
-                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
+                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, retIVA: 0, retRenta: 0, neto: 0 };
                 porBanco[bk].bruto += monto;
                 porBanco[bk].com += Number(b.Comision) || 0;
                 porBanco[bk].ret += Number(b.Retenciones) || 0;
+                porBanco[bk].retIVA += Number(b.RetencionIVA) || 0;
+                porBanco[bk].retRenta += Number(b.RetencionRenta) || 0;
                 porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
                 if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 };
                 porEntidad[bk].banco += monto;
