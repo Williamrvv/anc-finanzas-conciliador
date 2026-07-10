@@ -40,8 +40,10 @@ try {
             ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) AS [TC],
             (ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) * P.AMOUNT) AS [MontoCRC],
             
-            /* Usamos P.TYPE en vez de P.CARD_TYPE para evitar errores de esquema */
             P.TYPE AS [Tipo],
+            
+            /* Columna directa de tipo de tarjeta desde Cpay */
+            P.CARD_TYPE AS [Tipo_Tarjeta],
             
             P.Ref AS [Autorizacion],
             P.RECEIPT AS [Recibo_Detalle],
@@ -89,17 +91,19 @@ try {
     $mapaTarjetas = [];
     foreach($tarjetasRows as $t) { $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']); }
 
-    // B. Consumir API del CRM para obtener Centros de Costo
+    // B. Obtener Centros de Costo desde el Diccionario de Afiliados (fuente de verdad local)
     $mapaCC = [];
-    $crmContext = stream_context_create(['http' => ['timeout' => 3]]); // Timeout de 3s para no bloquear si CRM cae
-    $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $crmContext);
-    if ($crmJson) {
-        $crmData = json_decode($crmJson, true);
-        if (isset($crmData['ok']) && $crmData['ok']) {
-            foreach ($crmData['data'] as $item) {
-                $mapaCC[strtoupper(trim($item['Codigo']))] = trim($item['Centro_Costo']);
-            }
-        }
+    $stmtCC = $pdoBancos->query("
+        SELECT DISTINCT CodigoSucursal, CentroCosto
+        FROM Tbl_Diccionario_Afiliados
+        WHERE Activo = 1 
+          AND CodigoSucursal IS NOT NULL 
+          AND LTRIM(RTRIM(CodigoSucursal)) <> ''
+          AND CentroCosto IS NOT NULL
+          AND LTRIM(RTRIM(CentroCosto)) <> ''
+    ");
+    foreach ($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $ccRow) {
+        $mapaCC[strtoupper(trim($ccRow['CodigoSucursal']))] = trim($ccRow['CentroCosto']);
     }
 
     // C. Inyectar al array de TSD en memoria

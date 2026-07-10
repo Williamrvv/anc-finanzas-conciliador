@@ -1463,7 +1463,8 @@ window.TSDLogic = {
                             <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-2 text-[9px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 p-2 rounded border border-slate-100 dark:border-slate-700">
                                 <div class="col-span-2 text-slate-600 dark:text-slate-300"><b>Recibo/Detalle:</b> \${t.Recibo_Detalle || '<i>Sin descripción</i>'}</div>
                                 <div><b>Fecha Pago:</b> \${t.Fecha || '-'}</div>
-                                <div><b>Tipo Tarjeta:</b> \${t.Tipo || '-'}</div>
+                                <div><b>Tipo Tarjeta:</b> \${t.Tipo_Tarjeta || '-'}</div>
+                                <div><b>Tipo Cobro:</b> \${t.Tipo || '-'}</div>
                                 <div><b>ICD:</b> \${t.ICD || '-'}</div>
                                 <div><b>Sucursal:</b> \${t.Sucursal || '-'} (\${t.SucursalCod || '-'})</div>
                                 <div class="col-span-2 truncate" title="\${t.RecibidoPor}"><b>Agente:</b> \${t.RecibidoPor || '-'}</div>
@@ -1905,6 +1906,9 @@ window.TSDLogic = {
 
             // Limpieza y alerta final
             await window.SysUI.alert(`El cierre de TSD se ha guardado exitosamente.\nLos folios bancarios han sido sellados.`, "Bóveda Actualizada", "success");
+            if (data.warningCC) {
+                await window.SysUI.alert(data.warningCC, "Centros de Costo Faltantes", "warning");
+            }
             
             this.lastTSD = [];
             this.lastBancos = [];

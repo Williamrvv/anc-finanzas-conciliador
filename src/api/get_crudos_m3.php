@@ -85,6 +85,7 @@ try {
                 ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) AS [TC],
                 (ISNULL(E.sell, ISNULL(C.USDRate, R.USDRate)) * P.AMOUNT) AS [MontoCRC],
                 P.TYPE AS [Tipo],
+                P.CARD_TYPE AS [Tipo_Tarjeta],
                 P.Ref AS [Autorizacion],
                 P.RECEIPT AS [Recibo_Detalle],
                 CAST(P.Pay_Date AS DATE) AS [Fecha],

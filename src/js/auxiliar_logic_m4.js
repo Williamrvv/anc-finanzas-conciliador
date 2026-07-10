@@ -430,7 +430,7 @@ window.AuxiliarLogic = {
             if (lista.includes(prev)) sel.value = prev; // Conserva la selección si sigue existiendo
         };
         llenar('fh-banco', juntar('bancos'), '🏦 Banco');
-        llenar('fh-tarjeta', juntar('tarjetas'), '💳 Tarjeta');
+        llenar('fh-tarjeta', juntar('tarjetas'), '💳 Tipo Tarjeta');
         llenar('fh-cc', juntar('ccs'), '🏢 Centro de Costo');
         llenar('fh-sucursal', juntar('sucs'), '📍 Sucursal');
     },
@@ -455,6 +455,7 @@ window.AuxiliarLogic = {
         const ccNombre = {}; // Traducción: código de CC -> nombre de sucursal
         const porEntidad = {}; // { 'BAC': {tsd, banco}, ... }
         const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
+        const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
 
         (data || []).forEach(r => {
             (r._tsdArr || []).forEach(t => { totalTSD += Number(t.MontoCRC) || 0; });
@@ -468,13 +469,14 @@ window.AuxiliarLogic = {
                 porCC[cc] = (porCC[cc] || 0) + monto;
                 if (cc !== 'Sin CC' && b.Sucursal) ccNombre[cc] = b.Sucursal; // Guarda el nombre para mostrarlo
                 const bk = b.Banco || '?';
-                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, retIVA: 0, retRenta: 0, neto: 0 };
+                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
                 porBanco[bk].bruto += monto;
                 porBanco[bk].com += Number(b.Comision) || 0;
                 porBanco[bk].ret += Number(b.Retenciones) || 0;
-                porBanco[bk].retIVA += Number(b.RetencionIVA) || 0;
-                porBanco[bk].retRenta += Number(b.RetencionRenta) || 0;
                 porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
+                // Tipo de Tarjeta: el banco es la fuente principal
+                const tt = String(b.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
+                porTarjeta[tt] = (porTarjeta[tt] || 0) + monto;
                 if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 };
                 porEntidad[bk].banco += monto;
             });
@@ -487,6 +489,11 @@ window.AuxiliarLogic = {
             } else if (tsdGrupo) {
                 if (!porEntidad['Solo TSD']) porEntidad['Solo TSD'] = { tsd: 0, banco: 0 };
                 porEntidad['Solo TSD'].tsd += tsdGrupo;
+                // Sin lado bancario: el tipo de tarjeta sale del propio TSD
+                (r._tsdArr || []).forEach(t => {
+                    const ttT = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
+                    porTarjeta[ttT] = (porTarjeta[ttT] || 0) + (Number(t.MontoCRC) || 0);
+                });
             }
         });
 
@@ -507,7 +514,7 @@ window.AuxiliarLogic = {
         }
 
         // Limpia gráficos previos (evita superposición de Chart.js)
-        ['_chCC', '_chVS', '_chBanco'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
+        ['_chCC', '_chVS', '_chBanco', '_chTarjeta'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
 
         // --- DONA: Ingresos por CC (Top 10 + Otros) ---
         const ctxCC = document.getElementById('ch-hist-cc');
@@ -538,6 +545,18 @@ window.AuxiliarLogic = {
                     { label: 'Reportado (Banco)', data: ents.map(e => porEntidad[e].banco), backgroundColor: '#10b981' }
                 ] },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tick, font: { size: 10 } } }, tooltip: { callbacks: { label: (c) => c.dataset.label + ': ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+            });
+        }
+
+        // --- BARRAS: Ingreso Bruto por Tipo de Tarjeta ---
+        const ctxTar = document.getElementById('ch-hist-tarjeta');
+        if (ctxTar) {
+            const listaTar = Object.entries(porTarjeta).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+            const palTar = ['#3b82f6','#6366f1','#0ea5e9','#14b8a6','#10b981','#84cc16','#eab308','#f59e0b','#f97316','#ef4444','#94a3b8'];
+            this._chTarjeta = new Chart(ctxTar.getContext('2d'), {
+                type: 'bar',
+                data: { labels: listaTar.map(x => x[0]), datasets: [{ label: 'Ingreso Bruto', data: listaTar.map(x => x[1]), backgroundColor: palTar.slice(0, Math.max(listaTar.length, 1)) }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => 'Ingreso Bruto: ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
             });
         }
 

@@ -16,13 +16,13 @@ window.SysUI = {
             let btnsHtml = buttons.map((b, i) => `<button id="sysui-btn-${i}" class="${b.class}">${b.text}</button>`).join('');
             
             box.innerHTML = `
-                <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex-shrink-0">
                     <h3 class="text-lg font-bold ${titleColor}">${icon}${title}</h3>
                 </div>
-                <div class="px-6 py-5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">
+                <div class="px-6 py-5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed overflow-y-auto flex-1 min-h-0">
                     ${html}
                 </div>
-                <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700 flex-shrink-0">
                     ${btnsHtml}
                 </div>
             `;

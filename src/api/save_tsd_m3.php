@@ -30,6 +30,48 @@ try {
     $pdo->beginTransaction(); // Iniciamos el Escudo Transaccional
 
     // ==============================================================
+    // 2.5 GUARDIÁN DE CENTROS DE COSTO (Validación Pre-Vuelo)
+    // El servidor re-resuelve el CC desde Tbl_Diccionario_Afiliados.
+    // Si alguna sucursal no tiene CC asociado, se aborta TODO (Rollback).
+    // ==============================================================
+    $mapaCC = [];
+    $stmtCC = $pdo->query("
+        SELECT DISTINCT CodigoSucursal, CentroCosto
+        FROM Tbl_Diccionario_Afiliados
+        WHERE Activo = 1 
+          AND CodigoSucursal IS NOT NULL 
+          AND LTRIM(RTRIM(CodigoSucursal)) <> ''
+          AND CentroCosto IS NOT NULL
+          AND LTRIM(RTRIM(CentroCosto)) <> ''
+    ");
+    foreach ($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $ccRow) {
+        $mapaCC[strtoupper(trim($ccRow['CodigoSucursal']))] = trim($ccRow['CentroCosto']);
+    }
+
+    // Unificar todas las filas TSD del payload (conciliadas + pendientes)
+    $todosTSD = $pendientes;
+    foreach ($matches as $m) { foreach (($m['TSD'] ?? []) as $t) { $todosTSD[] = $t; } }
+
+    $sucursalesSinCC = [];
+    foreach ($todosTSD as $t) {
+        $cod = strtoupper(trim($t['SucursalCod'] ?? ''));
+        if ($cod === '' || !isset($mapaCC[$cod])) {
+            $llave = ($cod === '') ? '(SIN CÓDIGO)' : $cod;
+            $sucursalesSinCC[$llave] = trim($t['Sucursal'] ?? 'Nombre no disponible');
+        }
+    }
+
+    $advertenciaCC = null;
+    if (count($sucursalesSinCC) > 0) {
+        $lista = [];
+        foreach ($sucursalesSinCC as $cod => $nombre) { $lista[] = "• [$cod] $nombre"; }
+        $advertenciaCC =
+            "El cierre se guardó correctamente, pero las siguientes sucursales NO tienen Centro de Costo en el Diccionario de Afiliados y se registraron con el CC genérico 00-00-00:\n\n" .
+            implode("\n", $lista) .
+            "\n\nRegistre sus Centros de Costo en el mantenimiento para que los próximos cierres salgan completos.";
+    }
+
+    // ==============================================================
     // 3. CALCULAR TOTAL CONCILIADO (Suma TSD)
     // ==============================================================
     $granTotalCRC = 0;
@@ -73,14 +115,14 @@ try {
     // NOTA: Añadida la columna CentroCosto para inyectar lo que calculó la API del Módulo 3
     $stmtInsertDetalle = $pdo->prepare("
         INSERT INTO Tbl_Detalle_TSD 
-        (IdTransaccion, IdCierre, Contrato, Cliente, Recibo_Detalle, MontoUSD, TipoCambio, MontoCRC, TipoTarjeta, Autorizacion, Tarjeta_Ultimos4, FechaPago, RecibidoPor, ICD, SucursalCod, SucursalNombre, CentroCosto)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (IdTransaccion, IdCierre, Contrato, Cliente, Recibo_Detalle, MontoUSD, TipoCambio, MontoCRC, TipoTarjeta, TipoCobro, Autorizacion, Tarjeta_Ultimos4, FechaPago, RecibidoPor, ICD, SucursalCod, SucursalNombre, CentroCosto)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     // ==============================================================
     // 6. FUNCIÓN HELPER: Procesar fila TSD
     // ==============================================================
-    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle) {
+    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC) {
         $idTransaccion = trim($t['ID_Transaccion'] ?? 'SD');
         $contrato = trim($t['Contrato'] ?? '');
         $auth = trim($t['Autorizacion'] ?? '');
@@ -102,11 +144,12 @@ try {
             
             $montoUSD = isset($t['MontoUSD']) ? (float)$t['MontoUSD'] : 0;
             $tc = isset($t['TC']) ? (float)$t['TC'] : 1;
-            $centroCosto = trim($t['CentroCosto'] ?? '00-00-00');
+            // Re-resolución en servidor: el CC oficial sale del Diccionario, no del payload
+            $centroCosto = $mapaCC[strtoupper(trim($t['SucursalCod'] ?? ''))] ?? '00-00-00';
             
             $stmtInsertDetalle->execute([
                 $idTransaccion, $nuevoIdCierreTSD, $contrato, $t['Cliente'] ?? null, $t['Recibo_Detalle'] ?? null, $montoUSD, $tc, $montoCRC, 
-                $t['Tipo'] ?? null, $auth, $tarjeta, $fecha, $t['RecibidoPor'] ?? null, $t['ICD'] ?? null, $t['SucursalCod'] ?? null, $t['Sucursal'] ?? null, $centroCosto
+                $t['Tipo_Tarjeta'] ?? null, $t['Tipo'] ?? null, $auth, $tarjeta, $fecha, $t['RecibidoPor'] ?? null, $t['ICD'] ?? null, $t['SucursalCod'] ?? null, $t['Sucursal'] ?? null, $centroCosto
             ]);
         }
     };
@@ -159,7 +202,7 @@ try {
     }
 
     $pdo->commit();
-    echo json_encode(['success' => true]);
+    echo json_encode(['success' => true, 'warningCC' => $advertenciaCC]);
 
 } catch (\Throwable $e) { // <-- ATRAPA ABSOLUTAMENTE CUALQUIER ERROR (Incluso fatales de RAM)
     if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
