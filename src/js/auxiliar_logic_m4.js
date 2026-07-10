@@ -101,7 +101,6 @@ window.AuxiliarLogic = {
             const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
             html += `<span onclick="window.AuxiliarLogic.openTagManager()" class="${css} border-b-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-pointer hover:scale-105 hover:shadow-md transition-transform" title="${tag.Descripcion || ''} — Clic para administrar etiquetas">🏷️ ${tag.Nombre}</span>`;
         });
-        html += `<span onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="border border-dashed border-blue-300 dark:border-blue-700 text-blue-500 hover:text-white hover:bg-blue-500 hover:border-blue-500 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap cursor-pointer select-none transition-colors" title="Escribe una nota para las transacciones marcadas con ✓ en la tabla de pendientes">📝 Agregar nota</span>`;
         html += '</div>';
         container.children[0].insertAdjacentHTML('afterend', html);
     },
@@ -653,7 +652,10 @@ window.AuxiliarLogic = {
                 bgColorClass = 'bg-[#fef08a] dark:bg-[#854d0e] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800';
             }
             if (reason.includes('Ajuste Interno')) {
-                bgColorClass = 'bg-[#cffafe] dark:bg-[#164e63] text-slate-900 dark:text-white border-b border-cyan-200 dark:border-cyan-800';
+                bgColorClass = 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-900 dark:text-cyan-100 border-b border-cyan-200 dark:border-cyan-800';
+            }
+            if (reason.includes('Ajuste Menor')) {
+                bgColorClass = 'bg-fuchsia-100 dark:bg-fuchsia-900/40 text-fuchsia-900 dark:text-fuchsia-100 border-b border-fuchsia-300 dark:border-fuchsia-700 font-bold shadow-sm';
             }
 
             // Blindaje: Extracción segura en caso de que sea un Ajuste Manual de 1 solo lado
@@ -904,6 +906,31 @@ window.AuxiliarLogic = {
             else nextTSD.push(tsdRow);
         });
         pendientesTSD = nextTSD;
+
+        // --- FASE 10: AJUSTE MENOR (MONTOS < 10000 SOLITARIOS) ---
+        let finalTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+            const keyMenor = String(tsdRow.ID_Transaccion).trim() + '|MENOR';
+            if (Math.abs(montoTSD) > 0 && Math.abs(montoTSD) < 10000 && !this.blacklist.includes(keyMenor)) { 
+                processMatch(tsdRow, [], 'Ajuste Menor');
+            } else {
+                finalTSD.push(tsdRow);
+            }
+        });
+        pendientesTSD = finalTSD;
+
+        let finalBancos = [];
+        bancosDisponibles.forEach(bRow => {
+            const montoBanco = parseFloat(bRow.Monto_Venta_Original) || 0;
+            const keyMenor = String(bRow.IdTransaccion).trim() + '|MENOR';
+            if (Math.abs(montoBanco) > 0 && Math.abs(montoBanco) < 10000 && !this.blacklist.includes(keyMenor)) { 
+                processMatch([], bRow, 'Ajuste Menor');
+            } else {
+                finalBancos.push(bRow);
+            }
+        });
+        bancosDisponibles = finalBancos;
         
         // --- FASE FINAL: PENDIENTES (Sin Pareja) ---
         [...tsdData].forEach(tsdRow => {
@@ -1135,6 +1162,7 @@ window.AuxiliarLogic = {
                     const val = String(cell.getValue());
                     if(val.startsWith('Manual')) return `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
                     if(val.includes('Monto Igual')) return `<span class="text-amber-600 dark:text-amber-400">⚠️ Sug: Monto Igual</span>`;
+                    if(val.includes('Ajuste Menor')) return `<span class="text-purple-600 dark:text-purple-400">✂️ ${val.replace('Sugerencia: ','')}</span>`;
                     if(val.includes('Ajuste Interno')) return `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val.replace('Sugerencia: ','').replace('Ajuste Interno ', 'Ajuste ')}</span>`;
                     if(val.startsWith('Sugerencia')) return `<span class="text-amber-700 dark:text-amber-300">💡 ${val.replace('Sugerencia: ','')}</span>`;
                     return `<span class="text-slate-500 font-bold">⏳ Pendiente</span>`;
@@ -1280,8 +1308,55 @@ window.AuxiliarLogic = {
                 </div>
             </footer>
 
+            <!-- MODAL NATIVO DEL POPUP PARA AJUSTE MENOR -->
+            <div id="ws-mini-modal" class="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm overflow-hidden transform scale-95 transition-transform duration-300 flex flex-col" id="ws-mini-card">
+                    <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                        <h3 class="text-lg font-bold text-amber-600 dark:text-amber-400">⚠️ Ajuste Menor Detectado</h3>
+                    </div>
+                    <div class="px-6 py-5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">
+                        Ha dejado una única transacción menor a ₡10,000.
+                        
+                        ¿Desea guardarla como 'Ajuste Menor' (se marcará como conciliada sola) o prefiere cancelar y dejarla pendiente?
+                    </div>
+                    <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                        <button onclick="closeMiniModal()" class="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors">Cancelar</button>
+                        <button onclick="confirmMiniModal()" class="bg-orange-600 hover:bg-orange-700 text-white px-5 py-2 rounded-lg font-bold shadow-sm transition-colors">Confirmar Ajuste</button>
+                    </div>
+                </div>
+            </div>
+
             <script>
-                // Se utiliza 'var' en lugar de 'const' para evitar el error de "Identifier has already been declared" 
+                // Funciones del Mini-Modal
+                function openMiniModal() {
+                    const overlay = document.getElementById('ws-mini-modal');
+                    const card = document.getElementById('ws-mini-card');
+                    overlay.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        overlay.classList.remove('opacity-0');
+                        card.classList.remove('scale-95');
+                    });
+                }
+                
+                function closeMiniModal() {
+                    const overlay = document.getElementById('ws-mini-modal');
+                    const card = document.getElementById('ws-mini-card');
+                    overlay.classList.add('opacity-0');
+                    card.classList.add('scale-95');
+                    setTimeout(() => overlay.classList.add('hidden'), 300);
+                }
+
+                async function confirmMiniModal() {
+                    closeMiniModal();
+                    const justInput = document.getElementById('ws-just');
+                    let justificacion = justInput ? justInput.value.trim() : '';
+                    justificacion = justificacion ? justificacion : 'Aprobación Manual (Ajuste Menor)';
+                    
+                    const proceed = await parentLogic.wsSave(justificacion, true);
+                    if (proceed !== false) window.close();
+                }
+
+                // Se utiliza 'var' en lugar de 'const' para evitar el error de "Identifier has already been declared"
                 // cuando el navegador recicla la memoria de la ventana emergente al cerrarla y abrirla muy rápido.
                 var parentLogic = window.opener.AuxiliarLogic;
                 var fmt = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v).replace(/\\./g, ' ');
@@ -1429,10 +1504,24 @@ window.AuxiliarLogic = {
                     else footer.classList.add('hidden');
                 }
 
-                function saveAndClose() {
+                async function saveAndClose() {
                     const justInput = document.getElementById('ws-just');
-                    parentLogic.wsSave(justInput ? justInput.value.trim() : '');
-                    window.close();
+                    let justificacion = justInput ? justInput.value.trim() : '';
+                    
+                    let isAjusteMenor = false;
+                    if (parentLogic.ws.tsd.length === 1 && parentLogic.ws.bancos.length === 0 && Math.abs(parseFloat(parentLogic.ws.tsd[0].MontoCRC) || 0) < 10000) {
+                        isAjusteMenor = true;
+                    } else if (parentLogic.ws.bancos.length === 1 && parentLogic.ws.tsd.length === 0 && Math.abs(parseFloat(parentLogic.ws.bancos[0].Monto_Venta_Original) || 0) < 10000) {
+                        isAjusteMenor = true;
+                    }
+
+                    if (isAjusteMenor) {
+                        openMiniModal();
+                        return; // Se interrumpe el flujo; el usuario decidirá en el mini modal
+                    }
+
+                    const proceed = await parentLogic.wsSave(justificacion, false);
+                    if (proceed !== false) window.close();
                 }
 
                 document.addEventListener('DOMContentLoaded', () => {
@@ -1465,11 +1554,14 @@ window.AuxiliarLogic = {
         else this.ws.bancos = this.ws.bancos.filter(b => b && b._id !== id);
     },
 
-    wsSave: function(justificacion = '') {
+    wsSave: async function(justificacion = '', isAjusteMenor = false) {
         const removedTsd = this.ws.originalTsd.filter(t => !this.ws.tsd.some(x => x._id === t._id));
         const removedBancos = this.ws.originalBancos.filter(b => !this.ws.bancos.some(x => x._id === b._id));
 
         // Regla 1: Blindaje contra Auto-Unión Exacta (Blacklist de Cruces Rotos)
+        // Registrar rechazo de Ajustes Menores para que la Fase 10 no los vuelva a atrapar
+        removedTsd.forEach(t => this.blacklist.push(String(t.ID_Transaccion).trim() + '|MENOR'));
+        removedBancos.forEach(b => this.blacklist.push(String(b.IdTransaccion).trim() + '|MENOR'));
         // A. TSD vs Banco
         this.ws.originalTsd.forEach(t => {
             this.ws.originalBancos.forEach(b => {
@@ -1510,10 +1602,15 @@ window.AuxiliarLogic = {
         const validTsdBanco = this.ws.tsd.length > 0 && this.ws.bancos.length > 0;
         const validTsdInterno = this.ws.tsd.length > 1 && this.ws.bancos.length === 0;
         const validBancoInterno = this.ws.bancos.length > 1 && this.ws.tsd.length === 0;
-        const isValidMatch = validTsdBanco || validTsdInterno || validBancoInterno;
+        
+        if (isAjusteMenor && !justificacion) {
+            justificacion = 'Aprobación Manual (Ajuste Menor)';
+        }
+
+        const isValidMatch = validTsdBanco || validTsdInterno || validBancoInterno || isAjusteMenor;
 
         if (isValidMatch) {
-            this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion });
+            this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion: justificacion });
         }
 
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
@@ -1546,6 +1643,7 @@ window.AuxiliarLogic = {
         } else if (!isValidMatch) {
             if(window.SysUI) window.SysUI.alert("Datos desvinculados correctamente. Han regresado a la bandeja de pendientes y no se emparejarán automáticamente entre ellos.", "Separados", "warning");
         }
+        return true;
     },
 
     // --------------------------------------------------------
@@ -2083,31 +2181,54 @@ window.AuxiliarLogic = {
         }
     },
 
-    // --- SECCIÓN DE ETIQUETAS DENTRO DEL MENÚ NATIVO DE LA TABLA ---
+    // --- SECCIÓN DE ETIQUETAS Y NOTAS DENTRO DEL MENÚ NATIVO ---
     abrirMenuEtiquetas: function(row, e, menu) {
-        if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan con el botón 🏷️
+        if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan en PopUp
 
-        // Contracargos/Devoluciones son SUGERENCIAS: se avisa, pero se pueden reemplazar abajo
+        // 1. Botón de Nota (Aplica a la selección actual del Grid)
+        menu.insertAdjacentHTML('beforeend', `
+            <div onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                <span>📝</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Escribir nota a selección</span>
+            </div>
+            <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+        `);
+
+        // 2. Información de Sugerencia Automática (Solo lectura visual)
         if (row._categoriaId === 1 || row._categoriaId === 2) {
             const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
             menu.insertAdjacentHTML('beforeend', `
+                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🤖 Sugerencia aut: <b>${nombre}</b></div>
                 <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
-                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🤖 Sugerencia automática: <b>${nombre}</b>. Elegir otra etiqueta la reemplaza; quitarla la devuelve.</div>`);
+            `);
         }
 
+        // 3. Generar HTML de la lista de etiquetas
         const css = (c) => this.TW_COLORS[c] || this.TW_COLORS['slate'];
         const items = this.customTags.map(tag => `
             <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '${tag.IdEtiqueta}')"
-                 class="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="${tag.Descripcion || ''}">
-                <span class="w-3 h-3 rounded-full border ${css(tag.ColorCSS)}"></span>
+                 class="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" title="${tag.Descripcion || ''}">
+                <span class="w-3 h-3 rounded-full border shadow-sm ${css(tag.ColorCSS)}"></span>
                 <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
             </div>`).join('');
 
+        // 4. Inyectar Submenú (Acordeón CSS Inline Seguro)
         menu.insertAdjacentHTML('beforeend', `
-            <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
-            <div class="px-3 py-1 text-[10px] font-bold uppercase text-slate-400">🏷️ Etiquetar</div>
-            ${items || '<div class="px-3 py-1.5 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
-            <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-3 py-1.5 cursor-pointer text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">🚫 Quitar etiqueta</div>`);
+            <div class="group flex flex-col cursor-pointer transition-colors">
+                <div class="flex justify-between items-center px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <div class="flex items-center gap-2">
+                        <span>🏷️</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Asignar Etiqueta</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400 group-hover:rotate-90 transition-transform">▶</span>
+                </div>
+                
+                <!-- Desplegable Interno (Oculto hasta el hover) -->
+                <div class="hidden group-hover:flex flex-col bg-slate-50 dark:bg-slate-800/80 border-y border-slate-200 dark:border-slate-600 py-1 max-h-48 overflow-y-auto custom-scrollbar">
+                    ${items || '<div class="px-4 py-2 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
+                    <div class="border-t border-slate-200 dark:border-slate-600 my-1 mx-2"></div>
+                    <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-4 py-1.5 cursor-pointer text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors font-bold">🚫 Quitar etiqueta</div>
+                </div>
+            </div>
+        `);
     },
 
     asignarEtiquetaRapida: async function(uid, idEtiqueta) {

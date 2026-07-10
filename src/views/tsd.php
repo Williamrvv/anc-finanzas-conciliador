@@ -91,8 +91,8 @@
         <div class="flex justify-between items-end w-full">
             <!-- Panel de Métricas y Micro-Gráficos -->
             <div class="inline-flex flex-col bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors w-fit shrink-0">
-                <div class="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider mb-2">
-                    <span class="text-slate-500 dark:text-slate-400 ml-1">Métricas de Cruce:</span>
+                <div class="flex flex-wrap items-center gap-3 text-[10px] font-bold uppercase tracking-wider mb-2">
+                    <span class="text-slate-500 dark:text-slate-400">Métricas de Cruce:</span>
                     
                     <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
                         <span class="w-2.5 h-2.5 rounded-sm bg-[#fce4d6] dark:bg-[#7c6f69] border border-slate-300 dark:border-slate-600"></span> 
@@ -113,8 +113,12 @@
                     </div>
                     <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
                     <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
-                        <span class="w-2.5 h-2.5 rounded-sm bg-[#cffafe] dark:bg-[#164e63] border border-slate-300 dark:border-slate-600"></span> 
+                        <span class="w-2.5 h-2.5 rounded-sm bg-cyan-200 dark:bg-cyan-700 border border-slate-300 dark:border-slate-600"></span> 
                         Int: <span id="count-int" class="text-slate-800 dark:text-white ml-0.5">0</span>
+                    </div>
+                    <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <span class="w-2.5 h-2.5 rounded-sm bg-fuchsia-200 dark:bg-fuchsia-700 border border-slate-300 dark:border-slate-600"></span> 
+                        Men: <span id="count-men" class="text-slate-800 dark:text-white ml-0.5">0</span>
                     </div>
                     <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
                     <div class="flex items-center gap-1 text-red-600 dark:text-red-400">
@@ -136,8 +140,11 @@
                     <div id="bar-sug" class="h-full bg-[#fef08a] dark:bg-[#854d0e] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
                         <span id="tt-sug" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
                     </div>
-                    <div id="bar-int" class="h-full bg-[#cffafe] dark:bg-[#164e63] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                    <div id="bar-int" class="h-full bg-cyan-200 dark:bg-cyan-700 transition-all duration-500 group relative cursor-pointer" style="width: 0%">
                         <span id="tt-int" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                    <div id="bar-men" class="h-full bg-fuchsia-200 dark:bg-fuchsia-700 transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                        <span id="tt-men" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
                     </div>
                     <div id="bar-noc" class="h-full bg-red-400 dark:bg-red-600 transition-all duration-500 group relative cursor-pointer rounded-r-full" style="width: 0%">
                         <span id="tt-noc" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>

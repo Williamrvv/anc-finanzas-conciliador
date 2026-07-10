@@ -691,9 +691,10 @@ window.TSDLogic = {
             let bgColorClass = 'bg-[#fce4d6] dark:bg-[#7c6f69] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
             if (finalMatchType.includes('Tarjeta')) bgColorClass = 'bg-[#ddebf7] dark:bg-[#1e3a8a] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
             if (finalMatchType.includes('Sugerencia')) bgColorClass = 'bg-[#fef08a] dark:bg-[#854d0e] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800'; 
-            if (finalMatchType.includes('Ajuste Interno')) bgColorClass = 'bg-[#cffafe] dark:bg-[#164e63] text-slate-900 dark:text-white border-b border-cyan-200 dark:border-cyan-800'; 
-            if (finalMatchType.startsWith('Manual')) bgColorClass = 'bg-[#ffe699] dark:bg-[#b2a06b] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800 font-bold'; 
-            if (isNegative && !finalMatchType.includes('Ajuste Interno')) bgColorClass = 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold';
+            if (finalMatchType.includes('Ajuste Interno')) bgColorClass = 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-900 dark:text-cyan-100 border-b border-cyan-200 dark:border-cyan-800'; 
+            if (finalMatchType.includes('Ajuste Menor')) bgColorClass = 'bg-fuchsia-100 dark:bg-fuchsia-900/40 text-fuchsia-900 dark:text-fuchsia-100 border-b border-fuchsia-300 dark:border-fuchsia-700 font-bold shadow-sm'; 
+            if (finalMatchType.startsWith('Manual')) bgColorClass = 'bg-[#ffe699] dark:bg-[#b2a06b] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800 font-bold';
+            if (isNegative && !finalMatchType.includes('Ajuste Interno') && !finalMatchType.includes('Ajuste Menor')) bgColorClass = 'bg-[#d9d9d9] dark:bg-[#262626] text-slate-900 dark:text-slate-300 border-b border-slate-400 dark:border-slate-900 font-bold';
 
             // Blindaje: Extracción segura en caso de que sea un Ajuste Manual de 1 solo lado
             const t0 = tsdArr.length > 0 ? tsdArr[0] : {};
@@ -939,6 +940,31 @@ window.TSDLogic = {
         });
         pendientesTSD = nextTSD;
 
+        // --- FASE 10: AJUSTE MENOR (MONTOS < 10000 SOLITARIOS) ---
+        let finalTSD = [];
+        pendientesTSD.forEach(tsdRow => {
+            const montoTSD = parseFloat(tsdRow.MontoCRC) || 0;
+            const keyMenor = String(tsdRow.ID_Transaccion).trim() + '|MENOR';
+            if (Math.abs(montoTSD) > 0 && Math.abs(montoTSD) < 10000 && !this.blacklist.includes(keyMenor)) { 
+                processMatch(tsdRow, [], 'Ajuste Menor');
+            } else {
+                finalTSD.push(tsdRow);
+            }
+        });
+        pendientesTSD = finalTSD;
+
+        let finalBancos = [];
+        bancosDisponibles.forEach(bRow => {
+            const montoBanco = parseFloat(bRow.Monto_Venta_Original) || 0;
+            const keyMenor = String(bRow.IdTransaccion).trim() + '|MENOR';
+            if (Math.abs(montoBanco) > 0 && Math.abs(montoBanco) < 10000 && !this.blacklist.includes(keyMenor)) { 
+                processMatch([], bRow, 'Ajuste Menor');
+            } else {
+                finalBancos.push(bRow);
+            }
+        });
+        bancosDisponibles = finalBancos;
+
         // --- FASE FINAL: RESCATE DE HUÉRFANOS ---
         blindajeTSD.forEach(tsdRow => {
             if (!procesadosTSDIds.includes(tsdRow._id)) {
@@ -993,13 +1019,14 @@ window.TSDLogic = {
         });
 
         // --- ACTUALIZAR CONTADORES DE SIMBOLOGÍA Y MICRO-CHART ---
-        let cAuth = 0, cTarjeta = 0, cSug = 0, cMan = 0, cNoC = 0, cInt = 0;
+        let cAuth = 0, cTarjeta = 0, cSug = 0, cMan = 0, cNoC = 0, cInt = 0, cMen = 0;
         
         gridData.forEach(r => {
             const status = String(r.EstadoMatch);
             if (status.startsWith('Manual')) { cMan++; }
             else if (status === 'Pendiente' || status === 'Sobrante') { cNoC++; }
             else if (status.includes('Ajuste Interno')) { cInt++; }
+            else if (status.includes('Ajuste Menor')) { cMen++; }
             else if (status.includes('Auth')) { cAuth++; }
             else if (status.includes('Tarjeta')) { cTarjeta++; }
             else if (status.includes('Sugerencia')) { cSug++; }
@@ -1014,6 +1041,8 @@ window.TSDLogic = {
         document.getElementById('count-noc').innerText = cNoC;
         const elCountInt = document.getElementById('count-int');
         if (elCountInt) elCountInt.innerText = cInt;
+        const elCountMen = document.getElementById('count-men');
+        if (elCountMen) elCountMen.innerText = cMen;
 
         // Calcular Porcentajes
         const pAuth = ((cAuth / total) * 100).toFixed(1);
@@ -1022,6 +1051,7 @@ window.TSDLogic = {
         const pSug = ((cSug / total) * 100).toFixed(1);
         const pNoC = ((cNoC / total) * 100).toFixed(1);
         const pInt = ((cInt / total) * 100).toFixed(1);
+        const pMen = ((cMen / total) * 100).toFixed(1);
 
         // Actualizar Anchos del Gráfico
         document.getElementById('bar-auth').style.width = `${pAuth}%`;
@@ -1031,6 +1061,8 @@ window.TSDLogic = {
         document.getElementById('bar-noc').style.width = `${pNoC}%`;
         const elBarInt = document.getElementById('bar-int');
         if (elBarInt) elBarInt.style.width = `${pInt}%`;
+        const elBarMen = document.getElementById('bar-men');
+        if (elBarMen) elBarMen.style.width = `${pMen}%`;
 
         // Actualizar Tooltips
         document.getElementById('tt-auth').innerText = `Auth: ${pAuth}%`;
@@ -1040,6 +1072,8 @@ window.TSDLogic = {
         document.getElementById('tt-noc').innerText = `No Concil: ${pNoC}%`;
         const elTtInt = document.getElementById('tt-int');
         if (elTtInt) elTtInt.innerText = `Interno: ${pInt}%`;
+        const elTtMen = document.getElementById('tt-men');
+        if (elTtMen) elTtMen.innerText = `Menor: ${pMen}%`;
 
         // Ocultar Tooltips de valores en 0% para no amontonar
         document.getElementById('tt-auth').style.display = cAuth > 0 ? 'block' : 'none';
@@ -1048,6 +1082,7 @@ window.TSDLogic = {
         document.getElementById('tt-sug').style.display = cSug > 0 ? 'block' : 'none';
         document.getElementById('tt-noc').style.display = cNoC > 0 ? 'block' : 'none';
         if (elTtInt) elTtInt.style.display = cInt > 0 ? 'block' : 'none';
+        if (elTtMen) elTtMen.style.display = cMen > 0 ? 'block' : 'none';
 
         this.currentGridData = gridData;
         this.renderGrid(gridData);
@@ -1164,6 +1199,7 @@ window.TSDLogic = {
                     if(val === 'Tarjeta + Monto') return '💳 Tarjeta+Monto';
                     if(val === 'Tarjeta Grupal + Monto' || val === 'Tarjeta Grupal Solo') return '<span class="text-blue-600 dark:text-blue-400">🔗 Tarjeta Grupal</span>';
                     if(val === 'Tarjeta Solo') return '💳 Tarjeta Solo';
+                    if(val.includes('Ajuste Menor')) return `<span class="text-purple-600 dark:text-purple-400">✂️ ${val.replace('Sugerencia: ','')}</span>`;
                     if(val === 'Ajuste Interno TSD' || val === 'Ajuste Interno Banco') return `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val.replace('Ajuste Interno ', 'Ajuste ')}</span>`;
                     if(val === 'Sugerencia (Monto)') return '<span class="text-amber-600 dark:text-amber-400">⚠️ Sugerencia</span>';
                     if(val === 'Pendiente' || val === 'Sobrante') return '<span class="text-red-500">❌ ' + val + '</span>';
@@ -1337,8 +1373,54 @@ window.TSDLogic = {
                 </div>
             </footer>
 
+            <!-- MODAL NATIVO DEL POPUP PARA AJUSTE MENOR -->
+            <div id="ws-mini-modal" class="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm overflow-hidden transform scale-95 transition-transform duration-300 flex flex-col" id="ws-mini-card">
+                    <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                        <h3 class="text-lg font-bold text-amber-600 dark:text-amber-400">⚠️ Ajuste Menor Detectado</h3>
+                    </div>
+                    <div class="px-6 py-5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">
+                        Ha dejado una única transacción menor a ₡10,000.
+                        
+                        ¿Desea guardarla como 'Ajuste Menor' (se marcará como conciliada sola) o prefiere cancelar y dejarla pendiente?
+                    </div>
+                    <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                        <button onclick="closeMiniModal()" class="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors">Cancelar</button>
+                        <button onclick="confirmMiniModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold shadow-sm transition-colors">Confirmar Ajuste</button>
+                    </div>
+                </div>
+            </div>
+
             <script>
                 const parentLogic = window.opener.TSDLogic;
+                
+                function openMiniModal() {
+                    const overlay = document.getElementById('ws-mini-modal');
+                    const card = document.getElementById('ws-mini-card');
+                    overlay.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        overlay.classList.remove('opacity-0');
+                        card.classList.remove('scale-95');
+                    });
+                }
+                
+                function closeMiniModal() {
+                    const overlay = document.getElementById('ws-mini-modal');
+                    const card = document.getElementById('ws-mini-card');
+                    overlay.classList.add('opacity-0');
+                    card.classList.add('scale-95');
+                    setTimeout(() => overlay.classList.add('hidden'), 300);
+                }
+
+                async function confirmMiniModal() {
+                    closeMiniModal();
+                    const justInput = document.getElementById('ws-just');
+                    let justificacion = justInput ? justInput.value.trim() : '';
+                    justificacion = justificacion ? justificacion : 'Aprobación Manual (Ajuste Menor)';
+                    
+                    const proceed = await parentLogic.wsSave(justificacion, true);
+                    if (proceed !== false) window.close();
+                }
                 const fmt = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v).replace(/\\./g, ' ');
                 const clean = (s) => String(s||'').toLowerCase().trim();
 
@@ -1506,11 +1588,24 @@ window.TSDLogic = {
                     }
                 }
 
-                function saveAndClose() {
+                async function saveAndClose() {
                     const justInput = document.getElementById('ws-just');
-                    const justificacion = justInput ? justInput.value.trim() : '';
-                    parentLogic.wsSave(justificacion);
-                    window.close();
+                    let justificacion = justInput ? justInput.value.trim() : '';
+                    
+                    let isAjusteMenor = false;
+                    if (parentLogic.ws.tsd.length === 1 && parentLogic.ws.bancos.length === 0 && Math.abs(parseFloat(parentLogic.ws.tsd[0].MontoCRC) || 0) < 10000) {
+                        isAjusteMenor = true;
+                    } else if (parentLogic.ws.bancos.length === 1 && parentLogic.ws.tsd.length === 0 && Math.abs(parseFloat(parentLogic.ws.bancos[0].Monto_Venta_Original) || 0) < 10000) {
+                        isAjusteMenor = true;
+                    }
+
+                    if (isAjusteMenor) {
+                        openMiniModal();
+                        return; // Se interrumpe el flujo; el usuario decidirá en el mini modal
+                    }
+
+                    const proceed = await parentLogic.wsSave(justificacion, false);
+                    if (proceed !== false) window.close();
                 }
 
                 document.addEventListener('DOMContentLoaded', () => {
@@ -1548,11 +1643,14 @@ window.TSDLogic = {
         }
     },
 
-    wsSave: function(justificacion = '') {
+    wsSave: async function(justificacion = '', isAjusteMenor = false) {
         const removedTsd = this.ws.originalTsd.filter(t => !this.ws.tsd.some(x => x.ID_Transaccion === t.ID_Transaccion));
         const removedBancos = this.ws.originalBancos.filter(b => !this.ws.bancos.some(x => x.IdTransaccion === b.IdTransaccion));
 
         // Regla 1: Blindaje contra Auto-Unión Exacta (Blacklist de Cruces Rotos)
+        // Registrar rechazo de Ajustes Menores para que la Fase 10 no los vuelva a atrapar
+        removedTsd.forEach(t => this.blacklist.push(String(t.ID_Transaccion).trim() + '|MENOR'));
+        removedBancos.forEach(b => this.blacklist.push(String(b.IdTransaccion).trim() + '|MENOR'));
         // A. TSD vs Banco
         this.ws.originalTsd.forEach(t => {
             this.ws.originalBancos.forEach(b => {
@@ -1593,7 +1691,12 @@ window.TSDLogic = {
         const validTsdBanco = this.ws.tsd.length > 0 && this.ws.bancos.length > 0;
         const validTsdInterno = this.ws.tsd.length > 1 && this.ws.bancos.length === 0;
         const validBancoInterno = this.ws.bancos.length > 1 && this.ws.tsd.length === 0;
-        const isValidMatch = validTsdBanco || validTsdInterno || validBancoInterno;
+        
+        if (isAjusteMenor && !justificacion) {
+            justificacion = 'Aprobación Manual (Ajuste Menor)';
+        }
+
+        const isValidMatch = validTsdBanco || validTsdInterno || validBancoInterno || isAjusteMenor;
 
         if (isValidMatch) {
             this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion: justificacion });
