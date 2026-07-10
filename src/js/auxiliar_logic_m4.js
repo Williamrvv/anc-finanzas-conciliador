@@ -652,20 +652,24 @@ window.AuxiliarLogic = {
             if (reason === 'Monto Igual') {
                 bgColorClass = 'bg-[#fef08a] dark:bg-[#854d0e] text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-800';
             }
+            if (reason.includes('Ajuste Interno')) {
+                bgColorClass = 'bg-[#cffafe] dark:bg-[#164e63] text-slate-900 dark:text-white border-b border-cyan-200 dark:border-cyan-800';
+            }
 
             // Blindaje: Extracción segura en caso de que sea un Ajuste Manual de 1 solo lado
             const t0 = tsdArr.length > 0 ? tsdArr[0] : {};
             const b0 = bancoArr.length > 0 ? bancoArr[0] : {};
 
-            const contratoRep = isMulti ? `Varios (${tsdArr.length} reg)` : (t0.Contrato || 'Solo Banco');
-            const clienteRep = isMulti ? `Agrupación Múltiple` : (t0.Cliente || '-'); 
-            const authTSDRep = t0.Autorizacion || '-';
+            const contratoRep = isMulti ? tsdArr.map(t=>t.Contrato).join(', ') : (t0.Contrato || 'Solo Banco');
+            const clienteRep = isMulti ? tsdArr.map(t=>t.Cliente).join(', ') : (t0.Cliente || '-'); 
+            const authTSDRep = isMulti ? tsdArr.map(t=>t.Autorizacion).join(', ') : (t0.Autorizacion || '-');
             
-            const tarjetaLimpia = cleanStr(t0.Tarjeta_Ultimos4);
-            const tarjetaRep = tarjetaLimpia.length >= 4 ? `****${tarjetaLimpia.slice(-4)}` : 'S/D';
+            const tarjetaRep = isMulti 
+                ? tsdArr.map(t => cleanStr(t.Tarjeta_Ultimos4).length >= 4 ? `****${cleanStr(t.Tarjeta_Ultimos4).slice(-4)}` : 'S/D').join(', ')
+                : (cleanStr(t0.Tarjeta_Ultimos4).length >= 4 ? `****${cleanStr(t0.Tarjeta_Ultimos4).slice(-4)}` : 'S/D');
             
-            const bancoRep = isMulti ? (bancoArr.length > 1 ? `Múltiples Bancos` : (b0.Banco || '-')) : (b0.Banco || 'Solo TSD');
-            const authBancoRep = b0.Numero_Autorizacion || '-';
+            const bancoRep = isMulti ? bancoArr.map(b=>b.Banco).join(', ') : (b0.Banco || 'Solo TSD');
+            const authBancoRep = isMulti ? bancoArr.map(b=>b.Numero_Autorizacion).join(', ') : (b0.Numero_Autorizacion || '-');
 
             // Diferencia Contable Real: Tomar el mayor, restarle el menor y conservar el signo del mayor
             const absT = Math.abs(montoTSD);
@@ -808,6 +812,86 @@ window.AuxiliarLogic = {
         run1to1Phase(getCardT, getCardB, 'Tarj Solo', false, 10000);           // Fase 7
         runGroupPhase(getCardT, getCardB, '', 'Tarj Grupal Solo', false, 10000); // Fase 8
 
+        // --- FASE 8.5: AJUSTES INTERNOS (CANCELACIÓN DENTRO DE LA MISMA FUENTE) ---
+        const runInternalOffsetPhase = () => {
+            // 1. TSD vs TSD (Por Contrato)
+            let nextTSD = [];
+            let usedTSD = new Set();
+            for (let i = 0; i < pendientesTSD.length; i++) {
+                if (usedTSD.has(i)) continue;
+                let t1 = pendientesTSD[i];
+                let k1 = String(t1.Contrato || '').trim().toUpperCase();
+                if (!k1 || k1 === 'S/D') { nextTSD.push(t1); continue; }
+
+                let m1 = parseFloat(t1.MontoCRC) || 0;
+                let matchIdx = -1;
+
+                for (let j = i + 1; j < pendientesTSD.length; j++) {
+                    if (usedTSD.has(j)) continue;
+                    let t2 = pendientesTSD[j];
+                    let k2 = String(t2.Contrato || '').trim().toUpperCase();
+                    
+                    if (k1 === k2) {
+                        let m2 = parseFloat(t2.MontoCRC) || 0;
+                        let key = String(t1.ID_Transaccion).trim() + '|' + String(t2.ID_Transaccion).trim();
+                        let reverseKey = String(t2.ID_Transaccion).trim() + '|' + String(t1.ID_Transaccion).trim();
+
+                        // Signos opuestos y brecha menor a 10,000 + Blindaje Blacklist
+                        if ((m1 * m2 < 0) && Math.abs(m1 + m2) < 10000 && !this.blacklist.includes(key) && !this.blacklist.includes(reverseKey)) {
+                            matchIdx = j; break;
+                        }
+                    }
+                }
+
+                if (matchIdx !== -1) {
+                    usedTSD.add(matchIdx);
+                    processMatch([t1, pendientesTSD[matchIdx]], [], 'Ajuste Interno TSD');
+                } else {
+                    nextTSD.push(t1);
+                }
+            }
+            pendientesTSD = nextTSD;
+
+            // 2. Banco vs Banco (Por Autorización)
+            let nextBancos = [];
+            let usedBancos = new Set();
+            for (let i = 0; i < bancosDisponibles.length; i++) {
+                if (usedBancos.has(i)) continue;
+                let b1 = bancosDisponibles[i];
+                let k1 = getAuthB(b1);
+                if (!k1) { nextBancos.push(b1); continue; }
+
+                let m1 = parseFloat(b1.Monto_Venta_Original) || 0;
+                let matchIdx = -1;
+
+                for (let j = i + 1; j < bancosDisponibles.length; j++) {
+                    if (usedBancos.has(j)) continue;
+                    let b2 = bancosDisponibles[j];
+                    let k2 = getAuthB(b2);
+
+                    if (k1 === k2) {
+                        let m2 = parseFloat(b2.Monto_Venta_Original) || 0;
+                        let key = String(b1.IdTransaccion).trim() + '|' + String(b2.IdTransaccion).trim();
+                        let reverseKey = String(b2.IdTransaccion).trim() + '|' + String(b1.IdTransaccion).trim();
+
+                        // Signos opuestos y brecha menor a 10,000 + Blindaje Blacklist
+                        if ((m1 * m2 < 0) && Math.abs(m1 + m2) < 10000 && !this.blacklist.includes(key) && !this.blacklist.includes(reverseKey)) {
+                            matchIdx = j; break;
+                        }
+                    }
+                }
+
+                if (matchIdx !== -1) {
+                    usedBancos.add(matchIdx);
+                    processMatch([], [b1, bancosDisponibles[matchIdx]], 'Ajuste Interno Banco');
+                } else {
+                    nextBancos.push(b1);
+                }
+            }
+            bancosDisponibles = nextBancos;
+        };
+        runInternalOffsetPhase();
+
         // Fase 9: Sugerencia Pura (Monto Solo)
         let nextTSD = [];
         pendientesTSD.forEach(tsdRow => {
@@ -939,17 +1023,32 @@ window.AuxiliarLogic = {
     renderGrid: function() {
         const fmtMoney = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v||0).replace(/\./g, ' ');
 
+        const renderMulti = (row, isTsdSide, field) => {
+            const raw = isTsdSide ? row._tsdRaw : row._bancoRaw;
+            if (!raw || (Array.isArray(raw) && raw.length === 0)) return '<span class="text-slate-300 dark:text-slate-600">-</span>';
+            const arr = Array.isArray(raw) ? raw : [raw];
+            return '<div class="flex flex-col h-full w-full">' + arr.map(t => {
+                let val = '';
+                if (field === 'Contrato') val = t.Contrato || 'S/D';
+                else if (field === 'Cliente') val = `<div class="truncate" title="${t.Cliente || 'S/D'}">${t.Cliente || 'S/D'}</div>`;
+                else if (field === 'Autorizacion') val = t.Autorizacion || '-';
+                else if (field === 'MontoTSD') val = `<div class="flex flex-col items-end w-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(parseFloat(t.MontoCRC) || 0)}</span>${t.Recibo_Detalle ? `<div class="text-[9px] text-orange-600 truncate mt-0.5 w-full text-right" title="${t.Recibo_Detalle}">${t.Recibo_Detalle}</div>` : ''}</div>`;
+                else if (field === 'Banco_Nombre') val = t.Banco || '-';
+                else if (field === 'Banco_Auth') val = t.Numero_Autorizacion || '-';
+                else if (field === 'Banco_Monto') val = `<div class="w-full text-right">${fmtMoney(parseFloat(t.Monto_Venta_Original) || 0)}</div>`;
+                
+                return `<div class="flex-1 flex flex-col justify-center border-b border-slate-200/50 dark:border-slate-700/50 last:border-0 py-1.5 min-h-[36px]">${val}</div>`;
+            }).join('') + '</div>';
+        };
+
         const columns = [
             { 
                 title: "Contrato", field: "Contrato", width: 150, cssClass: "font-mono font-bold pt-1",
                 formatter: (cell) => {
-                    // CÓDIGO CORREGIDO PARA VANILLAGRID
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
-                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     let badge = '';
                     
                     if (row._categoriaId === 1 || row._categoriaId === 2) {
-                        // La insignia toma el color GUARDADO de la etiqueta del sistema
                         const nombreSis = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
                         const tagSis = window.AuxiliarLogic.customTags.find(t => Number(t.EsSistema) === 1 && t.Nombre === nombreSis);
                         const cssSis = window.AuxiliarLogic.TW_COLORS[tagSis ? tagSis.ColorCSS : (row._categoriaId === 1 ? 'rose' : 'fuchsia')] || '';
@@ -962,27 +1061,22 @@ window.AuxiliarLogic = {
                             badge = `<span class="block mb-1 text-[9px] font-black uppercase ${css} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none" title="${tagObj.Descripcion || ''}">🏷️ ${tagObj.Nombre}</span>`;
                         }
                     }
+
+                    if (row._isMulti) {
+                        return `<div>${badge}${renderMulti(row, true, 'Contrato')}</div>`;
+                    }
                     
-                    const contHtml = String(val).includes('Varios') ? `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs inline-block mt-0.5">🔗 ${val}</span>` : val;
-                    return `<div>${badge}${contHtml}</div>`;
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    return `<div>${badge}${val}</div>`;
                 }
             },
             { 
                 title: "Cliente / Notas", field: "Cliente", width: 180, cssClass: "text-[10px]",
                 formatter: (cell) => {
-                    // CÓDIGO CORREGIDO PARA VANILLAGRID
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     const cleanVal = val || '-';
-
-                    // Evitar etiquetar agrupaciones múltiples para no desfasar IDs
-                    if(row._isMulti || !row._dbId) return `<div class="truncate" title="${cleanVal}">${cleanVal}</div>`;
                     
-                    const noteStyles = { 'orange': 'text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700', 'amber': 'text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-700', 'yellow': 'text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700', 'lime': 'text-lime-600 dark:text-lime-400 border-lime-200 dark:border-lime-700', 'emerald': 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700', 'teal': 'text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-700', 'cyan': 'text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-700', 'blue': 'text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-700', 'indigo': 'text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-700', 'purple': 'text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-700', 'slate': 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-600' };
-                    const cssNota = noteStyles[row._colorEtiq] || noteStyles['slate'];
-                    
-                    // Usamos text wrapping para evitar que notas muy largas rompan la tabla
-                    // Color de la letra de la nota (Misma lógica pero extrayendo solo el color de texto)
                     let textClass = 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-600';
                     if (row._colorEtiq) {
                         const tObj = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
@@ -990,23 +1084,38 @@ window.AuxiliarLogic = {
                     }
                     let notaHtml = row._notaEtiq ? `<div class="mt-1 text-[9px] font-bold ${textClass} italic leading-tight bg-white/50 dark:bg-black/20 p-1.5 rounded border shadow-sm break-words whitespace-normal max-w-full"><span class="mr-1">💬</span>${row._notaEtiq}</div>` : '';
                     
-                    // Diseño mejorado: Botón sutil siempre visible (opacity-40) anclado a la derecha
+                    let contentHtml = '';
+                    if (row._isMulti) {
+                        contentHtml = renderMulti(row, true, 'Cliente');
+                    } else {
+                        contentHtml = `<div class="truncate" title="${cleanVal}">${cleanVal}</div>`;
+                    }
+
                     return `
                     <div class="flex flex-col relative pr-6 min-h-[20px]">
-                        <div class="flex justify-between items-center">
-                            <span class="truncate" title="${val}">${val}</span>
+                        <div class="flex justify-between items-center w-full">
+                            ${contentHtml}
                         </div>
-                        <button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="absolute right-0 top-0 opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>
+                        ${(!row._isMulti && row._dbId) ? `<button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="absolute right-0 top-0 opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>` : ''}
                         ${notaHtml}
                     </div>`;
                 }
             },
-
-            { title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center" },
+            { 
+                title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center",
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, true, 'Autorizacion');
+                    return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                }
+            },
             { 
                 title: "Monto TSD / Detalle", field: "MontoTSD", width: 150, hozAlign: "right", bottomCalc: "sum",
                 bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
                 formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, true, 'MontoTSD');
+
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     const valor = typeof val === 'object' && val !== null && 'valor' in val ? val.valor : val;
                     const recibo = typeof val === 'object' && val !== null && 'recibo' in val ? val.recibo : '';
@@ -1014,7 +1123,6 @@ window.AuxiliarLogic = {
                     const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
                     return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
                 },
-                // Filtro personalizado: Busca tanto por número como por el texto del recibo
                 headerFilterFunc: (term, val) => {
                     const strVal = typeof val === 'object' && val !== null ? `${val.valor} ${val.recibo}` : String(val);
                     return String(strVal).toLowerCase().includes(String(term).toLowerCase());
@@ -1027,13 +1135,36 @@ window.AuxiliarLogic = {
                     const val = String(cell.getValue());
                     if(val.startsWith('Manual')) return `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
                     if(val.includes('Monto Igual')) return `<span class="text-amber-600 dark:text-amber-400">⚠️ Sug: Monto Igual</span>`;
+                    if(val.includes('Ajuste Interno')) return `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val.replace('Sugerencia: ','').replace('Ajuste Interno ', 'Ajuste ')}</span>`;
                     if(val.startsWith('Sugerencia')) return `<span class="text-amber-700 dark:text-amber-300">💡 ${val.replace('Sugerencia: ','')}</span>`;
                     return `<span class="text-slate-500 font-bold">⏳ Pendiente</span>`;
                 }
             },
-            { title: "Banco", field: "Banco_Nombre", width: 90, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
-            { title: "Auth Banco", field: "Banco_Auth", width: 90, cssClass: "font-mono", hozAlign: "center" },
-            { title: "Monto", field: "Banco_Monto", hozAlign: "right", formatter: "money", bottomCalc: "sum" },
+            { 
+                title: "Banco", field: "Banco_Nombre", width: 90, hozAlign: "center", cssClass: "text-blue-600 font-bold",
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, false, 'Banco_Nombre');
+                    return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                }
+            },
+            { 
+                title: "Auth Banco", field: "Banco_Auth", width: 90, cssClass: "font-mono", hozAlign: "center",
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, false, 'Banco_Auth');
+                    return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                }
+            },
+            { 
+                title: "Monto", field: "Banco_Monto", hozAlign: "right", bottomCalc: "sum",
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, false, 'Banco_Monto');
+                    return fmtMoney(typeof cell === 'object' && cell.getValue ? cell.getValue() : cell);
+                }
+            },
             { title: "Dif", field: "Diferencia", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-500" },
             {
                 title: "📝 Nota", field: "_notaEtiq", width: 200, cssClass: "text-[10px]",
@@ -1338,6 +1469,8 @@ window.AuxiliarLogic = {
         const removedTsd = this.ws.originalTsd.filter(t => !this.ws.tsd.some(x => x._id === t._id));
         const removedBancos = this.ws.originalBancos.filter(b => !this.ws.bancos.some(x => x._id === b._id));
 
+        // Regla 1: Blindaje contra Auto-Unión Exacta (Blacklist de Cruces Rotos)
+        // A. TSD vs Banco
         this.ws.originalTsd.forEach(t => {
             this.ws.originalBancos.forEach(b => {
                 // En M4 usamos ID_Transaccion para ser perfectamente exactos (Igual que M3)
@@ -1345,6 +1478,24 @@ window.AuxiliarLogic = {
                 if (!this.blacklist.includes(key)) this.blacklist.push(key);
             });
         });
+        // B. TSD vs TSD (Evitar re-agrupar Ajustes Internos)
+        for (let i = 0; i < this.ws.originalTsd.length; i++) {
+            for (let j = i + 1; j < this.ws.originalTsd.length; j++) {
+                const key = String(this.ws.originalTsd[i].ID_Transaccion).trim() + '|' + String(this.ws.originalTsd[j].ID_Transaccion).trim();
+                const reverseKey = String(this.ws.originalTsd[j].ID_Transaccion).trim() + '|' + String(this.ws.originalTsd[i].ID_Transaccion).trim();
+                if (!this.blacklist.includes(key)) this.blacklist.push(key);
+                if (!this.blacklist.includes(reverseKey)) this.blacklist.push(reverseKey);
+            }
+        }
+        // C. Banco vs Banco (Evitar re-agrupar Ajustes Internos)
+        for (let i = 0; i < this.ws.originalBancos.length; i++) {
+            for (let j = i + 1; j < this.ws.originalBancos.length; j++) {
+                const key = String(this.ws.originalBancos[i].IdTransaccion).trim() + '|' + String(this.ws.originalBancos[j].IdTransaccion).trim();
+                const reverseKey = String(this.ws.originalBancos[j].IdTransaccion).trim() + '|' + String(this.ws.originalBancos[i].IdTransaccion).trim();
+                if (!this.blacklist.includes(key)) this.blacklist.push(key);
+                if (!this.blacklist.includes(reverseKey)) this.blacklist.push(reverseKey);
+            }
+        }
         
         const originTsdIds = this.ws.originalTsd.map(t => t._id);
         const originBancoIds = this.ws.originalBancos.map(b => b._id);
@@ -1355,8 +1506,13 @@ window.AuxiliarLogic = {
             return !hasTsdCollision && !hasBancoCollision;
         });
 
-        // REGLA DE ORO ESTRICTA: Un Match SOLO es válido si tiene ambas partes (TSD y Banco)
-        if (this.ws.tsd.length > 0 && this.ws.bancos.length > 0) {
+        // REGLA DE ORO ACTUALIZADA: Válido si vincula TSD vs Banco, O si vincula múltiples TSD (Ajuste Interno), O múltiples Bancos
+        const validTsdBanco = this.ws.tsd.length > 0 && this.ws.bancos.length > 0;
+        const validTsdInterno = this.ws.tsd.length > 1 && this.ws.bancos.length === 0;
+        const validBancoInterno = this.ws.bancos.length > 1 && this.ws.tsd.length === 0;
+        const isValidMatch = validTsdBanco || validTsdInterno || validBancoInterno;
+
+        if (isValidMatch) {
             this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion });
         }
 
@@ -1387,8 +1543,8 @@ window.AuxiliarLogic = {
             });
             msg += "\nRevise la tabla superior (Sugerencias del Algoritmo) para auditar y aprobar.";
             setTimeout(() => window.SysUI.alert(msg, "¡Nuevas Sugerencias Encontradas!", "info"), 500);
-        } else if (this.ws.tsd.length === 0 || this.ws.bancos.length === 0) {
-            if(window.SysUI) window.SysUI.alert("Datos desvinculados correctamente. Han regresado a la bandeja de pendientes.", "Separados", "warning");
+        } else if (!isValidMatch) {
+            if(window.SysUI) window.SysUI.alert("Datos desvinculados correctamente. Han regresado a la bandeja de pendientes y no se emparejarán automáticamente entre ellos.", "Separados", "warning");
         }
     },
 

@@ -112,6 +112,11 @@
                         Sug: <span id="count-sugerencia" class="text-slate-800 dark:text-white ml-0.5">0</span>
                     </div>
                     <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
+                    <div class="flex items-center gap-1 text-slate-700 dark:text-slate-300">
+                        <span class="w-2.5 h-2.5 rounded-sm bg-[#cffafe] dark:bg-[#164e63] border border-slate-300 dark:border-slate-600"></span> 
+                        Int: <span id="count-int" class="text-slate-800 dark:text-white ml-0.5">0</span>
+                    </div>
+                    <div class="w-px h-3 bg-slate-300 dark:bg-slate-600"></div>
                     <div class="flex items-center gap-1 text-red-600 dark:text-red-400">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         No Concil: <span id="count-noc" class="font-black ml-0.5">0</span>
@@ -130,6 +135,9 @@
                     </div>
                     <div id="bar-sug" class="h-full bg-[#fef08a] dark:bg-[#854d0e] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
                         <span id="tt-sug" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
+                    </div>
+                    <div id="bar-int" class="h-full bg-[#cffafe] dark:bg-[#164e63] transition-all duration-500 group relative cursor-pointer" style="width: 0%">
+                        <span id="tt-int" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
                     </div>
                     <div id="bar-noc" class="h-full bg-red-400 dark:bg-red-600 transition-all duration-500 group relative cursor-pointer rounded-r-full" style="width: 0%">
                         <span id="tt-noc" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-2 py-1 rounded text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-lg z-50">0%</span>
