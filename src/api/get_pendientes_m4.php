@@ -26,7 +26,7 @@ try {
             t.MontoUSD, 
             t.TipoCambio AS TC, 
             COALESCE(t.MontoCRC, m.MontoBruto) AS MontoCRC, 
-            t.TipoTarjeta AS Tipo, 
+            t.TipoCobro AS Tipo,
             COALESCE(t.Autorizacion, m.Autorizacion) AS Autorizacion, 
             COALESCE(t.Tarjeta_Ultimos4, m.Tarjeta) AS Tarjeta_Ultimos4, 
             COALESCE(t.FechaPago, m.FechaTransaccion) AS Fecha, 
