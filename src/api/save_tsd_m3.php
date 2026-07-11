@@ -115,8 +115,8 @@ try {
     // NOTA: Añadida la columna CentroCosto para inyectar lo que calculó la API del Módulo 3
     $stmtInsertDetalle = $pdo->prepare("
         INSERT INTO Tbl_Detalle_TSD 
-        (IdTransaccion, IdCierre, Contrato, Cliente, Recibo_Detalle, MontoUSD, TipoCambio, MontoCRC, TipoTarjeta, TipoCobro, Autorizacion, Tarjeta_Ultimos4, FechaPago, RecibidoPor, ICD, SucursalCod, SucursalNombre, CentroCosto)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (IdTransaccion, IdCierre, Contrato, Cliente, Recibo_Detalle, MontoUSD, TipoCambio, MontoCRC, TipoTarjeta, Autorizacion, Tarjeta_Ultimos4, FechaPago, RecibidoPor, ICD, SucursalCod, SucursalNombre, CentroCosto)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     // ==============================================================
@@ -149,7 +149,7 @@ try {
             
             $stmtInsertDetalle->execute([
                 $idTransaccion, $nuevoIdCierreTSD, $contrato, $t['Cliente'] ?? null, $t['Recibo_Detalle'] ?? null, $montoUSD, $tc, $montoCRC, 
-                $t['Tipo'] ?? null, $t['Tipo_Tarjeta'] ?? null, $auth, $tarjeta, $fecha, $t['RecibidoPor'] ?? null, $t['ICD'] ?? null, $t['SucursalCod'] ?? null, $t['Sucursal'] ?? null, $centroCosto
+                $t['Tipo_Tarjeta'] ?? null, $auth, $tarjeta, $fecha, $t['RecibidoPor'] ?? null, $t['ICD'] ?? null, $t['SucursalCod'] ?? null, $t['Sucursal'] ?? null, $centroCosto
             ]);
         }
     };

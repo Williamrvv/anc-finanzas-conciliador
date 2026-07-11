@@ -40,7 +40,7 @@ try {
             COALESCE(CAST(b.NUMERO_LIQUIDACION AS VARCHAR(50)), CAST(s.Numero_Pago AS VARCHAR(50))) AS Liquidacion,
             COALESCE(t.CentroCosto, b.CentroCosto, s.CentroCosto) AS CentroCosto,
             COALESCE(t.SucursalNombre, d.NombreSucursal) AS Sucursal,
-            COALESCE(t.TipoCobro, b.TIPO_TARJETA) AS TipoTarjeta,
+            COALESCE(t.TipoTarjeta, b.TIPO_TARJETA) AS TipoTarjeta,
             COALESCE(b.MONTO_VENTA, s.Monto_Bruto) AS MontoBrutoBanco,
             COALESCE(b.COMISION, s.Monto_Comision_Total) AS Comision,
             (ISNULL(b.RETENCION_VENTAS,0) + ISNULL(b.RETENCION_RENTA,0) + ISNULL(s.Monto_Retencion_IVA,0) + ISNULL(s.Monto_Retencion_ISR,0)) AS Retenciones,
