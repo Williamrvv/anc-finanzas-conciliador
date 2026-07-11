@@ -229,11 +229,17 @@ window.AuxiliarLogic = {
 
                 // Dimensiones para los filtros universales y miembros para los gráficos
                 const uniq = (arr) => [...new Set(arr.filter(x => x))];
+                // Marca por convención de nombre: sufijo (A)=Alamo, (E)=Enterprise, (N)=National
+                const marcaDe = (nombre) => {
+                    const m = String(nombre || '').trim().match(/\(([AEN])\)$/i);
+                    return m ? ({ A: 'Alamo', E: 'Enterprise', N: 'National' })[m[1].toUpperCase()] : null;
+                };
                 const _dims = {
                     bancos: uniq(bancoArr.map(c => c.Banco)),
-                    tarjetas: uniq(todos.map(c => c.TipoTarjeta)),
+                    tarjetas: uniq(tsdArr.map(c => c.TipoTarjeta)),
                     ccs: uniq(todos.map(c => c.CentroCosto)),
-                    sucs: uniq(todos.map(c => c.Sucursal))
+                    sucs: uniq(todos.map(c => c.Sucursal)),
+                    marcas: uniq(todos.map(c => marcaDe(c.Sucursal)))
                 };
 
                 return {
@@ -407,7 +413,8 @@ window.AuxiliarLogic = {
 
         // FILTROS UNIVERSALES: la tabla y los gráficos beben de la misma agua
         const fv = (id) => document.getElementById(id)?.value || '';
-        const fB = fv('fh-banco'), fT = fv('fh-tarjeta'), fC = fv('fh-cc'), fS = fv('fh-sucursal');
+        const fB = fv('fh-banco'), fT = fv('fh-tarjeta'), fC = fv('fh-cc'), fS = fv('fh-sucursal'), fM = fv('fh-marca');
+        if (fM) data = data.filter(r => r._dims && r._dims.marcas && r._dims.marcas.includes(fM));
         if (fB) data = data.filter(r => r._dims && r._dims.bancos.includes(fB));
         if (fT) data = data.filter(r => r._dims && r._dims.tarjetas.includes(fT));
         if (fC) data = data.filter(r => r._dims && r._dims.ccs.includes(fC));
@@ -429,6 +436,7 @@ window.AuxiliarLogic = {
             sel.innerHTML = `<option value="">${etiqueta}: Todos</option>` + lista.map(v => `<option value="${v}">${v}</option>`).join('');
             if (lista.includes(prev)) sel.value = prev; // Conserva la selección si sigue existiendo
         };
+        llenar('fh-marca', juntar('marcas'), '🚗 Marca');
         llenar('fh-banco', juntar('bancos'), '🏦 Banco');
         llenar('fh-tarjeta', juntar('tarjetas'), '💳 Tipo Tarjeta');
         llenar('fh-cc', juntar('ccs'), '🏢 Centro de Costo');
@@ -436,7 +444,7 @@ window.AuxiliarLogic = {
     },
 
     limpiarFiltrosHist: function() {
-        ['fh-banco', 'fh-tarjeta', 'fh-cc', 'fh-sucursal'].forEach(id => {
+        ['fh-marca', 'fh-banco', 'fh-tarjeta', 'fh-cc', 'fh-sucursal'].forEach(id => {
             const s = document.getElementById(id); if (s) s.value = '';
         });
         this.applyHistorialFilter();
@@ -458,7 +466,12 @@ window.AuxiliarLogic = {
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
 
         (data || []).forEach(r => {
-            (r._tsdArr || []).forEach(t => { totalTSD += Number(t.MontoCRC) || 0; });
+            (r._tsdArr || []).forEach(t => {
+                totalTSD += Number(t.MontoCRC) || 0;
+                // Tipo de Tarjeta: SOLO desde TSD (única fuente real de la marca)
+                const tt = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
+                porTarjeta[tt] = (porTarjeta[tt] || 0) + (Number(t.MontoCRC) || 0);
+            });
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
                 totalBanco += monto;
@@ -474,9 +487,7 @@ window.AuxiliarLogic = {
                 porBanco[bk].com += Number(b.Comision) || 0;
                 porBanco[bk].ret += Number(b.Retenciones) || 0;
                 porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
-                // Tipo de Tarjeta: el banco es la fuente principal
-                const tt = String(b.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
-                porTarjeta[tt] = (porTarjeta[tt] || 0) + monto;
+                porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
                 if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 };
                 porEntidad[bk].banco += monto;
             });
@@ -489,11 +500,6 @@ window.AuxiliarLogic = {
             } else if (tsdGrupo) {
                 if (!porEntidad['Solo TSD']) porEntidad['Solo TSD'] = { tsd: 0, banco: 0 };
                 porEntidad['Solo TSD'].tsd += tsdGrupo;
-                // Sin lado bancario: el tipo de tarjeta sale del propio TSD
-                (r._tsdArr || []).forEach(t => {
-                    const ttT = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
-                    porTarjeta[ttT] = (porTarjeta[ttT] || 0) + (Number(t.MontoCRC) || 0);
-                });
             }
         });
 
