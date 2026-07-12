@@ -92,24 +92,28 @@ try {
     foreach($tarjetasRows as $t) { $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']); }
 
     // B. Obtener Centros de Costo desde el Diccionario de Afiliados (fuente de verdad local)
+    // Normalización tipo Excel: mayúsculas, sin espacios, sin ceros a la izquierda ('09' = '9')
+    $normCod = function($v) { $s = strtoupper(trim((string)$v)); if ($s === '') return ''; $n = ltrim($s, '0'); return $n === '' ? '0' : $n; };
     $mapaCC = [];
     $stmtCC = $pdoBancos->query("
-        SELECT DISTINCT CodigoSucursal, CentroCosto
+        SELECT CodigoSucursal, CentroCosto
         FROM Tbl_Diccionario_Afiliados
         WHERE Activo = 1 
           AND CodigoSucursal IS NOT NULL 
           AND LTRIM(RTRIM(CodigoSucursal)) <> ''
           AND CentroCosto IS NOT NULL
           AND LTRIM(RTRIM(CentroCosto)) <> ''
+        ORDER BY CodigoSucursal, CentroCosto
     ");
     foreach ($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $ccRow) {
-        $mapaCC[strtoupper(trim($ccRow['CodigoSucursal']))] = trim($ccRow['CentroCosto']);
+        $k = $normCod($ccRow['CodigoSucursal']);
+        if (!isset($mapaCC[$k])) $mapaCC[$k] = trim($ccRow['CentroCosto']); // Primera aparición gana (como BUSCARV)
     }
 
     // C. Inyectar al array de TSD en memoria
     foreach ($dataTSD as &$row) {
         $contrato = trim($row['Contrato']);
-        $sucursal = strtoupper(trim($row['SucursalCod']));
+        $sucursal = $normCod($row['SucursalCod']);
         
         $row['Tarjeta_Ultimos4'] = $mapaTarjetas[$contrato] ?? '';
         $row['CentroCosto'] = $mapaCC[$sucursal] ?? '00-00-00';

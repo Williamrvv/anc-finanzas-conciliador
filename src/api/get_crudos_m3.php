@@ -124,16 +124,19 @@ try {
         }
 
         // B. Inyectar Diccionario de Centros de Costo (Mapeo por SucursalCod)
-        $stmtCC = $pdoBancos->query("SELECT DISTINCT CodigoSucursal, CentroCosto FROM Tbl_Diccionario_Afiliados WHERE CodigoSucursal IS NOT NULL AND CodigoSucursal <> '' AND Activo = 1");
+        // Normalización tipo Excel: mayúsculas, sin espacios, sin ceros a la izquierda ('09' = '9')
+        $normCod = function($v) { $s = strtoupper(trim((string)$v)); if ($s === '') return ''; $n = ltrim($s, '0'); return $n === '' ? '0' : $n; };
+        $stmtCC = $pdoBancos->query("SELECT CodigoSucursal, CentroCosto FROM Tbl_Diccionario_Afiliados WHERE CodigoSucursal IS NOT NULL AND CodigoSucursal <> '' AND Activo = 1 ORDER BY CodigoSucursal, CentroCosto");
         $mapaCC = [];
         foreach($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $d) {
-            $mapaCC[strtoupper(trim($d['CodigoSucursal']))] = trim($d['CentroCosto']);
+            $k = $normCod($d['CodigoSucursal']);
+            if (!isset($mapaCC[$k])) $mapaCC[$k] = trim($d['CentroCosto']); // Primera aparición gana (como BUSCARV)
         }
 
         // C. Mapeo en Memoria
         foreach ($data as &$row) {
             $row['Tarjeta_Ultimos4'] = $mapaTarjetas[trim($row['Contrato'])] ?? '';
-            $row['CentroCosto'] = $mapaCC[strtoupper(trim($row['SucursalCod']))] ?? '00-00-00';
+            $row['CentroCosto'] = $mapaCC[$normCod($row['SucursalCod'])] ?? '00-00-00';
         }
         unset($row);
     }

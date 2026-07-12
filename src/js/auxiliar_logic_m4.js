@@ -121,7 +121,12 @@ window.AuxiliarLogic = {
         // Iniciar Calendario
         if (window.flatpickr) {
             flatpickr("#m4-historial-date", {
-                mode: "range", dateFormat: "Y-m-d", locale: "es", defaultDate: [new Date(), new Date()]
+                mode: "range", dateFormat: "Y-m-d", locale: "es",
+                // Buscar al cerrar el calendario; si la fecha no cambió, NO recargar
+                onClose: () => {
+                    const v = document.getElementById('m4-historial-date').value;
+                    if (v && v !== window.AuxiliarLogic._lastDateQuery) window.AuxiliarLogic.fetchHistorial();
+                }
             });
         }
         
@@ -154,21 +159,24 @@ window.AuxiliarLogic = {
             viewH.classList.add('flex');
             actionBar.classList.add('hidden');
             
-            // Si el historial está vacío, cargar por defecto el día de hoy
-            if(this.currentHistorialData.length === 0) this.fetchHistorial();
+            // Si el historial está vacío, cargar automáticamente el último registro disponible
+            if(this.currentHistorialData.length === 0) this.fetchHistorial(null, true);
         }
     },
 
-    fetchHistorial: async function(global = null) {
+    fetchHistorial: async function(global = null, ultimo = false) {
         let url = 'api/get_historial_m4.php';
         if (global) {
             url += `?field=${global.field}&term=${encodeURIComponent(global.term)}`;
+        } else if (ultimo) {
+            url += `?ultimo=1`; // El servidor resuelve la fecha del último registro
         } else {
             const dateVal = document.getElementById('m4-historial-date').value;
             if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
             let start = dateVal, end = dateVal;
             if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
             url += `?start=${start}&end=${end}`;
+            this._lastDateQuery = dateVal; // Memoria anti-recarga
         }
         this.isGlobalMode = !!global;
 
@@ -177,6 +185,13 @@ window.AuxiliarLogic = {
             const res = await fetch(url);
             const json = await res.json();
             if (!json.success) throw new Error(json.error);
+
+            // Modo "último": el calendario refleja la fecha real del último registro
+            if (ultimo && json.fechaUltimo) {
+                const inp = document.getElementById('m4-historial-date');
+                if (inp && inp._flatpickr) inp._flatpickr.setDate([json.fechaUltimo, json.fechaUltimo], false);
+                this._lastDateQuery = inp ? inp.value : '';
+            }
 
             // AGRUPACIÓN MULTIPLEXADA EN RAM (Al estilo processMatch)
             const groups = {};
@@ -411,42 +426,83 @@ window.AuxiliarLogic = {
             ? (this.historialMaster || [])
             : (this.historialMaster || []).filter(r => r._filtro && r._filtro[scope].includes(needle));
 
-        // FILTROS UNIVERSALES: la tabla y los gráficos beben de la misma agua
-        const fv = (id) => document.getElementById(id)?.value || '';
-        const fB = fv('fh-banco'), fT = fv('fh-tarjeta'), fC = fv('fh-cc'), fS = fv('fh-sucursal'), fM = fv('fh-marca');
-        if (fM) data = data.filter(r => r._dims && r._dims.marcas && r._dims.marcas.includes(fM));
-        if (fB) data = data.filter(r => r._dims && r._dims.bancos.includes(fB));
-        if (fT) data = data.filter(r => r._dims && r._dims.tarjetas.includes(fT));
-        if (fC) data = data.filter(r => r._dims && r._dims.ccs.includes(fC));
-        if (fS) data = data.filter(r => r._dims && r._dims.sucs.includes(fS));
+        // FILTROS UNIVERSALES (multi-selección): la tabla y los gráficos beben de la misma agua
+        const selF = this._fhSel || {};
+        const pasa = (dims, escogidos) => !escogidos || escogidos.length === 0 || (dims || []).some(v => escogidos.includes(v));
+        data = data.filter(r => r._dims
+            && pasa(r._dims.marcas, selF.marca)
+            && pasa(r._dims.bancos, selF.banco)
+            && pasa(r._dims.tarjetas, selF.tarjeta)
+            && pasa(r._dims.ccs, selF.cc)
+            && pasa(r._dims.sucs, selF.sucursal));
 
         this.currentHistorialData = data;
         this.renderHistorialGrid();
         this.renderHistorialDash(data);
     },
 
-    // Llena los selects con lo que trae la propia información (nada viene de afuera)
+   // Filtros multi-selección: dropdowns con checkboxes (la data manda, nada viene de afuera)
+    _fhSel: { marca: [], banco: [], tarjeta: [], cc: [], sucursal: [] },
+    _fhDefs: [
+        { id: 'fh-marca',    key: 'marca',    dim: 'marcas',   etiqueta: '🚗 Marca' },
+        { id: 'fh-banco',    key: 'banco',    dim: 'bancos',   etiqueta: '🏦 Banco' },
+        { id: 'fh-tarjeta',  key: 'tarjeta',  dim: 'tarjetas', etiqueta: '💳 Tipo Tarjeta' },
+        { id: 'fh-cc',       key: 'cc',       dim: 'ccs',      etiqueta: '🏢 Centro de Costo' },
+        { id: 'fh-sucursal', key: 'sucursal', dim: 'sucs',     etiqueta: '📍 Sucursal' }
+    ],
     poblarFiltrosHist: function() {
         const master = this.historialMaster || [];
         const juntar = (k) => [...new Set(master.flatMap(r => (r._dims && r._dims[k]) || []))].sort();
-        const llenar = (id, lista, etiqueta) => {
-            const sel = document.getElementById(id);
-            if (!sel) return;
-            const prev = sel.value;
-            sel.innerHTML = `<option value="">${etiqueta}: Todos</option>` + lista.map(v => `<option value="${v}">${v}</option>`).join('');
-            if (lista.includes(prev)) sel.value = prev; // Conserva la selección si sigue existiendo
-        };
-        llenar('fh-marca', juntar('marcas'), '🚗 Marca');
-        llenar('fh-banco', juntar('bancos'), '🏦 Banco');
-        llenar('fh-tarjeta', juntar('tarjetas'), '💳 Tipo Tarjeta');
-        llenar('fh-cc', juntar('ccs'), '🏢 Centro de Costo');
-        llenar('fh-sucursal', juntar('sucs'), '📍 Sucursal');
+        this._fhDefs.forEach(def => {
+            const cont = document.getElementById(def.id);
+            if (!cont) return;
+            const lista = juntar(def.dim);
+            // Conserva solo selecciones que siguen existiendo en la data
+            this._fhSel[def.key] = (this._fhSel[def.key] || []).filter(v => lista.includes(v));
+            const sel = this._fhSel[def.key];
+            const resumen = sel.length === 0 ? 'Todos' : (sel.length === 1 ? sel[0] : `${sel.length} seleccionados`);
+            const activo = sel.length > 0;
+            cont.innerHTML = `
+                <button type="button" onclick="window.AuxiliarLogic.toggleFhPanel('${def.id}')"
+                    class="text-xs p-1.5 pr-2 rounded-lg border ${activo ? 'border-blue-400 dark:border-blue-500 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30' : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white bg-white dark:bg-slate-900'} outline-none cursor-pointer flex items-center gap-1 transition-colors">
+                    <span class="font-bold">${def.etiqueta}:</span> <span class="max-w-[120px] truncate">${resumen}</span> <span class="text-[8px] opacity-60">▼</span>
+                </button>
+                <div data-fh-panel class="hidden absolute z-40 mt-1 left-0 max-h-56 w-56 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl p-1">
+                    ${lista.length === 0 ? '<div class="text-[10px] text-slate-400 p-2">Sin datos</div>' : lista.map(v => `
+                        <label class="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 rounded hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
+                            <input type="checkbox" ${sel.includes(String(v)) ? 'checked' : ''} value="${String(v).replace(/"/g, '&quot;')}" onchange="window.AuxiliarLogic.toggleFhValor('${def.key}', this)" class="accent-blue-600">
+                            <span class="truncate">${v}</span>
+                        </label>`).join('')}
+                </div>`;
+        });
+        // Cierre de paneles por clic afuera (se registra una sola vez)
+        if (!this._fhOutsideBound) {
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#fh-marca, #fh-banco, #fh-tarjeta, #fh-cc, #fh-sucursal')) {
+                    document.querySelectorAll('[data-fh-panel]').forEach(p => p.classList.add('hidden'));
+                }
+            });
+            this._fhOutsideBound = true;
+        }
+    },
+    toggleFhPanel: function(id) {
+        const panel = document.querySelector(`#${id} [data-fh-panel]`);
+        const estabaAbierto = panel && !panel.classList.contains('hidden');
+        document.querySelectorAll('[data-fh-panel]').forEach(p => p.classList.add('hidden'));
+        if (panel && !estabaAbierto) panel.classList.remove('hidden');
+    },
+    toggleFhValor: function(key, chk) {
+        const arr = this._fhSel[key] || (this._fhSel[key] = []);
+        if (chk.checked) { if (!arr.includes(chk.value)) arr.push(chk.value); }
+        else { this._fhSel[key] = arr.filter(v => v !== chk.value); }
+        this.applyHistorialFilter();
+        this.poblarFiltrosHist(); // Refresca los resúmenes de los botones
+        this.toggleFhPanel(this._fhDefs.find(d => d.key === key).id); // Mantiene el panel abierto para seguir marcando
     },
 
     limpiarFiltrosHist: function() {
-        ['fh-marca', 'fh-banco', 'fh-tarjeta', 'fh-cc', 'fh-sucursal'].forEach(id => {
-            const s = document.getElementById(id); if (s) s.value = '';
-        });
+        this._fhSel = { marca: [], banco: [], tarjeta: [], cc: [], sucursal: [] };
+        this.poblarFiltrosHist();
         this.applyHistorialFilter();
     },
 
@@ -466,12 +522,13 @@ window.AuxiliarLogic = {
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
 
         (data || []).forEach(r => {
-            (r._tsdArr || []).forEach(t => {
-                totalTSD += Number(t.MontoCRC) || 0;
-                // Tipo de Tarjeta: SOLO desde TSD (única fuente real de la marca)
-                const tt = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
-                porTarjeta[tt] = (porTarjeta[tt] || 0) + (Number(t.MontoCRC) || 0);
-            });
+            totalRet += Number(b.Retenciones) || 0;
+                const bk = b.Banco || '?';
+                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
+                porBanco[bk].bruto += monto;
+                porBanco[bk].com += Number(b.Comision) || 0;
+                porBanco[bk].ret += Number(b.Retenciones) || 0;
+                porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
                 totalBanco += monto;

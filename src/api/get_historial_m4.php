@@ -27,7 +27,20 @@ if ($modoGlobal && mb_strlen($term) < 3) {
 
 try {
     $pdo = Database::connect();
-    
+
+    // MODO "ÚLTIMO": resolver la fecha del registro más reciente del historial
+    $fechaUltimo = null;
+    if (isset($_GET['ultimo'])) {
+        $qMax = $pdo->query("
+            SELECT MAX(CAST(c.ConsolidadoTSD AS DATE))
+            FROM Tbl_Transacciones_Maestra m
+            INNER JOIN Tbl_Conciliacion_Cierres c ON m.IdCierre = c.IdCierre
+            WHERE m.IdMatchTSD IS NOT NULL AND m.TipoCruceTSD LIKE '%[AUX]%' AND c.ConsolidadoTSD IS NOT NULL
+        ");
+        $fechaUltimo = $qMax->fetchColumn();
+        if ($fechaUltimo) { $start = $fechaUltimo; $end = $fechaUltimo; }
+    }
+
     // Extracción enriquecida: Traemos la Maestra + Detalles de TSD y Bancos
     $sql = "
         SELECT 
@@ -84,7 +97,7 @@ try {
         $stmt->execute([':start' => $start, ':end' => $end]);
     }
     
-    echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+    echo json_encode(['success' => true, 'fechaUltimo' => $fechaUltimo, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

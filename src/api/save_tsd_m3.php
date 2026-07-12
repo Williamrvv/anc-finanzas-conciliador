@@ -34,18 +34,22 @@ try {
     // El servidor re-resuelve el CC desde Tbl_Diccionario_Afiliados.
     // Si alguna sucursal no tiene CC asociado, se aborta TODO (Rollback).
     // ==============================================================
+    // Normalización tipo Excel: mayúsculas, sin espacios, sin ceros a la izquierda ('09' = '9')
+    $normCod = function($v) { $s = strtoupper(trim((string)$v)); if ($s === '') return ''; $n = ltrim($s, '0'); return $n === '' ? '0' : $n; };
     $mapaCC = [];
     $stmtCC = $pdo->query("
-        SELECT DISTINCT CodigoSucursal, CentroCosto
+        SELECT CodigoSucursal, CentroCosto
         FROM Tbl_Diccionario_Afiliados
         WHERE Activo = 1 
           AND CodigoSucursal IS NOT NULL 
           AND LTRIM(RTRIM(CodigoSucursal)) <> ''
           AND CentroCosto IS NOT NULL
           AND LTRIM(RTRIM(CentroCosto)) <> ''
+        ORDER BY CodigoSucursal, CentroCosto
     ");
     foreach ($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $ccRow) {
-        $mapaCC[strtoupper(trim($ccRow['CodigoSucursal']))] = trim($ccRow['CentroCosto']);
+        $k = $normCod($ccRow['CodigoSucursal']);
+        if (!isset($mapaCC[$k])) $mapaCC[$k] = trim($ccRow['CentroCosto']); // Primera aparición gana (como BUSCARV)
     }
 
     // Unificar todas las filas TSD del payload (conciliadas + pendientes)
@@ -54,7 +58,7 @@ try {
 
     $sucursalesSinCC = [];
     foreach ($todosTSD as $t) {
-        $cod = strtoupper(trim($t['SucursalCod'] ?? ''));
+        $cod = $normCod($t['SucursalCod'] ?? '');
         if ($cod === '' || !isset($mapaCC[$cod])) {
             $llave = ($cod === '') ? '(SIN CÓDIGO)' : $cod;
             $sucursalesSinCC[$llave] = trim($t['Sucursal'] ?? 'Nombre no disponible');
@@ -122,7 +126,7 @@ try {
     // ==============================================================
     // 6. FUNCIÓN HELPER: Procesar fila TSD
     // ==============================================================
-    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC) {
+    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC, $normCod) {
         $idTransaccion = trim($t['ID_Transaccion'] ?? 'SD');
         $contrato = trim($t['Contrato'] ?? '');
         $auth = trim($t['Autorizacion'] ?? '');
@@ -145,7 +149,7 @@ try {
             $montoUSD = isset($t['MontoUSD']) ? (float)$t['MontoUSD'] : 0;
             $tc = isset($t['TC']) ? (float)$t['TC'] : 1;
             // Re-resolución en servidor: el CC oficial sale del Diccionario, no del payload
-            $centroCosto = $mapaCC[strtoupper(trim($t['SucursalCod'] ?? ''))] ?? '00-00-00';
+            $centroCosto = $mapaCC[$normCod($t['SucursalCod'] ?? '')] ?? '00-00-00';
             
             $stmtInsertDetalle->execute([
                 $idTransaccion, $nuevoIdCierreTSD, $contrato, $t['Cliente'] ?? null, $t['Recibo_Detalle'] ?? null, $montoUSD, $tc, $montoCRC, 
