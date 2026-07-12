@@ -123,9 +123,12 @@ try {
             $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']);
         }
 
-        // B. Inyectar Diccionario de Centros de Costo (Mapeo por SucursalCod)
-        // Normalización tipo Excel: mayúsculas, sin espacios, sin ceros a la izquierda ('09' = '9')
-        $normCod = function($v) { $s = strtoupper(trim((string)$v)); if ($s === '') return ''; $n = ltrim($s, '0'); return $n === '' ? '0' : $n; };
+        $normCod = function($v) {
+            $s = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)$v));
+            if ($s === '') return '';
+            $n = ltrim($s, '0');
+            return $n === '' ? '0' : $n;
+        };
         $stmtCC = $pdoBancos->query("SELECT CodigoSucursal, CentroCosto FROM Tbl_Diccionario_Afiliados WHERE CodigoSucursal IS NOT NULL AND CodigoSucursal <> '' AND Activo = 1 ORDER BY CodigoSucursal, CentroCosto");
         $mapaCC = [];
         foreach($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $d) {
@@ -134,11 +137,51 @@ try {
         }
 
         // C. Mapeo en Memoria
+        $sinMatch = [];
         foreach ($data as &$row) {
             $row['Tarjeta_Ultimos4'] = $mapaTarjetas[trim($row['Contrato'])] ?? '';
-            $row['CentroCosto'] = $mapaCC[$normCod($row['SucursalCod'])] ?? '00-00-00';
+            $llaveCC = $normCod($row['SucursalCod']);
+            $row['CentroCosto'] = $mapaCC[$llaveCC] ?? '00-00-00';
+            if (!isset($mapaCC[$llaveCC])) $sinMatch[$llaveCC] = $row['SucursalCod'];
         }
         unset($row);
+
+        // MODO DIAGNÓSTICO TEMPORAL: ?debug_cc=1 revela por qué no cruzan los CC
+        if (isset($_GET['debug_cc'])) {
+            echo json_encode(['success' => true, 'debug' => [
+                'total_filas_tsd'         => count($data),
+                'total_llaves_diccionario'=> count($mapaCC),
+                'llaves_diccionario'      => array_keys($mapaCC),
+                'codigos_tsd_sin_match'   => $sinMatch
+            ], 'nota' => 'Compare visualmente: las llaves del diccionario vs los codigos TSD que no cruzaron.']);
+            exit;
+        }
+
+        // ============================================================
+        // DIAGNÓSTICO TEMPORAL (?debug_cc=1): radiografía byte a byte
+        // de por qué los códigos de TSD no cruzan con el Diccionario.
+        // Retirar este bloque cuando el problema esté resuelto.
+        // ============================================================
+        if (isset($_GET['debug_cc'])) {
+            $sinMatch = []; $conMatch = 0;
+            foreach ($data as $r2) {
+                if (($r2['CentroCosto'] ?? '') === '00-00-00') {
+                    $raw = (string)($r2['SucursalCod'] ?? '');
+                    if (!isset($sinMatch[$raw])) $sinMatch[$raw] = ['crudo' => $raw, 'hex' => bin2hex($raw), 'normalizado' => $normCod($raw), 'filas' => 0];
+                    $sinMatch[$raw]['filas']++;
+                } else { $conMatch++; }
+            }
+            $dicCrudo = $pdoBancos->query("SELECT CodigoSucursal, CentroCosto FROM Tbl_Diccionario_Afiliados WHERE Activo = 1 AND ISNULL(CodigoSucursal,'') <> ''")->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['success' => true, 'debug_cc' => [
+                'totalFilasTSD'      => count($data),
+                'filasConCC'         => $conMatch,
+                'filasSinCC'         => count($data) - $conMatch,
+                'codigosSinMatch'    => array_values($sinMatch),
+                'llavesNormalizadas' => array_keys($mapaCC),
+                'diccionarioCrudo'   => array_map(fn($d) => ['crudo' => $d['CodigoSucursal'], 'hex' => bin2hex($d['CodigoSucursal']), 'normalizado' => $normCod($d['CodigoSucursal']), 'cc' => $d['CentroCosto']], $dicCrudo)
+            ]], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
     }
 
     echo json_encode(['success' => true, 'data' => $data]);
