@@ -2408,33 +2408,9 @@ window.AuxiliarLogic = {
     abrirMenuEtiquetas: function(row, e, menu) {
         if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan en PopUp
 
-        // 1. Botones de Nota (línea individual y selección masiva)
-        menu.insertAdjacentHTML('beforeend', `
-            <div onclick="window.AuxiliarLogic.abrirNotaLinea('${row._uid}')" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                <span>📌</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a esta línea</span>
-            </div>
-            <div onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                <span>📝</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a seleccionadas</span>
-            </div>
-            <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
-        `);
-
-        menu.insertAdjacentHTML('beforeend', flyout('Asignar Etiqueta', items, `window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')`));
-        if (nSel > 1) {
-            menu.insertAdjacentHTML('beforeend', flyout(`Etiquetar selección (${nSel})`, itemsSel, `window.AuxiliarLogic.asignarEtiquetaMasiva('')`));
-        }
-
-        // 2. Información de Sugerencia Automática (Solo lectura visual)
-        if (row._categoriaId === 1 || row._categoriaId === 2) {
-            const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
-            menu.insertAdjacentHTML('beforeend', `
-                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🤖 Sugerencia aut: <b>${nombre}</b></div>
-                <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
-            `);
-        }
-
-        // 3. Generar HTML de la lista de etiquetas
+        // ---- 1. DECLARAR TODO ANTES DE USARLO (evita TDZ de const) ----
         const css = (c) => this.TW_COLORS[c] || this.TW_COLORS['slate'];
+
         const items = this.customTags.map(tag => `
             <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '${tag.IdEtiqueta}')"
                  class="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" title="${tag.Descripcion || ''}">
@@ -2442,7 +2418,14 @@ window.AuxiliarLogic = {
                 <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
             </div>`).join('');
 
-        // 4. Inyectar Submenús LATERALES (eligen su lado según el espacio en pantalla)
+        const itemsSel = this.customTags.map(tag => `
+            <div onclick="window.AuxiliarLogic.asignarEtiquetaMasiva('${tag.IdEtiqueta}')"
+                 class="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" title="${tag.Descripcion || ''}">
+                <span class="w-3 h-3 rounded-full border shadow-sm ${css(tag.ColorCSS)}"></span>
+                <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
+            </div>`).join('');
+
+        // Espacio disponible: el flyout elige su lado
         const anchoSubmenu = 200;
         const abrirIzquierda = (e.clientX + 180 + anchoSubmenu) > window.innerWidth;
         const ladoClase = abrirIzquierda ? 'right-full' : 'left-full';
@@ -2455,13 +2438,6 @@ window.AuxiliarLogic = {
         }
         this._etiqObjetivoLimbo = [...idxSel].map(i => this.gridLimbo.displayData[i]).filter(r => r && r._dbId);
         const nSel = this._etiqObjetivoLimbo.length;
-
-        const itemsSel = this.customTags.map(tag => `
-            <div onclick="window.AuxiliarLogic.asignarEtiquetaMasiva('${tag.IdEtiqueta}')"
-                 class="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" title="${tag.Descripcion || ''}">
-                <span class="w-3 h-3 rounded-full border shadow-sm ${css(tag.ColorCSS)}"></span>
-                <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
-            </div>`).join('');
 
         const flyout = (titulo, contenido, quitarOnclick) => `
             <div class="group relative flex flex-col cursor-pointer transition-colors">
@@ -2478,6 +2454,28 @@ window.AuxiliarLogic = {
                 </div>
             </div>`;
 
+        // ---- 2. INYECTAR EN ORDEN ----
+        // Notas
+        menu.insertAdjacentHTML('beforeend', `
+            <div onclick="window.AuxiliarLogic.abrirNotaLinea('${row._uid}')" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                <span>📌</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a esta línea</span>
+            </div>
+            <div onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                <span>📝</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a seleccionadas</span>
+            </div>
+            <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+        `);
+
+        // Sugerencia automática (solo lectura)
+        if (row._categoriaId === 1 || row._categoriaId === 2) {
+            const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+            menu.insertAdjacentHTML('beforeend', `
+                <div class="px-3 py-1.5 text-[10px] text-slate-400 italic">🤖 Sugerencia aut: <b>${nombre}</b></div>
+                <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+            `);
+        }
+
+        // Submenús de etiqueta
         menu.insertAdjacentHTML('beforeend', flyout('Asignar Etiqueta', items, `window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')`));
         if (nSel > 1) {
             menu.insertAdjacentHTML('beforeend', flyout(`Etiquetar selección (${nSel})`, itemsSel, `window.AuxiliarLogic.asignarEtiquetaMasiva('')`));
