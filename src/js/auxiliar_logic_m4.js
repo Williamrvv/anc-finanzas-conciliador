@@ -95,9 +95,24 @@ window.AuxiliarLogic = {
     aplicarFiltroEtiqueta: function() {
         if (!this.gridLimbo) return;
         const sel = this._tagFilter || [];
-        const data = sel.length > 0
-            ? this.currentLimboData.filter(r => r._colorEtiq && sel.some(id => id.toString() === r._colorEtiq.toString()))
-            : this.currentLimboData;
+        if (sel.length === 0) { this.gridLimbo.updateData(this.currentLimboData); return; }
+
+        // Las etiquetas de SISTEMA viven en dos identidades: el marcado manual (_colorEtiq)
+        // y la detección automática (_categoriaId: Contracargos=1, Devoluciones=2).
+        // El filtro atrapa ambas.
+        const catsSel = new Set();
+        sel.forEach(id => {
+            const tag = (this.customTags || []).find(t => t.IdEtiqueta.toString() === id.toString());
+            if (tag && Number(tag.EsSistema) === 1) {
+                if (tag.Nombre === 'Contracargos') catsSel.add(1);
+                if (tag.Nombre === 'Devoluciones') catsSel.add(2);
+            }
+        });
+
+        const data = this.currentLimboData.filter(r =>
+            (r._colorEtiq && sel.some(id => id.toString() === r._colorEtiq.toString())) ||
+            catsSel.has(r._categoriaId)
+        );
         this.gridLimbo.updateData(data);
     },
     toggleFiltroEtiqueta: function(idEtiqueta) {
@@ -731,9 +746,9 @@ window.AuxiliarLogic = {
             });
             
             (bArr || []).forEach(b => {
-                const tipo = checkStr(b.TipoAjuste);
-                const desc = checkStr(b.Nombre_Sucursal_Comercio);
-                const just = checkStr(b.Justificacion);
+                const tipo = sinTildes(b.TipoAjuste);
+                const desc = sinTildes(b.Nombre_Sucursal_Comercio);
+                const just = sinTildes(b.Justificacion);
                 if (tipo.includes('contracargo') || desc.includes('contracargo') || just.includes('contracargo')) isContra = true;
                 if (tipo.includes('devoluci') || desc.includes('devoluci') || just.includes('devoluci') || tipo.includes('remisión') || tipo.includes('remision')) isDevol = true;
             });
@@ -2399,10 +2414,15 @@ window.AuxiliarLogic = {
                 <span>📌</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a esta línea</span>
             </div>
             <div onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                <span>📝</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Escribir nota a selección</span>
+                <span>📝</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a seleccionadas</span>
             </div>
             <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
         `);
+
+        menu.insertAdjacentHTML('beforeend', flyout('Asignar Etiqueta', items, `window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')`));
+        if (nSel > 1) {
+            menu.insertAdjacentHTML('beforeend', flyout(`Etiquetar selección (${nSel})`, itemsSel, `window.AuxiliarLogic.asignarEtiquetaMasiva('')`));
+        }
 
         // 2. Información de Sugerencia Automática (Solo lectura visual)
         if (row._categoriaId === 1 || row._categoriaId === 2) {
