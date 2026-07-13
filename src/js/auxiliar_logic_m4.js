@@ -257,13 +257,23 @@ window.AuxiliarLogic = {
                     marcas: uniq(todos.map(c => marcaDe(c.Sucursal)))
                 };
 
+                // Etiqueta del grupo: la del primer miembro que tenga una (color y nota)
+                const colorEtiq = todos.map(c => c.ColorEtiqueta).find(x => x) || null;
+                const notaEtiq = todos.map(c => c.NotaUsuario).find(x => x) || '';
+                const tagGrupo = colorEtiq ? (this.customTags || []).find(t => t.IdEtiqueta.toString() === colorEtiq.toString()) : null;
+                const claseEtiq = (tagGrupo && this.TW_COLORS[tagGrupo.ColorCSS])
+                    ? this.TW_COLORS[tagGrupo.ColorCSS] + ' border-b'
+                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/50';
+
                 return {
                     _uid: g.IdMatchTSD,
                     _filtro,
                     _dims,
                     _tsdArr: tsdArr,
                     _bancoArr: bancoArr,
-                    _rowClass: 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
+                    _colorEtiq: colorEtiq,
+                    _notaEtiq: notaEtiq,
+                    _rowClass: claseEtiq,
                     Contrato: isMulti ? `Varios (${tsdArr.length} reg)` : (t0.Contrato || 'Solo Banco'),
                     Cliente: isMulti ? `Agrupación Múltiple` : (t0.Cliente || '-'),
                     TarjetaTSD: tarjetaRep,
@@ -362,7 +372,8 @@ window.AuxiliarLogic = {
         if (this.gridHistorial) this.gridHistorial.updateData(this.currentHistorialData);
         else {
             this.gridHistorial = new VanillaGrid("#table-historial-m4", this.currentHistorialData, columns, { 
-                onRowDblClick: (r) => window.AuxiliarLogic.openForenseModal(r) 
+                onRowDblClick: (r) => window.AuxiliarLogic.openForenseModal(r),
+                onRowContextMenu: (r, e, menu) => window.AuxiliarLogic.abrirMenuEtiquetasHistorial(r, e, menu)
             });
             this.bindHistorialFilter();
         }
@@ -2281,6 +2292,78 @@ window.AuxiliarLogic = {
             this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
         } catch (e) {
             window.SysUI.alert("No se pudo guardar la nota: " + e.message, "Fallo", "error");
+        }
+    },
+
+    // --- ETIQUETAS EN EL HISTORIAL: aplica a todas las filas con celdas seleccionadas ---
+    abrirMenuEtiquetasHistorial: function(row, e, menu) {
+        if (!row || !row._uid) return;
+
+        // Filas destino: las que tengan celdas seleccionadas; si no hay selección, la fila del clic
+        const idx = new Set();
+        if (this.gridHistorial && this.gridHistorial.selection) {
+            this.gridHistorial.selection.forEach(td => { if (td.dataset && td.dataset.r !== undefined) idx.add(parseInt(td.dataset.r)); });
+        }
+        let objetivo = [...idx].map(i => this.gridHistorial.displayData[i]).filter(r => r && r._uid);
+        if (objetivo.length === 0) objetivo = [row];
+        this._etiqObjetivoHist = objetivo;
+
+        const css = (c) => this.TW_COLORS[c] || this.TW_COLORS['slate'];
+        const items = (this.customTags || []).map(tag => `
+            <div onclick="window.AuxiliarLogic.asignarEtiquetaHistorial('${tag.IdEtiqueta}')"
+                 class="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" title="${tag.Descripcion || ''}">
+                <span class="w-3 h-3 rounded-full border shadow-sm ${css(tag.ColorCSS)}"></span>
+                <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
+            </div>`).join('');
+
+        const anchoSubmenu = 200;
+        const abrirIzquierda = (e.clientX + 180 + anchoSubmenu) > window.innerWidth;
+        const ladoClase = abrirIzquierda ? 'right-full' : 'left-full';
+        const flecha = abrirIzquierda ? '◀' : '▶';
+        menu.insertAdjacentHTML('beforeend', `
+            <div class="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+            <div class="group relative flex flex-col cursor-pointer transition-colors">
+                <div class="flex justify-between items-center px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700">
+                    <div class="flex items-center gap-2">
+                        <span>🏷️</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Etiquetar selección (${objetivo.length})</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400">${flecha}</span>
+                </div>
+                <div class="hidden group-hover:flex flex-col absolute ${ladoClase} top-0 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded shadow-xl py-1 max-h-56 overflow-y-auto custom-scrollbar z-50">
+                    ${items || '<div class="px-4 py-2 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
+                    <div class="border-t border-slate-200 dark:border-slate-600 my-1 mx-2"></div>
+                    <div onclick="window.AuxiliarLogic.asignarEtiquetaHistorial('')" class="px-4 py-1.5 cursor-pointer text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors font-bold">🚫 Quitar etiqueta</div>
+                </div>
+            </div>
+        `);
+    },
+
+    asignarEtiquetaHistorial: async function(idEtiqueta) {
+        document.getElementById('vg-context-menu')?.remove();
+        const grupos = this._etiqObjetivoHist || [];
+        if (grupos.length === 0) return;
+
+        // Cada grupo etiqueta a TODOS sus miembros (transacciones TSD y banco) en la Maestra
+        const miembros = grupos.flatMap(g => [...(g._tsdArr || []), ...(g._bancoArr || [])]).filter(m => m.IdTransaccion);
+        try {
+            await Promise.all(miembros.map(m => fetch('api/save_etiqueta_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: m.IdTransaccion, color: idEtiqueta, nota: m.NotaUsuario || '' })
+            }).then(x => x.json()).then(j => { if (!j.success) throw new Error(j.error); })));
+
+            // Estampar memoria local y repintar de inmediato (sin recargar del servidor)
+            const tagObj = idEtiqueta ? (this.customTags || []).find(t => t.IdEtiqueta.toString() === idEtiqueta.toString()) : null;
+            const clase = (tagObj && this.TW_COLORS[tagObj.ColorCSS])
+                ? this.TW_COLORS[tagObj.ColorCSS] + ' border-b'
+                : 'hover:bg-slate-50 dark:hover:bg-slate-800/50';
+            grupos.forEach(g => {
+                g._colorEtiq = idEtiqueta || null;
+                g._rowClass = clase;
+                [...(g._tsdArr || []), ...(g._bancoArr || [])].forEach(m => { m.ColorEtiqueta = idEtiqueta || null; });
+            });
+            if (this.gridHistorial) this.gridHistorial.updateData(this.currentHistorialData);
+        } catch (e) {
+            window.SysUI.alert("No se pudo etiquetar: " + e.message, "Fallo", "error");
         }
     },
 

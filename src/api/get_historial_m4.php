@@ -44,7 +44,7 @@ try {
     // Extracción enriquecida: Traemos la Maestra + Detalles de TSD y Bancos
     $sql = "
         SELECT 
-            m.IdTransaccion, m.IdMatchTSD, m.TipoCruceTSD, m.Banco, m.Autorizacion,
+            m.IdTransaccion, m.ColorEtiqueta, m.NotaUsuario, m.IdMatchTSD, m.TipoCruceTSD, m.Banco, m.Autorizacion,
             COALESCE(t.MontoCRC, m.MontoBruto) AS MontoCRC,
             COALESCE(t.Contrato, m.Afiliado_MerID) AS Contrato,
             t.Cliente, t.Recibo_Detalle,
