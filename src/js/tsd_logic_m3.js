@@ -1895,7 +1895,7 @@ window.TSDLogic = {
                 const lista = (data.faltantes || []).map(f => `• [${f.codigo}] ${f.nombre}`).join('\n');
                 const seguir = await window.SysUI.confirm(
                     `Las siguientes sucursales NO tienen Centro de Costo asociado:\n\n${lista}\n\n` +
-                    `Para solucionarlo debe ir a Softland y registrar el Centro de Costo de esas sucursales.\n\n` +
+                    `Para solucionarlo debe registrar el Centro de Costo de esas sucursales en TSD (el catálogo de CC proviene de TSD).\n\n` +
                     `¿Desea GUARDAR DE TODAS FORMAS dejando esos Centros de Costo vacíos?`,
                     "Centros de Costo Faltantes"
                 );

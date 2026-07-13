@@ -90,6 +90,25 @@ window.AuxiliarLogic = {
         } catch(e) { console.error("Error al cargar etiquetas", e); }
     },
 
+    // --- FILTRO MULTI-SELECT POR ETIQUETA (los chips se acumulan como OR) ---
+    _tagFilter: [],
+    aplicarFiltroEtiqueta: function() {
+        if (!this.gridLimbo) return;
+        const sel = this._tagFilter || [];
+        const data = sel.length > 0
+            ? this.currentLimboData.filter(r => r._colorEtiq && sel.some(id => id.toString() === r._colorEtiq.toString()))
+            : this.currentLimboData;
+        this.gridLimbo.updateData(data);
+    },
+    toggleFiltroEtiqueta: function(idEtiqueta) {
+        // Multi-select: cada chip se enciende/apaga de forma independiente y se acumulan (OR)
+        const sel = this._tagFilter || [];
+        const ya = sel.some(id => id.toString() === idEtiqueta.toString());
+        this._tagFilter = ya ? sel.filter(id => id.toString() !== idEtiqueta.toString()) : [...sel, idEtiqueta];
+        this.injectLegend();          // Repinta los chips (activos con anillo azul)
+        this.aplicarFiltroEtiqueta(); // Repinta la tabla
+    },
+
     injectLegend: function() {
         const container = document.getElementById('m4-view-bandeja');
         if (!container) return;
@@ -99,8 +118,11 @@ window.AuxiliarLogic = {
         let html = '<div id="etiq-legend" class="flex flex-wrap gap-2.5 p-2.5 mb-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm shrink-0 items-center animate-fade-in-up"><span class="text-xs font-bold uppercase text-slate-500 mr-1">Etiquetas:</span>';
         this.customTags.forEach(tag => {
             const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
-            html += `<span onclick="window.AuxiliarLogic.openTagManager()" class="${css} border-b-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-pointer hover:scale-105 hover:shadow-md transition-transform" title="${tag.Descripcion || ''} — Clic para administrar etiquetas">🏷️ ${tag.Nombre}</span>`;
+            const activo = (this._tagFilter || []).some(id => id.toString() === tag.IdEtiqueta.toString());
+            const anillo = activo ? 'ring-2 ring-blue-500 ring-offset-1 dark:ring-offset-slate-800 scale-105' : '';
+            html += `<span onclick="window.AuxiliarLogic.toggleFiltroEtiqueta('${tag.IdEtiqueta}')" class="${css} ${anillo} border-b-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-pointer hover:scale-105 hover:shadow-md transition-transform" title="${tag.Descripcion || ''} — Clic para ver solo esta etiqueta (clic de nuevo para quitar el filtro)">${activo ? '✅' : '🏷️'} ${tag.Nombre}</span>`;
         });
+        html += `<span onclick="window.AuxiliarLogic.openTagManager()" class="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap select-none cursor-pointer border border-dashed border-slate-400 dark:border-slate-500 text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Crear, editar o eliminar etiquetas">✏️ Editar</span>`;
         html += '</div>';
         container.children[0].insertAdjacentHTML('afterend', html);
     },
@@ -1309,7 +1331,7 @@ window.AuxiliarLogic = {
         if (this.gridSug) this.gridSug.updateData(this.currentSugData);
         else this.gridSug = new VanillaGrid("#table-sug-m4", this.currentSugData, columns, { searchInputId: "search-m4", onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r) });
 
-        if (this.gridLimbo) this.gridLimbo.updateData(this.currentLimboData);
+        if (this.gridLimbo) this.aplicarFiltroEtiqueta();
         else this.gridLimbo = new VanillaGrid("#table-limbo-m4", this.currentLimboData, columns, { 
             searchInputId: "search-m4", 
             onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r),
@@ -2400,28 +2422,68 @@ window.AuxiliarLogic = {
                 <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
             </div>`).join('');
 
-        // 4. Inyectar Submenú LATERAL (flyout que elige su lado según el espacio en pantalla)
+        // 4. Inyectar Submenús LATERALES (eligen su lado según el espacio en pantalla)
         const anchoSubmenu = 200;
         const abrirIzquierda = (e.clientX + 180 + anchoSubmenu) > window.innerWidth;
         const ladoClase = abrirIzquierda ? 'right-full' : 'left-full';
         const flecha = abrirIzquierda ? '◀' : '▶';
-        menu.insertAdjacentHTML('beforeend', `
+
+        // Filas con celdas seleccionadas (para el etiquetado masivo)
+        const idxSel = new Set();
+        if (this.gridLimbo && this.gridLimbo.selection) {
+            this.gridLimbo.selection.forEach(td => { if (td.dataset && td.dataset.r !== undefined) idxSel.add(parseInt(td.dataset.r)); });
+        }
+        this._etiqObjetivoLimbo = [...idxSel].map(i => this.gridLimbo.displayData[i]).filter(r => r && r._dbId);
+        const nSel = this._etiqObjetivoLimbo.length;
+
+        const itemsSel = this.customTags.map(tag => `
+            <div onclick="window.AuxiliarLogic.asignarEtiquetaMasiva('${tag.IdEtiqueta}')"
+                 class="flex items-center gap-2 px-4 py-1.5 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors" title="${tag.Descripcion || ''}">
+                <span class="w-3 h-3 rounded-full border shadow-sm ${css(tag.ColorCSS)}"></span>
+                <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
+            </div>`).join('');
+
+        const flyout = (titulo, contenido, quitarOnclick) => `
             <div class="group relative flex flex-col cursor-pointer transition-colors">
                 <div class="flex justify-between items-center px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700">
                     <div class="flex items-center gap-2">
-                        <span>🏷️</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Asignar Etiqueta</span>
+                        <span>🏷️</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">${titulo}</span>
                     </div>
                     <span class="text-[10px] text-slate-400">${flecha}</span>
                 </div>
-
-                <!-- Flyout lateral (aparece al hover, al costado del menú) -->
                 <div class="hidden group-hover:flex flex-col absolute ${ladoClase} top-0 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded shadow-xl py-1 max-h-56 overflow-y-auto custom-scrollbar z-50">
-                    ${items || '<div class="px-4 py-2 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
+                    ${contenido || '<div class="px-4 py-2 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
                     <div class="border-t border-slate-200 dark:border-slate-600 my-1 mx-2"></div>
-                    <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-4 py-1.5 cursor-pointer text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors font-bold">🚫 Quitar etiqueta</div>
+                    <div onclick="${quitarOnclick}" class="px-4 py-1.5 cursor-pointer text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors font-bold">🚫 Quitar etiqueta</div>
                 </div>
-            </div>
-        `);
+            </div>`;
+
+        menu.insertAdjacentHTML('beforeend', flyout('Asignar Etiqueta', items, `window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')`));
+        if (nSel > 1) {
+            menu.insertAdjacentHTML('beforeend', flyout(`Etiquetar selección (${nSel})`, itemsSel, `window.AuxiliarLogic.asignarEtiquetaMasiva('')`));
+        }
+    },
+
+    // Etiqueta (o actualiza la etiqueta de) TODAS las filas con celdas seleccionadas
+    asignarEtiquetaMasiva: async function(idEtiqueta) {
+        document.getElementById('vg-context-menu')?.remove();
+        const filas = this._etiqObjetivoLimbo || [];
+        if (filas.length === 0) return;
+        try {
+            await Promise.all(filas.map(r => fetch('api/save_etiqueta_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: r._dbId, color: idEtiqueta, nota: r._notaEtiq || '' }) // La nota se conserva; la etiqueta se sobreescribe
+            }).then(x => x.json()).then(j => { if (!j.success) throw new Error(j.error); })));
+
+            // Estampar memoria para que el repintado no pierda el cambio
+            filas.forEach(r => {
+                const t = this.lastTSD.find(x => x.ID_Transaccion === r._dbId); if (t) t.ColorEtiqueta = idEtiqueta || null;
+                const b = this.lastBancos.find(x => x.IdTransaccion === r._dbId); if (b) b.ColorEtiqueta = idEtiqueta || null;
+            });
+            this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+        } catch (e) {
+            window.SysUI.alert("No se pudo etiquetar la selección: " + e.message, "Fallo", "error");
+        }
     },
 
     asignarEtiquetaRapida: async function(uid, idEtiqueta) {
