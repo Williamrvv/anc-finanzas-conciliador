@@ -91,23 +91,26 @@ try {
     $mapaTarjetas = [];
     foreach($tarjetasRows as $t) { $mapaTarjetas[trim($t['NumeroContrato'])] = trim($t['Tarjeta_Ultimos4']); }
 
-    // B. Obtener Centros de Costo desde el Diccionario de Afiliados (fuente de verdad local)
-    // Normalización tipo Excel: mayúsculas, sin espacios, sin ceros a la izquierda ('09' = '9')
-    $normCod = function($v) { $s = strtoupper(trim((string)$v)); if ($s === '') return ''; $n = ltrim($s, '0'); return $n === '' ? '0' : $n; };
+    // B. Obtener Centros de Costo desde la API del CRM (misma fuente que el visor de crudos)
+    // Normalización agresiva tipo Excel: SOLO letras y números, sin ceros a la izquierda
+    $normCod = function($v) {
+        $s = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)$v));
+        if ($s === '') return '';
+        $n = ltrim($s, '0');
+        return $n === '' ? '0' : $n;
+    };
     $mapaCC = [];
-    $stmtCC = $pdoBancos->query("
-        SELECT CodigoSucursal, CentroCosto
-        FROM Tbl_Diccionario_Afiliados
-        WHERE Activo = 1 
-          AND CodigoSucursal IS NOT NULL 
-          AND LTRIM(RTRIM(CodigoSucursal)) <> ''
-          AND CentroCosto IS NOT NULL
-          AND LTRIM(RTRIM(CentroCosto)) <> ''
-        ORDER BY CodigoSucursal, CentroCosto
-    ");
-    foreach ($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $ccRow) {
-        $k = $normCod($ccRow['CodigoSucursal']);
-        if (!isset($mapaCC[$k])) $mapaCC[$k] = trim($ccRow['CentroCosto']); // Primera aparición gana (como BUSCARV)
+    $ctxCC = stream_context_create([
+        'http' => ['timeout' => 8],
+        'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
+    ]);
+    $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $ctxCC);
+    $crmData = $crmJson !== false ? json_decode($crmJson, true) : null;
+    if (isset($crmData['ok']) && $crmData['ok'] && isset($crmData['data'])) {
+        foreach ($crmData['data'] as $itemCC) {
+            $k = $normCod($itemCC['Codigo'] ?? '');
+            if ($k !== '' && !isset($mapaCC[$k])) $mapaCC[$k] = trim($itemCC['Centro_Costo'] ?? '');
+        }
     }
 
     // C. Inyectar al array de TSD en memoria

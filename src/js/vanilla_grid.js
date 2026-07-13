@@ -902,8 +902,8 @@ class VanillaGrid {
         menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
         menu.innerHTML = `
             <div class="px-3 py-1.5 text-slate-400 font-bold border-b border-slate-100 dark:border-slate-700 truncate max-w-[200px]">${val}</div>
-            <button class="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700" id="ctx-filter">🔍 Filtrar por esto</button>
-            <button class="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-slate-700" id="ctx-copy">📋 Copiar valor</button>
+            <button class="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-700" id="ctx-filter">🔍 Filtrar por esto</button>
+            <button class="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-700" id="ctx-copy">📋 Copiar valor</button>
         `;
         document.body.appendChild(menu);
         
@@ -920,6 +920,15 @@ class VanillaGrid {
             const r = parseInt(cell.dataset.r);
             if (!isNaN(r) && this.displayData[r]) this.options.onRowContextMenu(this.displayData[r], e, menu);
         }
+
+        // Conciencia de viewport: si el menú (ya con opciones invitadas) se sale de la pantalla, se recoloca
+        const rect = menu.getBoundingClientRect();
+        const margen = 8;
+        let x = e.clientX, y = e.clientY;
+        if (x + rect.width > window.innerWidth - margen) x = Math.max(margen, window.innerWidth - rect.width - margen);
+        if (y + rect.height > window.innerHeight - margen) y = Math.max(margen, window.innerHeight - rect.height - margen);
+        menu.style.left = x + 'px';
+        menu.style.top = y + 'px';
     }
 
     handleArrowKey(e) {

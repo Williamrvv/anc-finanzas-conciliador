@@ -30,26 +30,30 @@ try {
     $pdo->beginTransaction(); // Iniciamos el Escudo Transaccional
 
     // ==============================================================
-    // 2.5 GUARDIÁN DE CENTROS DE COSTO (Validación Pre-Vuelo)
-    // El servidor re-resuelve el CC desde Tbl_Diccionario_Afiliados.
-    // Si alguna sucursal no tiene CC asociado, se aborta TODO (Rollback).
+    // 2.5 GUARDIÁN DE CENTROS DE COSTO (Fuente: API del CRM)
+    // Misma fuente que el visor de crudos. Si faltan CC, se pide
+    // confirmación al usuario antes de guardar con CC vacío.
     // ==============================================================
-    // Normalización tipo Excel: mayúsculas, sin espacios, sin ceros a la izquierda ('09' = '9')
-    $normCod = function($v) { $s = strtoupper(trim((string)$v)); if ($s === '') return ''; $n = ltrim($s, '0'); return $n === '' ? '0' : $n; };
+    // Normalización agresiva tipo Excel: SOLO letras y números, sin ceros a la izquierda
+    $normCod = function($v) {
+        $s = preg_replace('/[^A-Z0-9]/', '', strtoupper((string)$v));
+        if ($s === '') return '';
+        $n = ltrim($s, '0');
+        return $n === '' ? '0' : $n;
+    };
     $mapaCC = [];
-    $stmtCC = $pdo->query("
-        SELECT CodigoSucursal, CentroCosto
-        FROM Tbl_Diccionario_Afiliados
-        WHERE Activo = 1 
-          AND CodigoSucursal IS NOT NULL 
-          AND LTRIM(RTRIM(CodigoSucursal)) <> ''
-          AND CentroCosto IS NOT NULL
-          AND LTRIM(RTRIM(CentroCosto)) <> ''
-        ORDER BY CodigoSucursal, CentroCosto
-    ");
-    foreach ($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $ccRow) {
-        $k = $normCod($ccRow['CodigoSucursal']);
-        if (!isset($mapaCC[$k])) $mapaCC[$k] = trim($ccRow['CentroCosto']); // Primera aparición gana (como BUSCARV)
+    $ctxCC = stream_context_create([
+        'http' => ['timeout' => 8],
+        'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
+    ]);
+    $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $ctxCC);
+    $crmData = $crmJson !== false ? json_decode($crmJson, true) : null;
+    if (!isset($crmData['ok']) || !$crmData['ok'] || !isset($crmData['data'])) {
+        throw new \Exception("No se pudo consultar el catálogo de Centros de Costo (API del CRM). El guardado fue cancelado para no sellar datos incompletos. Intente de nuevo en unos minutos.");
+    }
+    foreach ($crmData['data'] as $itemCC) {
+        $k = $normCod($itemCC['Codigo'] ?? '');
+        if ($k !== '' && !isset($mapaCC[$k])) $mapaCC[$k] = trim($itemCC['Centro_Costo'] ?? '');
     }
 
     // Unificar todas las filas TSD del payload (conciliadas + pendientes)
@@ -65,14 +69,14 @@ try {
         }
     }
 
-    $advertenciaCC = null;
-    if (count($sucursalesSinCC) > 0) {
-        $lista = [];
-        foreach ($sucursalesSinCC as $cod => $nombre) { $lista[] = "• [$cod] $nombre"; }
-        $advertenciaCC =
-            "El cierre se guardó correctamente, pero las siguientes sucursales NO tienen Centro de Costo en el Diccionario de Afiliados y se registraron con el CC genérico 00-00-00:\n\n" .
-            implode("\n", $lista) .
-            "\n\nRegistre sus Centros de Costo en el mantenimiento para que los próximos cierres salgan completos.";
+    // PUERTA DE CONFIRMACIÓN: si faltan CC y el usuario aún no autorizó, devolver la lista y esperar su decisión
+    $confirmarSinCC = !empty($input['confirmarSinCC']);
+    if (count($sucursalesSinCC) > 0 && !$confirmarSinCC) {
+        $pdo->rollBack();
+        $faltantes = [];
+        foreach ($sucursalesSinCC as $cod => $nombre) { $faltantes[] = ['codigo' => $cod, 'nombre' => $nombre]; }
+        echo json_encode(['success' => false, 'requiereConfirmacionCC' => true, 'faltantes' => $faltantes]);
+        exit;
     }
 
     // ==============================================================
@@ -149,7 +153,8 @@ try {
             $montoUSD = isset($t['MontoUSD']) ? (float)$t['MontoUSD'] : 0;
             $tc = isset($t['TC']) ? (float)$t['TC'] : 1;
             // Re-resolución en servidor: el CC oficial sale del Diccionario, no del payload
-            $centroCosto = $mapaCC[$normCod($t['SucursalCod'] ?? '')] ?? '00-00-00';
+            // Sin CC en el catálogo: se guarda vacío (NULL), previa confirmación del usuario
+            $centroCosto = $mapaCC[$normCod($t['SucursalCod'] ?? '')] ?? null;
             
             $stmtInsertDetalle->execute([
                 $idTransaccion, $nuevoIdCierreTSD, $contrato, $t['Cliente'] ?? null, $t['Recibo_Detalle'] ?? null, $montoUSD, $tc, $montoCRC, 
@@ -206,7 +211,7 @@ try {
     }
 
     $pdo->commit();
-    echo json_encode(['success' => true, 'warningCC' => $advertenciaCC]);
+    echo json_encode(['success' => true]);
 
 } catch (\Throwable $e) { // <-- ATRAPA ABSOLUTAMENTE CUALQUIER ERROR (Incluso fatales de RAM)
     if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }

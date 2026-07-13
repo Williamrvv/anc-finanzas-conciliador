@@ -530,8 +530,8 @@ window.TSDLogic = {
         } catch (error) {
             console.error(error);
             window.SysUI.alert("Error al obtener datos: " + error.message, "Fallo de Conexión", "error");
-            if (gridContainer) {
-                gridContainer.innerHTML = `
+            if (containerMatched) {
+                containerMatched.innerHTML = `
                     <div class="flex flex-col items-center justify-center h-full text-red-400 gap-2 opacity-50">
                         <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span class="text-sm font-medium">Error de consulta. Inténtelo nuevamente.</span>
@@ -1884,7 +1884,32 @@ window.TSDLogic = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending })
             });
-            const data = await res.json();
+            let data = await res.json();
+
+            // PUERTA DE CC FALTANTES: el servidor pide permiso antes de guardar con CC vacío
+            if (data.requiereConfirmacionCC) {
+                clearInterval(progressInterval);
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.classList.add('hidden'), 300);
+
+                const lista = (data.faltantes || []).map(f => `• [${f.codigo}] ${f.nombre}`).join('\n');
+                const seguir = await window.SysUI.confirm(
+                    `Las siguientes sucursales NO tienen Centro de Costo asociado:\n\n${lista}\n\n` +
+                    `Para solucionarlo debe ir a Softland y registrar el Centro de Costo de esas sucursales.\n\n` +
+                    `¿Desea GUARDAR DE TODAS FORMAS dejando esos Centros de Costo vacíos?`,
+                    "Centros de Costo Faltantes"
+                );
+                if (!seguir) {
+                    await window.SysUI.alert("Guardado cancelado. No se realizó ningún cambio en la base de datos.", "Operación Cancelada", "info");
+                    return;
+                }
+                const res2 = await fetch('api/save_tsd_m3.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending, confirmarSinCC: true })
+                });
+                data = await res2.json();
+            }
 
             if (!data.success) throw new Error(data.error);
 
@@ -1906,9 +1931,6 @@ window.TSDLogic = {
 
             // Limpieza y alerta final
             await window.SysUI.alert(`El cierre de TSD se ha guardado exitosamente.\nLos folios bancarios han sido sellados.`, "Bóveda Actualizada", "success");
-            if (data.warningCC) {
-                await window.SysUI.alert(data.warningCC, "Centros de Costo Faltantes", "warning");
-            }
             
             this.lastTSD = [];
             this.lastBancos = [];

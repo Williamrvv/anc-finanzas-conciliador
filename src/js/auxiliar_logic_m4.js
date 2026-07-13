@@ -500,6 +500,17 @@ window.AuxiliarLogic = {
         this.toggleFhPanel(this._fhDefs.find(d => d.key === key).id); // Mantiene el panel abierto para seguir marcando
     },
 
+    // Abre el Visor de Crudos en contexto M4 (bancos + TSD desde base de datos) en ventana popup
+    abrirVisorCrudos: function() {
+        const dateVal = document.getElementById('m4-historial-date')?.value || '';
+        if (!dateVal) return window.SysUI.alert("Seleccione primero un rango de fechas en el calendario del historial.", "Sin fechas", "info");
+        let start = dateVal, end = dateVal;
+        if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
+        const width = Math.round(window.screen.width * 0.9), height = Math.round(window.screen.height * 0.85);
+        const left = Math.round((window.screen.width - width) / 2), top = Math.round((window.screen.height - height) / 2);
+        window.open(`visor_crudos.php?start=${start}&end=${end}&ctx=m4`, 'VisorCrudosIRI_M4', `width=${width},height=${height},top=${top},left=${left},resizable=yes,scrollbars=yes`);
+    },
+
     limpiarFiltrosHist: function() {
         this._fhSel = { marca: [], banco: [], tarjeta: [], cc: [], sucursal: [] };
         this.poblarFiltrosHist();
@@ -522,28 +533,26 @@ window.AuxiliarLogic = {
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
 
         (data || []).forEach(r => {
-            totalRet += Number(b.Retenciones) || 0;
-                const bk = b.Banco || '?';
-                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
-                porBanco[bk].bruto += monto;
-                porBanco[bk].com += Number(b.Comision) || 0;
-                porBanco[bk].ret += Number(b.Retenciones) || 0;
-                porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
+            (r._tsdArr || []).forEach(t => {
+                totalTSD += Number(t.MontoCRC) || 0;
+                // Tipo de Tarjeta: SOLO desde TSD (única fuente real de la marca)
+                const tt = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
+                porTarjeta[tt] = (porTarjeta[tt] || 0) + (Number(t.MontoCRC) || 0);
+                // Centro de Costo: SOLO desde TSD (CC y nombre de sucursal)
+                const cc = t.CentroCosto || 'Sin CC';
+                porCC[cc] = (porCC[cc] || 0) + (Number(t.MontoCRC) || 0);
+                if (cc !== 'Sin CC' && t.Sucursal) ccNombre[cc] = t.Sucursal;
+            });
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
                 totalBanco += monto;
                 totalCom += Number(b.Comision) || 0;
                 totalRet += Number(b.Retenciones) || 0;
-                // Centro de Costo: SOLO del banco (única fuente real)
-                const cc = b.CentroCosto || 'Sin CC';
-                porCC[cc] = (porCC[cc] || 0) + monto;
-                if (cc !== 'Sin CC' && b.Sucursal) ccNombre[cc] = b.Sucursal; // Guarda el nombre para mostrarlo
                 const bk = b.Banco || '?';
                 if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
                 porBanco[bk].bruto += monto;
                 porBanco[bk].com += Number(b.Comision) || 0;
                 porBanco[bk].ret += Number(b.Retenciones) || 0;
-                porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
                 porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
                 if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 };
                 porEntidad[bk].banco += monto;
@@ -2228,7 +2237,19 @@ window.AuxiliarLogic = {
         if (sel.length === 0) {
             return window.SysUI.alert("Primero seleccione una o varias celdas (clic o arrastre) en las filas de la tabla de pendientes.", "Sin selección", "info");
         }
+        return this._notaParaFilas(sel);
+    },
 
+    // Nota para UNA sola línea: la fila donde se hizo clic derecho
+    abrirNotaLinea: async function(uid) {
+        document.getElementById('vg-context-menu')?.remove();
+        const row = this.currentLimboData.find(r => r._uid === uid);
+        if (!row || !row._dbId) return;
+        return this._notaParaFilas([row]);
+    },
+
+    // Motor compartido del modal de notas (recibe las filas destino ya resueltas)
+    _notaParaFilas: async function(sel) {
         // Precarga la nota existente de la primera seleccionada (si la hay)
         this._notaTmp = sel[0]._notaEtiq || '';
         const html = `
@@ -2267,8 +2288,11 @@ window.AuxiliarLogic = {
     abrirMenuEtiquetas: function(row, e, menu) {
         if (!row || !row._dbId) return; // Las agrupaciones "Varios" se etiquetan en PopUp
 
-        // 1. Botón de Nota (Aplica a la selección actual del Grid)
+        // 1. Botones de Nota (línea individual y selección masiva)
         menu.insertAdjacentHTML('beforeend', `
+            <div onclick="window.AuxiliarLogic.abrirNotaLinea('${row._uid}')" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                <span>📌</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Agregar nota a esta línea</span>
+            </div>
             <div onclick="window.AuxiliarLogic.abrirNotaMasiva()" class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                 <span>📝</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Escribir nota a selección</span>
             </div>
@@ -2293,18 +2317,22 @@ window.AuxiliarLogic = {
                 <span class="text-xs text-slate-700 dark:text-slate-200">${tag.Nombre}</span>
             </div>`).join('');
 
-        // 4. Inyectar Submenú (Acordeón CSS Inline Seguro)
+        // 4. Inyectar Submenú LATERAL (flyout que elige su lado según el espacio en pantalla)
+        const anchoSubmenu = 200;
+        const abrirIzquierda = (e.clientX + 180 + anchoSubmenu) > window.innerWidth;
+        const ladoClase = abrirIzquierda ? 'right-full' : 'left-full';
+        const flecha = abrirIzquierda ? '◀' : '▶';
         menu.insertAdjacentHTML('beforeend', `
-            <div class="group flex flex-col cursor-pointer transition-colors">
+            <div class="group relative flex flex-col cursor-pointer transition-colors">
                 <div class="flex justify-between items-center px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700">
                     <div class="flex items-center gap-2">
                         <span>🏷️</span> <span class="text-xs text-slate-700 dark:text-slate-200 font-bold">Asignar Etiqueta</span>
                     </div>
-                    <span class="text-[10px] text-slate-400 group-hover:rotate-90 transition-transform">▶</span>
+                    <span class="text-[10px] text-slate-400">${flecha}</span>
                 </div>
-                
-                <!-- Desplegable Interno (Oculto hasta el hover) -->
-                <div class="hidden group-hover:flex flex-col bg-slate-50 dark:bg-slate-800/80 border-y border-slate-200 dark:border-slate-600 py-1 max-h-48 overflow-y-auto custom-scrollbar">
+
+                <!-- Flyout lateral (aparece al hover, al costado del menú) -->
+                <div class="hidden group-hover:flex flex-col absolute ${ladoClase} top-0 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded shadow-xl py-1 max-h-56 overflow-y-auto custom-scrollbar z-50">
                     ${items || '<div class="px-4 py-2 text-xs italic text-slate-400">No hay etiquetas creadas</div>'}
                     <div class="border-t border-slate-200 dark:border-slate-600 my-1 mx-2"></div>
                     <div onclick="window.AuxiliarLogic.asignarEtiquetaRapida('${row._uid}', '')" class="px-4 py-1.5 cursor-pointer text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors font-bold">🚫 Quitar etiqueta</div>

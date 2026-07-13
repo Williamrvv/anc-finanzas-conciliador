@@ -3,6 +3,7 @@ session_start();
 if (!isset($_SESSION['user'])) { die("Acceso denegado."); }
 $start = $_GET['start'] ?? '';
 $end = $_GET['end'] ?? '';
+$ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de datos
 ?>
 <!DOCTYPE html>
 <html lang="es" class="h-screen overflow-hidden">
@@ -10,6 +11,7 @@ $end = $_GET['end'] ?? '';
     <meta charset="UTF-8">
     <title>Visor de Datos Crudos - IRI</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script>
         tailwind.config = { darkMode: 'class' };
         if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -34,7 +36,7 @@ $end = $_GET['end'] ?? '';
             </div>
             <div>
                 <h1 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Visor Detallado de Transacciones</h1>
-                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Filtro TSD: <?php echo $start; ?> al <?php echo $end; ?> | Bancos: Folios Pendientes</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 font-medium"><?php echo $ctx === 'm4' ? "Historial consolidado por fecha de folio: $start al $end" : "Filtro TSD: $start al $end | Bancos: Folios Pendientes"; ?></p>
             </div>
         </div>
         
@@ -62,7 +64,7 @@ $end = $_GET['end'] ?? '';
                     Davibank <svg id="spin-scotia" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </button>
                 <button onclick="switchTab('tsd')" id="tab-tsd" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
-                    Sist. TSD <svg id="spin-tsd" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <?php echo $ctx === 'm4' ? 'TSD (Base Datos)' : 'Sist. TSD'; ?> <svg id="spin-tsd" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </button>
             </div>
         </div>
@@ -154,10 +156,17 @@ $end = $_GET['end'] ?? '';
             });
         };
 
+        // Mapa de fuentes: en contexto M4 la pestaña TSD consulta la base de datos, no el TSD en vivo
+        const SOURCE_MAP = {
+            bac:    '<?php echo $ctx === 'm4' ? 'bac_bd'    : 'bac'; ?>',
+            scotia: '<?php echo $ctx === 'm4' ? 'scotia_bd' : 'scotia'; ?>',
+            tsd:    '<?php echo $ctx === 'm4' ? 'tsd_bd'    : 'tsd'; ?>'
+        };
+
         async function fetchSource(sourceName) {
             document.getElementById(`spin-${sourceName}`).classList.remove('hidden');
             try {
-                const res = await fetch(`api/get_crudos_m3.php?start=<?php echo $start; ?>&end=<?php echo $end; ?>&source=${sourceName}`);
+                const res = await fetch(`api/get_crudos_m3.php?start=<?php echo $start; ?>&end=<?php echo $end; ?>&source=${SOURCE_MAP[sourceName]}`);
                 const json = await res.json();
                 if (!json.success) throw new Error(json.error);
                 

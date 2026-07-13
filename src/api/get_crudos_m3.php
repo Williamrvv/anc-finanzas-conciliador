@@ -71,6 +71,77 @@ try {
     }
 
     // =====================================
+    // 2.3 BAC DESDE BASE DE DATOS (Folios consolidados, por fecha de folio)
+    // =====================================
+    else if ($source === 'bac_bd') {
+        $stmt = $pdoBancos->prepare("
+            SELECT 
+                c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS Fecha_Folio, 'BAC' AS Banco,
+                b.IdTransaccion, b.NUMERO_AFILIADO AS Afiliado_MerID, b.NOMBRECOMERCIO AS Nombre_Comercio,
+                b.NUMERO_DE_TARJETA AS Numero_Tarjeta, b.AUTORIZACION AS Numero_Autorizacion, 
+                b.TERMINAL AS Terminal, b.MONTO_VENTA AS Monto_Original, b.MONTONETO AS Monto_Neto, 
+                b.FECHA_PAGO AS Fecha_Pago_Excel, b.FECHA_TRANSACCION, b.FECHA_CIERRE_DATAFONO, 
+                b.COMISION, b.RETENCION_VENTAS, b.RETENCION_RENTA, b.NUMERO_LIQUIDACION, 
+                b.NUMERO_CUENTA, b.TIPO_CAMBIO, b.AJUSTE_COMISION_INTERNACIONAL, b.TIPO_TARJETA,
+                b.CentroCosto, a.TipoAjuste, a.Justificacion, a.EvidenciaB64
+            FROM Tbl_Detalle_BAC b
+            INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
+            LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
+            WHERE CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
+            ORDER BY c.IdCierre ASC
+        ");
+        $stmt->execute([':start' => $startDate, ':end' => $endDate]);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // =====================================
+    // 2.4 DAVIBANK DESDE BASE DE DATOS (Folios consolidados, por fecha de folio)
+    // =====================================
+    else if ($source === 'scotia_bd') {
+        $stmt = $pdoBancos->prepare("
+            SELECT 
+                c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS Fecha_Folio, 'SCOTIA' AS Banco,
+                s.IdTransaccion, s.MerID AS Afiliado_MerID, s.Nombre AS Nombre_Comercio,
+                s.Numero_Tarjeta AS Numero_Tarjeta, s.Numero_Autorizacion AS Numero_Autorizacion, 
+                s.Terminal AS Terminal, s.Monto_Orig AS Monto_Original, s.Monto_Neto AS Monto_Neto, 
+                s.Fecha_Pago AS Fecha_Pago_Excel, s.Fuente, s.Moneda, s.Transaccion, s.Razon_Social, 
+                s.Fecha_Lote_Ajuste, s.Numero_Lote_Ajuste, s.Numero_Pago, s.Monto_Bruto, 
+                s.Monto_Comision_Total, s.Porc_Comision_Total, s.Monto_Comision_Int, s.Porc_Comision_Int, 
+                s.Monto_Retencion_IVA, s.Porc_Retencion_IVA, s.Monto_Retencion_ISR, s.Estatus,
+                s.CentroCosto, a.TipoAjuste, a.Justificacion, a.EvidenciaB64
+            FROM Tbl_Detalle_Scotia s
+            INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
+            LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
+            WHERE CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
+            ORDER BY c.IdCierre ASC
+        ");
+        $stmt->execute([':start' => $startDate, ':end' => $endDate]);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // =====================================
+    // 2.5 EXTRACCIÓN TSD DESDE BASE DE DATOS (Lo ya consolidado, por fecha de folio)
+    // =====================================
+    else if ($source === 'tsd_bd') {
+        $stmt = $pdoBancos->prepare("
+            SELECT 
+                c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS Fecha_Folio,
+                t.IdTransaccion, t.Contrato, t.Cliente, t.Recibo_Detalle, 
+                t.MontoUSD, t.TipoCambio, t.MontoCRC, t.TipoTarjeta, 
+                t.Autorizacion, t.Tarjeta_Ultimos4, t.FechaPago, t.RecibidoPor, 
+                t.ICD, t.SucursalCod, t.SucursalNombre, t.CentroCosto,
+                m.Estado, m.TipoCruceTSD
+            FROM Tbl_Detalle_TSD t
+            INNER JOIN Tbl_Conciliacion_Cierres c ON t.IdCierre = c.IdCierre
+            LEFT JOIN Tbl_Transacciones_Maestra m ON t.IdTransaccion = m.IdTransaccion
+            WHERE CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
+            ORDER BY t.FechaPago DESC, t.Contrato
+        ");
+        $stmt->execute([':start' => $startDate, ':end' => $endDate]);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    // =====================================
     // 3. EXTRACCIÓN TSD (Pesada)  
     // =====================================
     else if ($source === 'tsd') {
@@ -129,31 +200,48 @@ try {
             $n = ltrim($s, '0');
             return $n === '' ? '0' : $n;
         };
-        $stmtCC = $pdoBancos->query("SELECT CodigoSucursal, CentroCosto FROM Tbl_Diccionario_Afiliados WHERE CodigoSucursal IS NOT NULL AND CodigoSucursal <> '' AND Activo = 1 ORDER BY CodigoSucursal, CentroCosto");
+        // Fuente de verdad: API del CRM (catálogo oficial de CC por código de estación TSD)
         $mapaCC = [];
-        foreach($stmtCC->fetchAll(PDO::FETCH_ASSOC) as $d) {
-            $k = $normCod($d['CodigoSucursal']);
-            if (!isset($mapaCC[$k])) $mapaCC[$k] = trim($d['CentroCosto']); // Primera aparición gana (como BUSCARV)
+        $apiCCError = null;
+        $ctxCC = stream_context_create([
+            'http' => ['timeout' => 8],
+            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
+        ]);
+        $crmJson = @file_get_contents('https://intanc.com/CRM/API/V1/NOTIFICADBR/centros-costo-tsd.php', false, $ctxCC);
+        if ($crmJson === false) {
+            $apiCCError = 'No se pudo contactar la API del CRM de Centros de Costo.';
+        } else {
+            $crmData = json_decode($crmJson, true);
+            if (!isset($crmData['ok']) || !$crmData['ok'] || !isset($crmData['data'])) {
+                $apiCCError = 'La API del CRM respondio en un formato inesperado.';
+            } else {
+                foreach ($crmData['data'] as $item) {
+                    $k = $normCod($item['Codigo'] ?? '');
+                    if ($k !== '' && !isset($mapaCC[$k])) $mapaCC[$k] = trim($item['Centro_Costo'] ?? '');
+                }
+            }
         }
 
         // C. Mapeo en Memoria
+        // 'SIN-API' = la API no respondió (falla técnica) / '00-00-00' = el código no está en el catálogo
         $sinMatch = [];
         foreach ($data as &$row) {
             $row['Tarjeta_Ultimos4'] = $mapaTarjetas[trim($row['Contrato'])] ?? '';
             $llaveCC = $normCod($row['SucursalCod']);
-            $row['CentroCosto'] = $mapaCC[$llaveCC] ?? '00-00-00';
-            if (!isset($mapaCC[$llaveCC])) $sinMatch[$llaveCC] = $row['SucursalCod'];
+            $row['CentroCosto'] = $apiCCError ? 'SIN-API' : ($mapaCC[$llaveCC] ?? '00-00-00');
+            if (!$apiCCError && !isset($mapaCC[$llaveCC])) $sinMatch[$llaveCC] = $row['SucursalCod'];
         }
         unset($row);
 
         // MODO DIAGNÓSTICO TEMPORAL: ?debug_cc=1 revela por qué no cruzan los CC
         if (isset($_GET['debug_cc'])) {
             echo json_encode(['success' => true, 'debug' => [
+                'estado_api_crm'          => $apiCCError ?: 'OK',
                 'total_filas_tsd'         => count($data),
-                'total_llaves_diccionario'=> count($mapaCC),
-                'llaves_diccionario'      => array_keys($mapaCC),
+                'total_llaves_api'        => count($mapaCC),
+                'llaves_api'              => array_keys($mapaCC),
                 'codigos_tsd_sin_match'   => $sinMatch
-            ], 'nota' => 'Compare visualmente: las llaves del diccionario vs los codigos TSD que no cruzaron.']);
+            ], 'nota' => 'Compare visualmente: las llaves de la API vs los codigos TSD que no cruzaron.']);
             exit;
         }
 
