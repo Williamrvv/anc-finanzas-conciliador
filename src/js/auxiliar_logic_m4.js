@@ -426,9 +426,9 @@ window.AuxiliarLogic = {
         const labels = { contrato:'Contrato', afiliado:'Afiliado', auth:'Autorización', tarjeta:'Tarjeta', cliente:'Cliente', banco:'Banco', liquidacion:'Liquidación' };
         let timer = null;
         input.addEventListener('input', () => {
-            if (scope.value !== 'all') return; // Ámbitos específicos = SQL bajo demanda (Enter/lupa), jamás por tecla
+            if (scope.value !== 'all') return; // Ámbitos específicos = SQL bajo demanda (Enter), jamás por tecla
             clearTimeout(timer);
-            timer = setTimeout(() => this.applyHistorialFilter(), 250);
+            timer = setTimeout(() => this.applyHistorialFilter(), 1000); // Espera ~1s tras el último carácter
         });
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.triggerHistorialSearch(); });
         scope.addEventListener('change', () => {
@@ -461,7 +461,7 @@ window.AuxiliarLogic = {
         if (input) input.value = '';
         this.updateGlobalBadge();
         if (document.getElementById('m4-historial-date').value) this.fetchHistorial();
-        else { this.historialMaster = []; this.currentHistorialData = []; this.renderHistorialGrid(); }
+        else { this.historialMaster = []; this.currentHistorialData = []; this.renderHistorialGrid(); this.renderBancosConciliadosM4(); }
     },
 
     applyHistorialFilter: function() {
@@ -487,6 +487,50 @@ window.AuxiliarLogic = {
         this.currentHistorialData = data;
         this.renderHistorialGrid();
         this.renderHistorialDash(data);
+        this.renderBancosConciliadosM4();
+    },
+
+    // Trae la conciliación bancaria interna (Detallado vs Pagado por IdMatch) desde su endpoint
+    renderBancosConciliadosM4: async function() {
+        let dateVal = document.getElementById('m4-historial-date')?.value || '';
+        if (!dateVal) return;
+        let start = dateVal, end = dateVal;
+        if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
+
+        const traer = async (banco) => {
+            try {
+                const res = await fetch(`api/get_conciliados_banco_m4.php?start=${start}&end=${end}&banco=${banco}`);
+                const j = await res.json();
+                return j.success ? j.data : [];
+            } catch { return []; }
+        };
+        const [bac, davi] = await Promise.all([traer('BAC'), traer('Davibank')]);       
+
+        const fmt = (v) => '₡' + (Number(v) || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const D = (c) => (typeof c === 'object' && c.getData ? c.getData() : c);
+        const cols = [
+            { title: "Afiliado", field: "Afiliado", width: 95, cssClass: "font-mono" },
+            { title: "Comercio", field: "Comercio", width: 150 },
+            { title: "Tarjeta", field: "Tarjeta", width: 95, cssClass: "font-mono" },
+            { title: "Autorización", field: "Autorizacion", width: 100, cssClass: "font-mono" },
+            { title: "Venta (Bruto)", field: "DetBruto", width: 115, formatter: (c) => fmt(D(c).DetBruto) },
+            { title: "Comisión", field: "DetComision", width: 100, formatter: (c) => fmt(D(c).DetComision) },
+            { title: "Retenciones", field: "DetRetenciones", width: 105, formatter: (c) => fmt(D(c).DetRetenciones) },
+            { title: "Neto Venta", field: "DetNeto", width: 115, cssClass: "font-bold", formatter: (c) => fmt(D(c).DetNeto) },
+            { title: "Depósito", field: "PagMonto", width: 115, cssClass: "font-bold text-blue-600 dark:text-blue-400", formatter: (c) => fmt(D(c).PagMonto) },
+            { title: "Dif.", field: "_dif", width: 90, formatter: (c) => { const r = D(c); const d = (Number(r.PagMonto)||0) - (Number(r.DetNeto)||0); return `<span class="${Math.abs(d) < 1 ? 'text-green-600' : 'text-red-500 font-bold'}">${fmt(d)}</span>`; } },
+            { title: "CC", field: "CentroCosto", width: 80, cssClass: "font-mono" },
+            { title: "Folio", field: "Folio", width: 120, cssClass: "font-mono text-[10px]" }
+        ];
+
+        const cBac = document.getElementById('count-bac-m4'); if (cBac) cBac.textContent = bac.length;
+        const cDavi = document.getElementById('count-davi-m4'); if (cDavi) cDavi.textContent = davi.length;
+
+        if (this.gridBacM4) this.gridBacM4.updateData(bac);
+        else this.gridBacM4 = new VanillaGrid("#table-bac-m4", bac, cols, {});
+
+        if (this.gridDaviM4) this.gridDaviM4.updateData(davi);
+        else this.gridDaviM4 = new VanillaGrid("#table-davi-m4", davi, cols.map(c => ({...c})), {});
     },
 
    // Filtros multi-selección: dropdowns con checkboxes (la data manda, nada viene de afuera)
@@ -550,8 +594,12 @@ window.AuxiliarLogic = {
 
     // Abre el Visor de Crudos en contexto M4 (bancos + TSD desde base de datos) en ventana popup
     abrirVisorCrudos: function() {
-        const dateVal = document.getElementById('m4-historial-date')?.value || '';
-        if (!dateVal) return window.SysUI.alert("Seleccione primero un rango de fechas en el calendario del historial.", "Sin fechas", "info");
+        let dateVal = document.getElementById('m4-historial-date')?.value || '';
+        // Desde Pendientes (o si nunca se abrió Historial) el selector puede estar vacío → caer al último registro
+        if (!dateVal) {
+            const hoy = new Date().toISOString().slice(0, 10);
+            dateVal = this._lastDateQuery || `${hoy} a ${hoy}`;
+        }
         let start = dateVal, end = dateVal;
         if (dateVal.includes(' a ')) { [start, end] = dateVal.split(' a '); }
         const width = Math.round(window.screen.width * 0.9), height = Math.round(window.screen.height * 0.85);

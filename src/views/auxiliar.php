@@ -50,10 +50,13 @@
             </div>
         </div>
 
-        <div class="relative">
-            <input type="text" id="search-m4" placeholder="Filtrar en Auxiliar..." 
-                class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 w-72 shadow-sm text-slate-700 dark:text-white">
-            <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <div class="flex items-center gap-2">
+            <button onclick="window.AuxiliarLogic.abrirVisorCrudos()" title="Ver datos crudos de BAC, Davibank y TSD guardados en base de datos" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 dark:border-slate-600">🔎 Visor Crudos</button>
+            <div class="relative">
+                <input type="text" id="search-m4" placeholder="Filtrar en Auxiliar..." 
+                    class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 w-72 shadow-sm text-slate-700 dark:text-white">
+                <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
         </div>
     </div>
 
@@ -130,7 +133,8 @@
         <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
             <div class="bg-slate-100 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 px-4 py-2 flex items-center gap-2 shrink-0">
                 <span class="text-lg">📚</span>
-                <h3 class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Historial de Ajustes Manuales y Conciliaciones (M4)</h3>
+                <h3 class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Consolidado TSD — Historial de Ajustes Manuales y Conciliaciones (M4)</h3>
+                <span class="text-[10px] bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded font-bold uppercase tracking-wider">Consolidado TSD</span>
             </div>
             <!-- FILTROS UNIVERSALES + DASHBOARDS DEL HISTORIAL -->
             <div class="p-3 space-y-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
@@ -164,6 +168,26 @@
                 </div>
             </div>
             <div id="table-historial-m4" style="height: 600px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
+        </div>
+
+        <!-- TABLA CONCILIADOS BAC -->
+        <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div class="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2 shrink-0">
+                <span class="text-lg">🏦</span>
+                <h3 class="text-xs font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Transacciones Conciliadas — BAC</h3>
+                <span id="count-bac-m4" class="text-[10px] bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded font-bold">0</span>
+            </div>
+            <div id="table-bac-m4" style="height: 300px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
+        </div>
+
+        <!-- TABLA CONCILIADOS DAVIBANK -->
+        <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div class="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 px-4 py-2 flex items-center gap-2 shrink-0">
+                <span class="text-lg">🏦</span>
+                <h3 class="text-xs font-black text-red-700 dark:text-red-400 uppercase tracking-wider">Transacciones Conciliadas — Davibank</h3>
+                <span id="count-davi-m4" class="text-[10px] bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded font-bold">0</span>
+            </div>
+            <div id="table-davi-m4" style="height: 300px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
     </div> <!-- FIN VISTA 2 -->
 
