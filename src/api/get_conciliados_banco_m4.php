@@ -7,13 +7,11 @@ if (!isset($_SESSION['user'])) { echo json_encode(['success' => false]); exit; }
 
 $start = $_GET['start'] ?? date('Y-m-d');
 $end   = $_GET['end'] ?? date('Y-m-d');
-$banco = $_GET['banco'] ?? 'BAC'; // 'BAC' o 'Davibank'
+$banco = $_GET['banco'] ?? 'BAC';
 
 try {
     $pdo = Database::connect();
 
-    // Empareja DETALLADO (venta) con PAGADO (depósito) por IdMatch, ambos CONCILIADOS,
-    // dentro del rango de fecha de folio consolidado. Solo lo que vive en la Maestra.
     if ($banco === 'BAC') {
         $sql = "
             SELECT 
@@ -29,18 +27,28 @@ try {
                 dv.MONTONETO            AS DetNeto,
                 dv.NUMERO_LIQUIDACION   AS Liquidacion,
                 dv.CentroCosto          AS CentroCosto,
-                pg.Fecha                AS PagFecha,
+                pg.FechaPago            AS PagFecha,
                 pg.Referencia           AS PagReferencia,
-                pg.Creditos             AS PagMonto,
+                pg.MontoPagado          AS PagMonto,
                 c.Folio                 AS Folio,
                 CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio
             FROM Tbl_Transacciones_Maestra det
             INNER JOIN Tbl_Detalle_BAC dv ON det.IdTransaccion = dv.IdTransaccion
-            INNER JOIN Tbl_Transacciones_Maestra pgm ON pgm.IdMatch = det.IdMatch AND pgm.Origen = 'PAGADO'
-            LEFT JOIN Tbl_Pagado_BAC pg ON pgm.IdTransaccion = pg.IdTransaccion
-            LEFT JOIN Tbl_Conciliacion_Cierres c ON det.IdCierre = c.IdCierre
-            WHERE det.Banco = 'BAC' AND det.Origen = 'DETALLADO'
-              AND det.Estado = 'CONCILIADO' AND det.IdMatch IS NOT NULL
+            INNER JOIN Tbl_Conciliacion_Cierres c ON det.IdCierre = c.IdCierre
+            OUTER APPLY (
+                SELECT SUM(ISNULL(p2.Creditos, 0)) AS MontoPagado,
+                       MIN(p2.Referencia) AS Referencia,
+                       MIN(p2.Fecha) AS FechaPago
+                FROM Tbl_Transacciones_Maestra mp
+                INNER JOIN Tbl_Pagado_BAC p2 ON mp.IdTransaccion = p2.IdTransaccion
+                WHERE mp.IdMatch = det.IdMatch 
+                  AND mp.Origen = 'PAGADO' 
+                  AND mp.Banco = det.Banco
+            ) pg
+            WHERE UPPER(det.Banco) = 'BAC' 
+              AND det.Origen = 'DETALLADO'
+              AND det.Estado = 'CONCILIADO' 
+              AND det.IdMatch IS NOT NULL
               AND c.ConsolidadoTSD IS NOT NULL
               AND CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
             ORDER BY c.IdCierre ASC, det.IdMatch
@@ -60,18 +68,28 @@ try {
                 dv.Monto_Neto           AS DetNeto,
                 dv.Numero_Pago          AS Liquidacion,
                 dv.CentroCosto          AS CentroCosto,
-                pg.Fecha_Movimiento     AS PagFecha,
-                pg.Numero_Referencia    AS PagReferencia,
-                pg.Monto                AS PagMonto,
+                pg.FechaPago            AS PagFecha,
+                pg.Referencia           AS PagReferencia,
+                pg.MontoPagado          AS PagMonto,
                 c.Folio                 AS Folio,
                 CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio
             FROM Tbl_Transacciones_Maestra det
             INNER JOIN Tbl_Detalle_Scotia dv ON det.IdTransaccion = dv.IdTransaccion
-            INNER JOIN Tbl_Transacciones_Maestra pgm ON pgm.IdMatch = det.IdMatch AND pgm.Origen = 'PAGADO'
-            LEFT JOIN Tbl_Pagado_Scotia pg ON pgm.IdTransaccion = pg.IdTransaccion
-            LEFT JOIN Tbl_Conciliacion_Cierres c ON det.IdCierre = c.IdCierre
-            WHERE det.Banco = 'Davibank' AND det.Origen = 'DETALLADO'
-              AND det.Estado = 'CONCILIADO' AND det.IdMatch IS NOT NULL
+            INNER JOIN Tbl_Conciliacion_Cierres c ON det.IdCierre = c.IdCierre
+            OUTER APPLY (
+                SELECT SUM(ISNULL(p2.Monto, 0)) AS MontoPagado,
+                       MIN(p2.Numero_Referencia) AS Referencia,
+                       MIN(p2.Fecha_Movimiento) AS FechaPago
+                FROM Tbl_Transacciones_Maestra mp
+                INNER JOIN Tbl_Pagado_Scotia p2 ON mp.IdTransaccion = p2.IdTransaccion
+                WHERE mp.IdMatch = det.IdMatch 
+                  AND mp.Origen = 'PAGADO' 
+                  AND mp.Banco = det.Banco
+            ) pg
+            WHERE UPPER(det.Banco) IN ('DAVIBANK', 'SCOTIA') 
+              AND det.Origen = 'DETALLADO'
+              AND det.Estado = 'CONCILIADO' 
+              AND det.IdMatch IS NOT NULL
               AND c.ConsolidadoTSD IS NOT NULL
               AND CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
             ORDER BY c.IdCierre ASC, det.IdMatch
@@ -81,6 +99,7 @@ try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([':start' => $start, ':end' => $end]);
     echo json_encode(['success' => true, 'data' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+
 } catch (\Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

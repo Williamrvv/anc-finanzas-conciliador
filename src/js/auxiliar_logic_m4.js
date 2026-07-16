@@ -504,7 +504,19 @@ window.AuxiliarLogic = {
                 return j.success ? j.data : [];
             } catch { return []; }
         };
-        const [bac, davi] = await Promise.all([traer('BAC'), traer('Davibank')]);       
+        const [bac, davi] = await Promise.all([traer('BAC'), traer('Davibank')]);
+
+        // La diferencia se calcula a NIVEL DE GRUPO (match): depósito del grupo vs suma de netos del grupo
+        const prep = (rows) => {
+            const sumas = {};
+            rows.forEach(r => { sumas[r.IdMatch] = (sumas[r.IdMatch] || 0) + (Number(r.DetNeto) || 0); });
+            rows.forEach(r => {
+                r._netoGrupo = sumas[r.IdMatch];
+                r._dif = r.PagMonto === null ? null : (Number(r.PagMonto) || 0) - sumas[r.IdMatch];
+            });
+            return rows;
+        };
+        prep(bac); prep(davi);
 
         const fmt = (v) => '₡' + (Number(v) || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const D = (c) => (typeof c === 'object' && c.getData ? c.getData() : c);
@@ -517,8 +529,8 @@ window.AuxiliarLogic = {
             { title: "Comisión", field: "DetComision", width: 100, formatter: (c) => fmt(D(c).DetComision) },
             { title: "Retenciones", field: "DetRetenciones", width: 105, formatter: (c) => fmt(D(c).DetRetenciones) },
             { title: "Neto Venta", field: "DetNeto", width: 115, cssClass: "font-bold", formatter: (c) => fmt(D(c).DetNeto) },
-            { title: "Depósito", field: "PagMonto", width: 115, cssClass: "font-bold text-blue-600 dark:text-blue-400", formatter: (c) => fmt(D(c).PagMonto) },
-            { title: "Dif.", field: "_dif", width: 90, formatter: (c) => { const r = D(c); const d = (Number(r.PagMonto)||0) - (Number(r.DetNeto)||0); return `<span class="${Math.abs(d) < 1 ? 'text-green-600' : 'text-red-500 font-bold'}">${fmt(d)}</span>`; } },
+            { title: "Depósito (grupo)", field: "PagMonto", width: 125, cssClass: "font-bold text-blue-600 dark:text-blue-400", formatter: (c) => { const r = D(c); return r.PagMonto === null ? '<span class="text-slate-400 italic">Sin depósito</span>' : fmt(r.PagMonto); } },
+            { title: "Dif. Grupo", field: "_dif", width: 100, formatter: (c) => { const r = D(c); if (r._dif === null) return '<span class="text-slate-400">—</span>'; return `<span class="${Math.abs(r._dif) < 1 ? 'text-green-600' : 'text-red-500 font-bold'}">${fmt(r._dif)}</span>`; } },
             { title: "CC", field: "CentroCosto", width: 80, cssClass: "font-mono" },
             { title: "Folio", field: "Folio", width: 120, cssClass: "font-mono text-[10px]" }
         ];
