@@ -107,6 +107,7 @@ try {
     // Simplificamos la extracción y aseguramos el formato de las fechas
     $sqlFacturacion = "
         SELECT
+            P.ID AS ID_Transaccion,
             P.KNUM AS Numero_Contrato,
             C.FNAME AS Nombre,
             C.LNAME AS Apellido,

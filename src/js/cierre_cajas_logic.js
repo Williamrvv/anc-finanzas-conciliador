@@ -554,7 +554,7 @@ window.CierreCajasLogic = {
     guardarBorrador: function(isAuto = false) {
         if (!this.transacciones || this.transacciones.length === 0) return;
         
-        const escaneados = this.transacciones.filter(t => t._selected).map(t => t.Numero_Contrato);
+        const escaneados = this.transacciones.filter(t => t._selected).map(t => t.ID_Transaccion);
         
         if (escaneados.length === 0) {
             if (!isAuto) SysUI.alert("No hay transacciones escaneadas para guardar en el borrador.", "Borrador Vacío", "info");
@@ -563,7 +563,8 @@ window.CierreCajasLogic = {
 
         const borrador = {
             fecha: new Date().toLocaleString(),
-            contratos_listos: escaneados
+            version: 2, // v2 = por ID_Transaccion (v1 guardaba por Numero_Contrato)
+            ids_listos: escaneados
         };
 
         localStorage.setItem(this.getDraftKey(), JSON.stringify(borrador));
@@ -608,15 +609,24 @@ window.CierreCajasLogic = {
 
         try {
             const borrador = JSON.parse(draftStr);
-            const cantidadGuardada = borrador.contratos_listos.length;
-            
+
+            // v2 = ids_listos (por ID_Transaccion) | v1 = contratos_listos (borradores viejos)
+            const esV2 = Array.isArray(borrador.ids_listos);
+            const listaGuardada = esV2 ? borrador.ids_listos : (borrador.contratos_listos || []);
+            const cantidadGuardada = listaGuardada.length;
+
             const msg = `Se ha detectado un Borrador guardado el:\n${borrador.fecha}\n\nCon un progreso de ${cantidadGuardada} facturas escaneadas.\n\n¿Desea restaurar su progreso y aplicar un Auto-Match a estas transacciones?`;
             const restaurar = await SysUI.confirm(msg, "Progreso Detectado", "info");
             
             if (restaurar) {
                 let recuperados = 0;
                 this.transacciones.forEach(t => {
-                    if (borrador.contratos_listos.includes(t.Numero_Contrato)) {
+                    // v2: match por ID único (sobrevive aunque la autorización venga vacía de TSD)
+                    // v1: match por contrato (borradores antiguos, comportamiento heredado)
+                    const coincide = esV2
+                        ? listaGuardada.includes(t.ID_Transaccion)
+                        : listaGuardada.includes(t.Numero_Contrato);
+                    if (coincide) {
                         t._selected = true;
                         t._matchTime = Date.now();
                         recuperados++;
