@@ -610,10 +610,24 @@ window.CierreCajasLogic = {
         try {
             const borrador = JSON.parse(draftStr);
 
-            // v2 = ids_listos (por ID_Transaccion) | v1 = contratos_listos (borradores viejos)
+            // v2 = ids_listos (por ID_Transaccion) | v1 = contratos_listos (por contrato)
+            // Cualquier otro formato (borradores prehistóricos con objetos) se descarta.
             const esV2 = Array.isArray(borrador.ids_listos);
-            const listaGuardada = esV2 ? borrador.ids_listos : (borrador.contratos_listos || []);
-            const cantidadGuardada = listaGuardada.length;
+            const esV1 = Array.isArray(borrador.contratos_listos);
+            if (!esV2 && !esV1) {
+                console.warn("Borrador en formato no reconocido; se descarta.");
+                this.limpiarBorrador();
+                return false;
+            }
+            const listaGuardada = esV2 ? borrador.ids_listos : borrador.contratos_listos;
+            // Solo llaves primitivas válidas (descarta objetos residuales de formatos viejos)
+            const listaValida = listaGuardada.filter(x => typeof x === 'string' || typeof x === 'number');
+            if (listaValida.length === 0) {
+                console.warn("Borrador sin llaves válidas; se descarta.");
+                this.limpiarBorrador();
+                return false;
+            }
+            const cantidadGuardada = listaValida.length;
 
             const msg = `Se ha detectado un Borrador guardado el:\n${borrador.fecha}\n\nCon un progreso de ${cantidadGuardada} facturas escaneadas.\n\n¿Desea restaurar su progreso y aplicar un Auto-Match a estas transacciones?`;
             const restaurar = await SysUI.confirm(msg, "Progreso Detectado", "info");
@@ -624,8 +638,8 @@ window.CierreCajasLogic = {
                     // v2: match por ID único (sobrevive aunque la autorización venga vacía de TSD)
                     // v1: match por contrato (borradores antiguos, comportamiento heredado)
                     const coincide = esV2
-                        ? listaGuardada.includes(t.ID_Transaccion)
-                        : listaGuardada.includes(t.Numero_Contrato);
+                        ? listaValida.includes(t.ID_Transaccion)
+                        : listaValida.includes(t.Numero_Contrato);
                     if (coincide) {
                         t._selected = true;
                         t._matchTime = Date.now();

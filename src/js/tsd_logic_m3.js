@@ -1779,8 +1779,8 @@ window.TSDLogic = {
         // --- 2. BLOQUE B: Empaquetar Exitosos (Matches) ---
         const payloadMatched = [];
         dataMatched.forEach(row => {
-            const arrT = Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw];
-            const arrB = Array.isArray(row._bancoRaw) ? row._bancoRaw : [row._bancoRaw];
+            const arrT = (Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw]).filter(Boolean);
+            const arrB = (Array.isArray(row._bancoRaw) ? row._bancoRaw : [row._bancoRaw]).filter(Boolean);
             
             // Extraer justificación si es Manual
             let justif = null;
