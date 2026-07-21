@@ -519,7 +519,7 @@ window.AuxiliarLogic = {
         prep(bac); prep(davi);
 
         const fmt = (v) => '₡' + (Number(v) || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const D = (c) => (typeof c === 'object' && c.getData ? c.getData() : c);
+        const D = (c) => (c && typeof c.getRow === 'function' ? c.getRow() : c);
         const cols = [
             { title: "Afiliado", field: "Afiliado", width: 95, cssClass: "font-mono" },
             { title: "Comercio", field: "Comercio", width: 150 },
