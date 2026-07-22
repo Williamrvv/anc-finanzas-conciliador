@@ -162,7 +162,7 @@
                         <div style="height:240px"><canvas id="ch-hist-tarjeta"></canvas></div>
                     </div>
                     <div class="lg:col-span-2 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">🏦 Por Banco: Bruto · Comisiones · Retenciones · Neto</div>
+                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">🏦 Comparativa BAC vs Davibank <span class="text-[9px] normal-case font-normal text-slate-400">(perfil financiero)</span></div>
                         <div style="height:260px"><canvas id="ch-hist-banco"></canvas></div>
                     </div>
                 </div>

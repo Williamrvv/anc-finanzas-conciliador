@@ -740,19 +740,44 @@ window.AuxiliarLogic = {
             });
         }
 
-        // --- BARRAS SEPARADAS: Bruto · Comisiones · Retenciones · Neto por banco ---
+        // --- RADAR COMPARATIVO: perfil financiero de cada banco ---
         const ctxB = document.getElementById('ch-hist-banco');
         if (ctxB) {
-            const bancos = Object.keys(porBanco);
+            const ejes = ['Ingreso Bruto', 'Comisiones', 'Retenciones', 'Ingreso Neto'];
+            const perfil = (b) => porBanco[b] ? [porBanco[b].bruto, porBanco[b].com, porBanco[b].ret, porBanco[b].neto] : [0, 0, 0, 0];
+            // Paleta por banco (BAC azul, Davibank rojo); otros bancos reciben un color de reserva
+            const colores = { 'BAC': '#3b82f6', 'DAVIBANK': '#ef4444', 'SCOTIA': '#ef4444' };
+            const reserva = ['#8b5cf6', '#10b981', '#f59e0b'];
+            let ri = 0;
+            const datasets = Object.keys(porBanco).map(b => {
+                const col = colores[b.toUpperCase()] || reserva[ri++ % reserva.length];
+                return {
+                    label: b,
+                    data: perfil(b),
+                    borderColor: col,
+                    backgroundColor: col + '33', // relleno translúcido
+                    pointBackgroundColor: col,
+                    borderWidth: 2
+                };
+            });
             this._chBanco = new Chart(ctxB.getContext('2d'), {
-                type: 'bar',
-                data: { labels: bancos, datasets: [
-                    { label: 'Ingreso Bruto', data: bancos.map(b => porBanco[b].bruto), backgroundColor: '#3b82f6' },
-                    { label: 'Comisiones', data: bancos.map(b => porBanco[b].com), backgroundColor: '#f59e0b' },
-                    { label: 'Retenciones', data: bancos.map(b => porBanco[b].ret), backgroundColor: '#ef4444' },
-                    { label: 'Ingreso Neto', data: bancos.map(b => porBanco[b].neto), backgroundColor: '#10b981' }
-                ] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tick, font: { size: 10 } } }, tooltip: { callbacks: { label: (c) => c.dataset.label + ': ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+                type: 'radar',
+                data: { labels: ejes, datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: tick, font: { size: 11 } } },
+                        tooltip: { callbacks: { label: (c) => c.dataset.label + ' · ' + c.label + ': ' + fmt(c.raw) } }
+                    },
+                    scales: {
+                        r: {
+                            angleLines: { color: tick + '33' },
+                            grid: { color: tick + '33' },
+                            pointLabels: { color: tick, font: { size: 10 } },
+                            ticks: { color: tick, backdropColor: 'transparent', callback: (v) => '₡' + (v / 1000) + 'k' }
+                        }
+                    }
+                }
             });
         }
     },
