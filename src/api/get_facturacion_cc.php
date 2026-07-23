@@ -109,19 +109,25 @@ try {
         SELECT
             P.ID AS ID_Transaccion,
             P.KNUM AS Numero_Contrato,
-            C.FNAME AS Nombre,
-            C.LNAME AS Apellido,
+            ISNULL(C.FNAME, R.FNAME) AS Nombre,
+            ISNULL(C.LNAME, R.LNAME) AS Apellido,
             P.AMOUNT AS Monto_Pago,
             P.CARD_TYPE AS Tipo_Tarjeta,
             P.LOC_CODE AS Sucursal,
             P.Ref AS Numero_Autorizacion,
             P.dbr AS ICD,
             CONVERT(varchar(23), P.Pay_Date, 121) AS Pay_Date,
-            ISNULL((SELECT TOP 1 Ex.sell FROM dbo.Exchange Ex WHERE Ex.description = 'TO-CR' AND Ex.AsOf <= CAST(P.Pay_Date AS DATE) ORDER BY Ex.AsOf DESC), C.USDRate) AS Tipo_Cambio_Dia
+            ISNULL(
+                (SELECT TOP 1 Ex.sell FROM dbo.Exchange Ex WHERE Ex.description = 'TO-CR' AND Ex.AsOf <= CAST(P.Pay_Date AS DATE) ORDER BY Ex.AsOf DESC),
+                ISNULL(C.USDRate, R.USDRate)
+            ) AS Tipo_Cambio_Dia
         FROM dbo.Cpay P
-        INNER JOIN dbo.Cra001 C ON P.KNUM = C.KNUM
+        LEFT JOIN dbo.Cra001 C ON P.KNUM = C.KNUM          -- contrato (null si es reserva pura)
+        LEFT JOIN dbo.Creser R ON P.KNUM = R.KNUM          -- reserva  (null si es contrato)
+        LEFT JOIN dbo.Setup  S ON P.LOC_CODE = S.Location  -- sucursal -> pais
         WHERE P.PAY_CHARGE = 'P' 
           AND P.TYPE IN ('3','7','C','F','J')
+          AND S.Country = 'CRI'
           AND ($dynamicWhere)
         ORDER BY P.Pay_Date DESC, P.KNUM, P.dbr;
     ";

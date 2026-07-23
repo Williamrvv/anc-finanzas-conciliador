@@ -289,9 +289,9 @@ window.AuxiliarLogic = {
                 const _dims = {
                     bancos: uniq(bancoArr.map(c => c.Banco)),
                     tarjetas: uniq(tsdArr.map(c => c.TipoTarjeta)),
-                    ccs: uniq(todos.map(c => c.CentroCosto)),
-                    sucs: uniq(todos.map(c => c.Sucursal)),
-                    marcas: uniq(todos.map(c => marcaDe(c.Sucursal)))
+                    ccs: uniq(tsdArr.map(c => c.CentroCosto)),      
+                    sucs: uniq(tsdArr.map(c => c.Sucursal)),        
+                    marcas: uniq(tsdArr.map(c => marcaDe(c.Sucursal)))
                 };
 
                 // Etiqueta del grupo: la del primer miembro que tenga una (color y nota)
@@ -485,6 +485,7 @@ window.AuxiliarLogic = {
             && pasa(r._dims.sucs, selF.sucursal));
 
         this.currentHistorialData = data;
+        this._ccSeleccionados = (selF.cc && selF.cc.length > 0) ? selF.cc.map(String) : null;
         this.renderHistorialGrid();
         this.renderHistorialDash(data);
         this.renderBancosConciliadosM4();
@@ -640,8 +641,11 @@ window.AuxiliarLogic = {
         const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
 
+        const ccFiltro = this._ccSeleccionados; // null = sin filtro de CC
         (data || []).forEach(r => {
             (r._tsdArr || []).forEach(t => {
+                // Cuando hay filtro de CC, solo cuentan las transacciones TSD de ese CC
+                if (ccFiltro && !ccFiltro.includes(String(t.CentroCosto))) return;
                 totalTSD += Number(t.MontoCRC) || 0;
                 // Tipo de Tarjeta: SOLO desde TSD (única fuente real de la marca)
                 const tt = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
