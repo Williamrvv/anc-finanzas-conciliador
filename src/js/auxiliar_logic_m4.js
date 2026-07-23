@@ -20,13 +20,14 @@ window.AuxiliarLogic = {
     // Devuelve el color de fondo (hex) que le toca a una fila al exportarla
     getColorExport: function(row) {
         let color = null;
-        if (row._categoriaId === 1 || row._categoriaId === 2) {
+        // La etiqueta MANUAL del usuario tiene prioridad sobre la sugerencia automática
+        if (row._colorEtiq) {
+            const tag = this.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+            if (tag) color = tag.ColorCSS;
+        } else if (row._categoriaId === 1 || row._categoriaId === 2) {
             const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
             const tag = this.customTags.find(t => Number(t.EsSistema) === 1 && t.Nombre === nombre);
             color = tag ? tag.ColorCSS : (row._categoriaId === 1 ? 'rose' : 'fuchsia');
-        } else if (row._colorEtiq) {
-            const tag = this.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
-            if (tag) color = tag.ColorCSS;
         }
         return color && this.COLORES_ES[color] ? this.COLORES_ES[color].hex : null;
     },
@@ -379,7 +380,19 @@ window.AuxiliarLogic = {
                     if (evString) {
                         extrasHtml += `<div class="text-[9px] text-blue-600 dark:text-blue-400 font-bold mt-0.5 flex items-center gap-1 justify-center"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> Evidencia Visual</div>`;
                     }
-                    return `<div class="flex flex-col items-center"><span class="text-green-800 dark:text-green-300 uppercase tracking-widest text-[10px]">✅ ${tipoString.replace('[AUX] ', '')}</span>${extrasHtml}</div>`;
+                    // Nombre de etiqueta discreto al pie: manual (🏷️) o sugerencia automática
+                    let etiqHtml = '';
+                    let etiqNombre = null;
+                    if (row._colorEtiq) {
+                        const tE = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+                        if (tE) etiqNombre = tE.Nombre;
+                    } else if (row._categoriaId === 1 || row._categoriaId === 2) {
+                        etiqNombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+                    }
+                    if (etiqNombre) {
+                        etiqHtml = `<div class="text-[8px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 lowercase tracking-normal">🏷️ ${etiqNombre}</div>`;
+                    }
+                    return `<div class="flex flex-col items-center"><span class="text-green-800 dark:text-green-300 uppercase tracking-widest text-[10px]">✅ ${tipoString.replace('[AUX] ', '')}</span>${extrasHtml}${etiqHtml}</div>`;
                 }
             },
             { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
@@ -1303,18 +1316,18 @@ window.AuxiliarLogic = {
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
                     let badge = '';
                     
-                    if (row._categoriaId === 1 || row._categoriaId === 2) {
-                        const nombreSis = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
-                        const tagSis = window.AuxiliarLogic.customTags.find(t => Number(t.EsSistema) === 1 && t.Nombre === nombreSis);
-                        const cssSis = window.AuxiliarLogic.TW_COLORS[tagSis ? tagSis.ColorCSS : (row._categoriaId === 1 ? 'rose' : 'fuchsia')] || '';
-                        const icono = row._categoriaId === 1 ? '🛑' : '🔄';
-                        badge = `<span class="block mb-1 text-[9px] font-black uppercase ${cssSis} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none">${icono} ${nombreSis}</span>`;
-                    } else if (row._colorEtiq) {
+                    if (row._colorEtiq) {
                         const tagObj = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
                         if (tagObj) {
                             const css = window.AuxiliarLogic.TW_COLORS[tagObj.ColorCSS] || window.AuxiliarLogic.TW_COLORS['slate'];
                             badge = `<span class="block mb-1 text-[9px] font-black uppercase ${css} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none" title="${tagObj.Descripcion || ''}">🏷️ ${tagObj.Nombre}</span>`;
                         }
+                    } else if (row._categoriaId === 1 || row._categoriaId === 2) {
+                        const nombreSis = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+                        const tagSis = window.AuxiliarLogic.customTags.find(t => Number(t.EsSistema) === 1 && t.Nombre === nombreSis);
+                        const cssSis = window.AuxiliarLogic.TW_COLORS[tagSis ? tagSis.ColorCSS : (row._categoriaId === 1 ? 'rose' : 'fuchsia')] || '';
+                        const icono = row._categoriaId === 1 ? '🛑' : '🔄';
+                        badge = `<span class="block mb-1 text-[9px] font-black uppercase ${cssSis} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none">${icono} ${nombreSis}</span>`;
                     }
 
                     if (row._isMulti) {
