@@ -652,7 +652,7 @@ window.AuxiliarLogic = {
         const porEntidad = {}; // { 'BAC': {tsd, banco}, ... }
         const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
-        const comxTarjeta = {}; // { 'VISA': {com, bruto}, ... } para tasa de comisión efectiva por tarjeta
+        const porDia = {}; // { '2026-07-20': {com, bruto}, ... } evolución diaria de comisión efectiva
 
         const ccFiltro = this._ccSeleccionados; // null = sin filtro de CC
         (data || []).forEach(r => {
@@ -668,13 +668,15 @@ window.AuxiliarLogic = {
                 porCC[cc] = (porCC[cc] || 0) + (Number(t.MontoCRC) || 0);
                 if (cc !== 'Sin CC' && t.Sucursal) ccNombre[cc] = t.Sucursal;
             });
-            // Tasa de comisión por tipo de tarjeta: la tarjeta viene de TSD, la comisión del banco (mismo grupo)
-            const tarjetaGrupo = String((r._tsdArr && r._tsdArr[0] && r._tsdArr[0].TipoTarjeta) || '').trim().toUpperCase() || 'S/D';
-            (r._bancoArr || []).forEach(b => {
-                if (!comxTarjeta[tarjetaGrupo]) comxTarjeta[tarjetaGrupo] = { com: 0, bruto: 0 };
-                comxTarjeta[tarjetaGrupo].com += Number(b.Comision) || 0;
-                comxTarjeta[tarjetaGrupo].bruto += Number(b.MontoBrutoBanco) || 0;
-            });
+            // Evolución diaria de la comisión efectiva: se agrupa por fecha de folio (eje temporal)
+            const dia = r.FechaFolio && r.FechaFolio !== '-' ? String(r.FechaFolio).substring(0, 10) : null;
+            if (dia) {
+                (r._bancoArr || []).forEach(b => {
+                    if (!porDia[dia]) porDia[dia] = { com: 0, bruto: 0 };
+                    porDia[dia].com += Number(b.Comision) || 0;
+                    porDia[dia].bruto += Number(b.MontoBrutoBanco) || 0;
+                });
+            }
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
                 totalBanco += monto;
@@ -754,40 +756,50 @@ window.AuxiliarLogic = {
             });
         }
 
-        // --- TERMÓMETROS: tasa de comisión efectiva por tipo de tarjeta (HTML/CSS, sin librería) ---
-        const contTarjeta = document.getElementById('term-comision-tarjeta');
-        if (contTarjeta) {
-            // Tasa efectiva = comisión / bruto. Ordenada de la más cara a la más barata.
-            const filas = Object.entries(comxTarjeta)
-                .filter(([, v]) => v.bruto > 0)
-                .map(([tarjeta, v]) => ({ tarjeta, tasa: (v.com / v.bruto) * 100, com: v.com, bruto: v.bruto }))
-                .sort((a, b) => b.tasa - a.tasa);
-
-            if (filas.length === 0) {
-                contTarjeta.innerHTML = '<div class="text-xs text-slate-400 italic text-center py-6">Sin datos de comisión en el rango</div>';
-            } else {
-                const maxTasa = Math.max(...filas.map(f => f.tasa), 0.01); // escala relativa a la más cara
-                // Verde (barato) → rojo (caro) según posición relativa a la tasa máxima
-                const colorDe = (tasa) => {
-                    const r = tasa / maxTasa; // 0..1
-                    if (r > 0.75) return '#ef4444';
-                    if (r > 0.5)  return '#f59e0b';
-                    if (r > 0.25) return '#eab308';
-                    return '#10b981';
-                };
-                contTarjeta.innerHTML = filas.map(f => {
-                    const ancho = Math.max((f.tasa / maxTasa) * 100, 3); // mínimo 3% para que siempre se vea la barrita
-                    const col = colorDe(f.tasa);
-                    return `
-                        <div class="flex items-center gap-2 text-xs" title="Comisión ${fmt(f.com)} sobre venta ${fmt(f.bruto)}">
-                            <div class="w-20 shrink-0 font-bold text-slate-600 dark:text-slate-300 truncate text-right">${f.tarjeta}</div>
-                            <div class="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
-                                <div class="h-full rounded-full transition-all" style="width:${ancho}%; background:${col}"></div>
-                            </div>
-                            <div class="w-14 shrink-0 font-mono font-bold text-slate-700 dark:text-slate-200 text-right">${f.tasa.toFixed(2)}%</div>
-                        </div>`;
-                }).join('');
-            }
+        // --- LÍNEA: evolución diaria de la comisión efectiva (interactivo) ---
+        const ctxVS = document.getElementById('ch-hist-vs');
+        if (ctxVS) {
+            const dias = Object.keys(porDia).sort(); // orden cronológico
+            const tasas = dias.map(d => porDia[d].bruto > 0 ? (porDia[d].com / porDia[d].bruto) * 100 : 0);
+            // Etiqueta corta dd/mm para el eje
+            const etiquetas = dias.map(d => { const p = d.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : d; });
+            this._chVS = new Chart(ctxVS.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: etiquetas,
+                    datasets: [{
+                        label: 'Comisión efectiva',
+                        data: tasas,
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99,102,241,0.12)',
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#6366f1',
+                        _com: dias.map(d => porDia[d].com),
+                        _bruto: dias.map(d => porDia[d].bruto)
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: {
+                            title: (items) => 'Folio del ' + items[0].label,
+                            label: (c) => {
+                                const com = c.dataset._com[c.dataIndex], bruto = c.dataset._bruto[c.dataIndex];
+                                return `${c.raw.toFixed(2)}% · comisión ${fmt(com)} de ${fmt(bruto)}`;
+                            }
+                        } }
+                    },
+                    scales: {
+                        x: { ticks: { color: tick, font: { size: 10 } }, grid: { display: false } },
+                        y: { ticks: { color: tick, callback: (v) => v.toFixed(1) + '%' }, grid: { color: tick + '22' } }
+                    }
+                }
+            });
         }
         // --- BARRAS: Ingreso Bruto por Tipo de Tarjeta ---
         const ctxTar = document.getElementById('ch-hist-tarjeta');
