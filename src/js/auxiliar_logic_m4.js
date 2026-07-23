@@ -652,6 +652,7 @@ window.AuxiliarLogic = {
         const porEntidad = {}; // { 'BAC': {tsd, banco}, ... }
         const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
+        const porMarca = {};   // { 'Alamo': monto, ... } Volumen conciliado por marca comercial (A/E/N)
 
         const ccFiltro = this._ccSeleccionados; // null = sin filtro de CC
         (data || []).forEach(r => {
@@ -666,6 +667,10 @@ window.AuxiliarLogic = {
                 const cc = t.CentroCosto || 'Sin CC';
                 porCC[cc] = (porCC[cc] || 0) + (Number(t.MontoCRC) || 0);
                 if (cc !== 'Sin CC' && t.Sucursal) ccNombre[cc] = t.Sucursal;
+                // Marca comercial por sufijo del nombre: (A)=Alamo, (E)=Enterprise, (N)=National
+                const mm = String(t.Sucursal || '').trim().match(/\(([AEN])\)$/i);
+                const marca = mm ? ({ A: 'Alamo', E: 'Enterprise', N: 'National' })[mm[1].toUpperCase()] : 'Sin marca';
+                porMarca[marca] = (porMarca[marca] || 0) + (Number(t.MontoCRC) || 0);
             });
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
@@ -729,27 +734,56 @@ window.AuxiliarLogic = {
             const labels = lista.map(x => ccNombre[x[0]] || x[0]).concat(otros ? ['Otros'] : []);
             const vals = lista.map(x => Math.abs(x[1])).concat(otros ? [Math.abs(otros)] : []);
             const palette = ['#6366f1','#3b82f6','#0ea5e9','#14b8a6','#10b981','#84cc16','#eab308','#f59e0b','#f97316','#ef4444','#94a3b8'];
+            const totalCC = vals.reduce((a, v) => a + v, 0);
             this._chCC = new Chart(ctxCC.getContext('2d'), {
                 type: 'doughnut',
                 data: { labels, datasets: [{ data: vals, backgroundColor: palette.slice(0, labels.length), borderWidth: 0 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: tick, font: { size: 10 }, boxWidth: 12 } }, tooltip: { callbacks: { label: (c) => c.label + (codigos[c.dataIndex] && codigos[c.dataIndex] !== '—' ? ' · CC ' + codigos[c.dataIndex] : '') + ': ' + fmt(c.raw) } } } }
+                plugins: [ChartDataLabels],
+                options: { responsive: true, maintainAspectRatio: false, plugins: {
+                    legend: { position: 'right', labels: { color: tick, font: { size: 10 }, boxWidth: 12 } },
+                    tooltip: { callbacks: { label: (c) => c.label + (codigos[c.dataIndex] && codigos[c.dataIndex] !== '—' ? ' · CC ' + codigos[c.dataIndex] : '') + ': ' + fmt(c.raw) } },
+                    datalabels: {
+                        color: '#fff', font: { size: 9, weight: 'bold' },
+                        display: (ctx) => totalCC > 0 && (ctx.dataset.data[ctx.dataIndex] / totalCC) > 0.05,
+                        formatter: (val) => val >= 1000 ? '₡' + Math.round(val / 1000) + 'k' : '₡' + Math.round(val)
+                    }
+                } }
             });
         }
 
-        // --- BARRAS: TSD vs Banco por entidad ---
+        // --- POLAR AREA: volumen conciliado por marca comercial (A/E/N) ---
         const ctxVS = document.getElementById('ch-hist-vs');
         if (ctxVS) {
-            const ents = Object.keys(porEntidad);
+            // Orden fijo y color por marca; "Sin marca" solo aparece si tiene volumen
+            const ordenMarca = ['Alamo', 'Enterprise', 'National', 'Sin marca'];
+            const colorMarca = { 'Alamo': '#f59e0b', 'Enterprise': '#3b82f6', 'National': '#ef4444', 'Sin marca': '#94a3b8' };
+            const marcas = ordenMarca.filter(m => porMarca[m]);
+            const totalMarca = marcas.reduce((a, m) => a + porMarca[m], 0);
             this._chVS = new Chart(ctxVS.getContext('2d'), {
-                type: 'bar',
-                data: { labels: ents, datasets: [
-                    { label: 'Facturado (TSD)', data: ents.map(e => porEntidad[e].tsd), backgroundColor: '#3b82f6' },
-                    { label: 'Reportado (Banco)', data: ents.map(e => porEntidad[e].banco), backgroundColor: '#10b981' }
-                ] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: tick, font: { size: 10 } } }, tooltip: { callbacks: { label: (c) => c.dataset.label + ': ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+                type: 'polarArea',
+                data: {
+                    labels: marcas,
+                    datasets: [{ data: marcas.map(m => porMarca[m]), backgroundColor: marcas.map(m => colorMarca[m] + 'cc'), borderColor: marcas.map(m => colorMarca[m]), borderWidth: 1 }]
+                },
+                plugins: [ChartDataLabels],
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { color: tick, font: { size: 10 }, boxWidth: 12 } },
+                        tooltip: { callbacks: { label: (c) => {
+                            const p = totalMarca > 0 ? (c.raw / totalMarca * 100).toFixed(1) : 0;
+                            return `${c.label}: ${fmt(c.raw)} (${p}%)`;
+                        } } },
+                        datalabels: {
+                            color: tick, font: { size: 9, weight: 'bold' },
+                            display: (ctx) => totalMarca > 0 && (ctx.dataset.data[ctx.dataIndex] / totalMarca) > 0.05,
+                            formatter: (v) => v >= 1000 ? '₡' + Math.round(v / 1000) + 'k' : '₡' + Math.round(v)
+                        }
+                    },
+                    scales: { r: { ticks: { color: tick, backdropColor: 'transparent', callback: (v) => '₡' + (v / 1000) + 'k' }, grid: { color: tick + '33' } } }
+                }
             });
         }
-
         // --- BARRAS: Ingreso Bruto por Tipo de Tarjeta ---
         const ctxTar = document.getElementById('ch-hist-tarjeta');
         if (ctxTar) {
@@ -758,7 +792,12 @@ window.AuxiliarLogic = {
             this._chTarjeta = new Chart(ctxTar.getContext('2d'), {
                 type: 'bar',
                 data: { labels: listaTar.map(x => x[0]), datasets: [{ label: 'Ingreso Bruto', data: listaTar.map(x => x[1]), backgroundColor: palTar.slice(0, Math.max(listaTar.length, 1)) }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => 'Ingreso Bruto: ' + fmt(c.raw) } } }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+                plugins: [ChartDataLabels],
+                options: { responsive: true, maintainAspectRatio: false, plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: (c) => 'Ingreso Bruto: ' + fmt(c.raw) } },
+                    datalabels: { anchor: 'end', align: 'top', color: tick, font: { size: 8, weight: 'bold' }, formatter: (v) => v >= 1000 ? '₡' + Math.round(v / 1000) + 'k' : (v > 0 ? '₡' + Math.round(v) : '') }
+                }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
             });
         }
 
@@ -784,22 +823,57 @@ window.AuxiliarLogic = {
             ];
             const datasets = segmentos.map(seg => ({
                 label: seg.label,
-                data: bancos.map(b => pct(seg.campo === 'neto' ? Math.max(porBanco[b].neto, 0) : porBanco[b][seg.campo], b)),
+                data: bancos.map(b => 0), // se calcula en recalcular()
                 backgroundColor: seg.color,
                 _raw: bancos.map(b => seg.campo === 'neto' ? Math.max(porBanco[b].neto, 0) : porBanco[b][seg.campo])
             }));
+
+            // Re-normaliza los % usando SOLO los segmentos visibles → siempre suma 100%
+            const recalcular = (chart) => {
+                chart.data.datasets.forEach((ds, i) => {
+                    const oculto = chart.getDatasetMeta(i).hidden;
+                    ds.data = bancos.map((b, bi) => {
+                        if (oculto) return 0;
+                        let base = 0;
+                        chart.data.datasets.forEach((d2, j) => {
+                            if (!chart.getDatasetMeta(j).hidden) base += (d2._raw[bi] || 0);
+                        });
+                        return base > 0 ? ((ds._raw[bi] || 0) / base) * 100 : 0;
+                    });
+                });
+                chart.update();
+            };
+
             this._chBanco = new Chart(ctxB.getContext('2d'), {
                 type: 'bar',
                 data: { labels: bancos, datasets },
+                plugins: [ChartDataLabels, { id: 'initRecalcBanco', afterInit: (chart) => recalcular(chart) }],
                 options: {
                     indexAxis: 'y',
                     responsive: true, maintainAspectRatio: false,
                     plugins: {
-                        legend: { labels: { color: tick, font: { size: 10 }, boxWidth: 12 } },
+                        legend: {
+                            labels: { color: tick, font: { size: 10 }, boxWidth: 12 },
+                            onClick: (e, legendItem, legend) => {
+                                const chart = legend.chart;
+                                const meta = chart.getDatasetMeta(legendItem.datasetIndex);
+                                meta.hidden = meta.hidden === null ? !chart.data.datasets[legendItem.datasetIndex].hidden : null;
+                                recalcular(chart);
+                            }
+                        },
                         tooltip: { callbacks: { label: (c) => {
                             const montoReal = c.dataset._raw ? c.dataset._raw[c.dataIndex] : 0;
                             return `${c.dataset.label}: ${fmt(montoReal)} (${c.raw.toFixed(1)}%)`;
-                        } } }
+                        } } },
+                        datalabels: {
+                            color: '#fff', font: { size: 9, weight: 'bold' },
+                            // Solo muestra el monto si el segmento es lo bastante ancho para que quepa
+                            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 7,
+                            formatter: (val, ctx) => {
+                                const monto = ctx.dataset._raw[ctx.dataIndex] || 0;
+                                return monto >= 1000 ? '₡' + Math.round(monto / 1000) + 'k' : '₡' + Math.round(monto);
+                            }
+                        }
                     },
                     scales: {
                         x: { stacked: true, max: 100, ticks: { color: tick, callback: (v) => v + '%' } },

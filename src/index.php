@@ -345,6 +345,7 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script src="js/app.js"></script>
     <!-- Chart.js para Dashboards Animados -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <script src="js/dashboard_logic.js?v=1"></script>
 </body>
 </html>
