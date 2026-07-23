@@ -652,7 +652,7 @@ window.AuxiliarLogic = {
         const porEntidad = {}; // { 'BAC': {tsd, banco}, ... }
         const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
-        const porMarca = {};   // { 'Alamo': monto, ... } Volumen conciliado por marca comercial (A/E/N)
+        const comxTarjeta = {}; // { 'VISA': {com, bruto}, ... } para tasa de comisión efectiva por tarjeta
 
         const ccFiltro = this._ccSeleccionados; // null = sin filtro de CC
         (data || []).forEach(r => {
@@ -667,10 +667,13 @@ window.AuxiliarLogic = {
                 const cc = t.CentroCosto || 'Sin CC';
                 porCC[cc] = (porCC[cc] || 0) + (Number(t.MontoCRC) || 0);
                 if (cc !== 'Sin CC' && t.Sucursal) ccNombre[cc] = t.Sucursal;
-                // Marca comercial por sufijo del nombre: (A)=Alamo, (E)=Enterprise, (N)=National
-                const mm = String(t.Sucursal || '').trim().match(/\(([AEN])\)$/i);
-                const marca = mm ? ({ A: 'Alamo', E: 'Enterprise', N: 'National' })[mm[1].toUpperCase()] : 'Sin marca';
-                porMarca[marca] = (porMarca[marca] || 0) + (Number(t.MontoCRC) || 0);
+            });
+            // Tasa de comisión por tipo de tarjeta: la tarjeta viene de TSD, la comisión del banco (mismo grupo)
+            const tarjetaGrupo = String((r._tsdArr && r._tsdArr[0] && r._tsdArr[0].TipoTarjeta) || '').trim().toUpperCase() || 'S/D';
+            (r._bancoArr || []).forEach(b => {
+                if (!comxTarjeta[tarjetaGrupo]) comxTarjeta[tarjetaGrupo] = { com: 0, bruto: 0 };
+                comxTarjeta[tarjetaGrupo].com += Number(b.Comision) || 0;
+                comxTarjeta[tarjetaGrupo].bruto += Number(b.MontoBrutoBanco) || 0;
             });
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
@@ -751,36 +754,37 @@ window.AuxiliarLogic = {
             });
         }
 
-        // --- POLAR AREA: volumen conciliado por marca comercial (A/E/N) ---
+        // --- BARRAS HORIZONTALES: tasa de comisión efectiva por tipo de tarjeta ---
         const ctxVS = document.getElementById('ch-hist-vs');
         if (ctxVS) {
-            // Orden fijo y color por marca; "Sin marca" solo aparece si tiene volumen
-            const ordenMarca = ['Alamo', 'Enterprise', 'National', 'Sin marca'];
-            const colorMarca = { 'Alamo': '#f59e0b', 'Enterprise': '#3b82f6', 'National': '#ef4444', 'Sin marca': '#94a3b8' };
-            const marcas = ordenMarca.filter(m => porMarca[m]);
-            const totalMarca = marcas.reduce((a, m) => a + porMarca[m], 0);
+            // Tasa efectiva = comisión / bruto. Ordenada de la más cara a la más barata.
+            const filas = Object.entries(comxTarjeta)
+                .filter(([, v]) => v.bruto > 0)
+                .map(([tarjeta, v]) => ({ tarjeta, tasa: (v.com / v.bruto) * 100, com: v.com, bruto: v.bruto }))
+                .sort((a, b) => b.tasa - a.tasa);
+            const paleta = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#10b981','#14b8a6','#0ea5e9','#3b82f6','#6366f1','#94a3b8'];
             this._chVS = new Chart(ctxVS.getContext('2d'), {
-                type: 'polarArea',
+                type: 'bar',
                 data: {
-                    labels: marcas,
-                    datasets: [{ data: marcas.map(m => porMarca[m]), backgroundColor: marcas.map(m => colorMarca[m] + 'cc'), borderColor: marcas.map(m => colorMarca[m]), borderWidth: 1 }]
+                    labels: filas.map(f => f.tarjeta),
+                    datasets: [{ label: 'Comisión efectiva', data: filas.map(f => f.tasa), backgroundColor: filas.map((_, i) => paleta[i % paleta.length]), _com: filas.map(f => f.com), _bruto: filas.map(f => f.bruto) }]
                 },
                 plugins: [ChartDataLabels],
                 options: {
+                    indexAxis: 'y',
                     responsive: true, maintainAspectRatio: false,
                     plugins: {
-                        legend: { position: 'right', labels: { color: tick, font: { size: 10 }, boxWidth: 12 } },
+                        legend: { display: false },
                         tooltip: { callbacks: { label: (c) => {
-                            const p = totalMarca > 0 ? (c.raw / totalMarca * 100).toFixed(1) : 0;
-                            return `${c.label}: ${fmt(c.raw)} (${p}%)`;
+                            const com = c.dataset._com[c.dataIndex], bruto = c.dataset._bruto[c.dataIndex];
+                            return `${c.raw.toFixed(2)}% · comisión ${fmt(com)} sobre ${fmt(bruto)}`;
                         } } },
-                        datalabels: {
-                            color: tick, font: { size: 9, weight: 'bold' },
-                            display: (ctx) => totalMarca > 0 && (ctx.dataset.data[ctx.dataIndex] / totalMarca) > 0.05,
-                            formatter: (v) => v >= 1000 ? '₡' + Math.round(v / 1000) + 'k' : '₡' + Math.round(v)
-                        }
+                        datalabels: { anchor: 'end', align: 'end', color: tick, font: { size: 9, weight: 'bold' }, formatter: (v) => v.toFixed(2) + '%' }
                     },
-                    scales: { r: { ticks: { color: tick, backdropColor: 'transparent', callback: (v) => '₡' + (v / 1000) + 'k' }, grid: { color: tick + '33' } } }
+                    scales: {
+                        x: { ticks: { color: tick, callback: (v) => v + '%' } },
+                        y: { ticks: { color: tick, font: { size: 11, weight: 'bold' } } }
+                    }
                 }
             });
         }
