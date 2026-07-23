@@ -673,11 +673,17 @@ window.AuxiliarLogic = {
                 totalCom += Number(b.Comision) || 0;
                 totalRet += Number(b.Retenciones) || 0;
                 const bk = b.Banco || '?';
-                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0 };
+                if (!porBanco[bk]) porBanco[bk] = { bruto: 0, com: 0, ret: 0, neto: 0, comInt: 0, retVentas: 0, retRenta: 0, retIVA: 0, retISR: 0 };
                 porBanco[bk].bruto += monto;
                 porBanco[bk].com += Number(b.Comision) || 0;
                 porBanco[bk].ret += Number(b.Retenciones) || 0;
                 porBanco[bk].neto += Number(b.MontoNetoBanco) || 0;
+                // Desglose fino (los campos vacíos del banco contrario simplemente suman 0)
+                porBanco[bk].comInt    += (Number(b.ComInternacionalBAC) || 0) + (Number(b.ComInternacionalDavi) || 0);
+                porBanco[bk].retVentas += Number(b.RetVentasBAC) || 0;
+                porBanco[bk].retRenta  += Number(b.RetRentaBAC) || 0;
+                porBanco[bk].retIVA    += Number(b.RetIVADavi) || 0;
+                porBanco[bk].retISR    += Number(b.RetISRDavi) || 0;
                 if (!porEntidad[bk]) porEntidad[bk] = { tsd: 0, banco: 0 };
                 porEntidad[bk].banco += monto;
             });
@@ -756,42 +762,48 @@ window.AuxiliarLogic = {
             });
         }
 
-        // --- RADAR COMPARATIVO: perfil financiero de cada banco ---
+        // --- BARRAS HORIZONTALES 100%: composición proporcional por banco (neutraliza la diferencia de volumen) ---
         const ctxB = document.getElementById('ch-hist-banco');
         if (ctxB) {
-            const ejes = ['Ingreso Bruto', 'Comisiones', 'Retenciones', 'Ingreso Neto'];
-            const perfil = (b) => porBanco[b] ? [porBanco[b].bruto, porBanco[b].com, porBanco[b].ret, porBanco[b].neto] : [0, 0, 0, 0];
-            // Paleta por banco (BAC azul, Davibank rojo); otros bancos reciben un color de reserva
-            const colores = { 'BAC': '#3b82f6', 'DAVIBANK': '#ef4444', 'SCOTIA': '#ef4444' };
-            const reserva = ['#8b5cf6', '#10b981', '#f59e0b'];
-            let ri = 0;
-            const datasets = Object.keys(porBanco).map(b => {
-                const col = colores[b.toUpperCase()] || reserva[ri++ % reserva.length];
-                return {
-                    label: b,
-                    data: perfil(b),
-                    borderColor: col,
-                    backgroundColor: col + '33', // relleno translúcido
-                    pointBackgroundColor: col,
-                    borderWidth: 2
-                };
-            });
+            const bancos = Object.keys(porBanco);
+            // Base del 100% por banco: suma de todos los conceptos de cobro + neto
+            const baseDe = (b) => {
+                const p = porBanco[b];
+                return p.com + p.comInt + p.retVentas + p.retRenta + p.retIVA + p.retISR + Math.max(p.neto, 0);
+            };
+            const pct = (parte, b) => { const base = baseDe(b); return base > 0 ? (parte / base) * 100 : 0; };
+            // Un segmento por cada concepto de cobro; los que no aplican a un banco quedan en 0
+            const segmentos = [
+                { label: 'Comisión',         campo: 'com',       color: '#f59e0b' },
+                { label: 'Comisión Internac.', campo: 'comInt',  color: '#fb923c' },
+                { label: 'Ret. Ventas (BAC)', campo: 'retVentas', color: '#ef4444' },
+                { label: 'Ret. Renta (BAC)',  campo: 'retRenta',  color: '#dc2626' },
+                { label: 'Ret. IVA (Davi)',   campo: 'retIVA',    color: '#f43f5e' },
+                { label: 'Ret. ISR (Davi)',   campo: 'retISR',    color: '#be123c' },
+                { label: 'Ingreso Neto',      campo: 'neto',      color: '#10b981' }
+            ];
+            const datasets = segmentos.map(seg => ({
+                label: seg.label,
+                data: bancos.map(b => pct(seg.campo === 'neto' ? Math.max(porBanco[b].neto, 0) : porBanco[b][seg.campo], b)),
+                backgroundColor: seg.color,
+                _raw: bancos.map(b => seg.campo === 'neto' ? Math.max(porBanco[b].neto, 0) : porBanco[b][seg.campo])
+            }));
             this._chBanco = new Chart(ctxB.getContext('2d'), {
-                type: 'radar',
-                data: { labels: ejes, datasets },
+                type: 'bar',
+                data: { labels: bancos, datasets },
                 options: {
+                    indexAxis: 'y',
                     responsive: true, maintainAspectRatio: false,
                     plugins: {
-                        legend: { labels: { color: tick, font: { size: 11 } } },
-                        tooltip: { callbacks: { label: (c) => c.dataset.label + ' · ' + c.label + ': ' + fmt(c.raw) } }
+                        legend: { labels: { color: tick, font: { size: 10 }, boxWidth: 12 } },
+                        tooltip: { callbacks: { label: (c) => {
+                            const montoReal = c.dataset._raw ? c.dataset._raw[c.dataIndex] : 0;
+                            return `${c.dataset.label}: ${fmt(montoReal)} (${c.raw.toFixed(1)}%)`;
+                        } } }
                     },
                     scales: {
-                        r: {
-                            angleLines: { color: tick + '33' },
-                            grid: { color: tick + '33' },
-                            pointLabels: { color: tick, font: { size: 10 } },
-                            ticks: { color: tick, backdropColor: 'transparent', callback: (v) => '₡' + (v / 1000) + 'k' }
-                        }
+                        x: { stacked: true, max: 100, ticks: { color: tick, callback: (v) => v + '%' } },
+                        y: { stacked: true, ticks: { color: tick, font: { size: 12, weight: 'bold' } } }
                     }
                 }
             });

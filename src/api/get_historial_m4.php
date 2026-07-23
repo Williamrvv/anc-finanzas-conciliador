@@ -57,6 +57,12 @@ try {
             COALESCE(b.MONTO_VENTA, s.Monto_Bruto) AS MontoBrutoBanco,
             COALESCE(b.COMISION, s.Monto_Comision_Total) AS Comision,
             (ISNULL(b.RETENCION_VENTAS,0) + ISNULL(b.RETENCION_RENTA,0) + ISNULL(s.Monto_Retencion_IVA,0) + ISNULL(s.Monto_Retencion_ISR,0)) AS Retenciones,
+            ISNULL(b.AJUSTE_COMISION_INTERNACIONAL,0) AS ComInternacionalBAC,
+            ISNULL(b.RETENCION_VENTAS,0) AS RetVentasBAC,
+            ISNULL(b.RETENCION_RENTA,0) AS RetRentaBAC,
+            ISNULL(s.Monto_Comision_Int,0) AS ComInternacionalDavi,
+            ISNULL(s.Monto_Retencion_IVA,0) AS RetIVADavi,
+            ISNULL(s.Monto_Retencion_ISR,0) AS RetISRDavi,
             COALESCE(b.MONTONETO, s.Monto_Neto) AS MontoNetoBanco,
             c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio,
             a.Justificacion, a.EvidenciaB64
