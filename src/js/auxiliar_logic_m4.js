@@ -371,6 +371,7 @@ window.AuxiliarLogic = {
                 title: "RESOLUCIÓN APLICADA", field: "TipoCruce", width: 180, hozAlign: "center",
                 cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-green-50/50 dark:bg-green-900/10 font-bold",
                 formatter: (cell) => {
+                    const row = (typeof cell === 'object' && typeof cell.getRow === 'function') ? cell.getRow() : cell;
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     const tipoString = val && typeof val === 'object' ? val.tipo : val;
                     const justString = val && typeof val === 'object' ? val.justificacion : '';
@@ -392,6 +393,15 @@ window.AuxiliarLogic = {
                     if (etiqNombre) {
                         etiqHtml = `<div class="text-[8px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 lowercase tracking-normal">🏷️ ${etiqNombre}</div>`;
                     }
+                    // Nombre de la etiqueta al pie (manual manda sobre automática), estilo discreto como el recibo de Monto TSD
+                    let etiqNombre = null;
+                    if (row && row._colorEtiq) {
+                        const tE = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+                        if (tE) etiqNombre = tE.Nombre;
+                    } else if (row && (row._categoriaId === 1 || row._categoriaId === 2)) {
+                        etiqNombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+                    }
+                    const etiqHtml = etiqNombre ? `<div class="text-[9px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 normal-case tracking-normal">🏷️ ${etiqNombre}</div>` : '';
                     return `<div class="flex flex-col items-center"><span class="text-green-800 dark:text-green-300 uppercase tracking-widest text-[10px]">✅ ${tipoString.replace('[AUX] ', '')}</span>${extrasHtml}${etiqHtml}</div>`;
                 }
             },
@@ -1183,11 +1193,15 @@ window.AuxiliarLogic = {
                 
                 const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700' };
 
+                // La etiqueta puesta por el usuario MANDA sobre la sugerencia automática
+                if (tsdRow.ColorEtiqueta && (catId === 1 || catId === 2)) catId = 3;
+
                 let bgClass = '';
-                if (catId === 1 || catId === 2) bgClass = this.getEstiloSistema(catId, false);
-                else if (tsdRow.ColorEtiqueta) {
+                if (tsdRow.ColorEtiqueta) {
                     const tagObj = this.customTags.find(t => t.IdEtiqueta.toString() === tsdRow.ColorEtiqueta.toString());
                     if (tagObj) bgClass = this.TW_COLORS[tagObj.ColorCSS] || '';
+                } else if (catId === 1 || catId === 2) {
+                    bgClass = this.getEstiloSistema(catId, false);
                 }
 
                 gridData.push({
@@ -1210,10 +1224,11 @@ window.AuxiliarLogic = {
                 const rowStyles = { 'orange': 'bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-400 italic border-b border-orange-200 dark:border-orange-900', 'amber': 'bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 italic border-b border-amber-200 dark:border-amber-900', 'yellow': 'bg-yellow-50 dark:bg-yellow-900/10 text-yellow-700 dark:text-yellow-400 italic border-b border-yellow-200 dark:border-yellow-900', 'lime': 'bg-lime-50 dark:bg-lime-900/10 text-lime-700 dark:text-lime-400 italic border-b border-lime-200 dark:border-lime-900', 'emerald': 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 italic border-b border-emerald-200 dark:border-emerald-900', 'teal': 'bg-teal-50 dark:bg-teal-900/10 text-teal-700 dark:text-teal-400 italic border-b border-teal-200 dark:border-teal-900', 'cyan': 'bg-cyan-50 dark:bg-cyan-900/10 text-cyan-700 dark:text-cyan-400 italic border-b border-cyan-200 dark:border-cyan-900', 'blue': 'bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-400 italic border-b border-blue-200 dark:border-blue-900', 'indigo': 'bg-indigo-50 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-400 italic border-b border-indigo-200 dark:border-indigo-900', 'purple': 'bg-purple-50 dark:bg-purple-900/10 text-purple-700 dark:text-purple-400 italic border-b border-purple-200 dark:border-purple-900', 'slate': 'bg-slate-200 dark:bg-slate-800/80 text-slate-700 dark:text-slate-400 italic border-b border-slate-300 dark:border-slate-700' };
 
                 let bgClass = 'text-slate-500 italic border-b border-slate-100 dark:border-slate-800';
-                if (catId === 1 || catId === 2) bgClass = this.getEstiloSistema(catId, true);
-                else if (b.ColorEtiqueta) {
+                if (b.ColorEtiqueta) {
                     const tagObj = this.customTags.find(t => t.IdEtiqueta.toString() === b.ColorEtiqueta.toString());
                     if (tagObj) bgClass = this.TW_COLORS[tagObj.ColorCSS] + ' italic';
+                } else if (catId === 1 || catId === 2) {
+                    bgClass = this.getEstiloSistema(catId, true);
                 }
 
                 gridData.push({
