@@ -943,9 +943,8 @@ window.AuxiliarLogic = {
                 'slate': 'bg-slate-200 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700'
             };
 
-            // Pintar color de fondo si tiene etiqueta y no es de alta prioridad (Contracargo/Devolución/Manual)
-            if (catId === 3 && colorEtiq && !bgColorClass.includes('font-bold')) { 
-                // colorEtiq guarda el NÚMERO de la etiqueta: se traduce a su color real en la paleta
+            // La etiqueta MANUAL del usuario manda sobre CUALQUIER color de sistema (incluido Ajuste Menor y Ajuste Interno).
+            if (colorEtiq) {
                 const tagSug = this.customTags.find(t => t.IdEtiqueta.toString() === colorEtiq.toString());
                 if (tagSug && this.TW_COLORS[tagSug.ColorCSS]) {
                     bgColorClass = this.TW_COLORS[tagSug.ColorCSS] + ' border-b';
@@ -1404,13 +1403,28 @@ window.AuxiliarLogic = {
                 title: "ESTADO AUX", field: "EstadoMatch", width: 180, hozAlign: "center",
                 cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold",
                 formatter: (cell) => {
-                    const val = String(cell.getValue());
-                    if(val.startsWith('Manual')) return `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
-                    if(val.includes('Monto Igual')) return `<span class="text-amber-600 dark:text-amber-400">⚠️ Sug: Monto Igual</span>`;
-                    if(val.includes('Ajuste Menor')) return `<span class="text-purple-600 dark:text-purple-400">✂️ ${val.replace('Sugerencia: ','')}</span>`;
-                    if(val.includes('Ajuste Interno')) return `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val.replace('Sugerencia: ','').replace('Ajuste Interno ', 'Ajuste ')}</span>`;
-                    if(val.startsWith('Sugerencia')) return `<span class="text-amber-700 dark:text-amber-300">💡 ${val.replace('Sugerencia: ','')}</span>`;
-                    return `<span class="text-slate-500 font-bold">⏳ Pendiente</span>`;
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    const val = String(typeof cell === 'object' && cell.getValue ? cell.getValue() : cell);
+
+                    // Texto discreto de la etiqueta al pie (manual manda sobre la sugerencia automática)
+                    let etiqNombre = null;
+                    if (row && row._colorEtiq) {
+                        const tE = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
+                        if (tE) etiqNombre = tE.Nombre;
+                    } else if (row && (row._categoriaId === 1 || row._categoriaId === 2)) {
+                        etiqNombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+                    }
+                    const etiqHtml = etiqNombre ? `<div class="text-[9px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 normal-case tracking-normal">🏷️ ${etiqNombre}</div>` : '';
+
+                    let estado = '';
+                    if(val.startsWith('Manual')) estado = `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
+                    else if(val.includes('Monto Igual')) estado = `<span class="text-amber-600 dark:text-amber-400">⚠️ Sug: Monto Igual</span>`;
+                    else if(val.includes('Ajuste Menor')) estado = `<span class="text-purple-600 dark:text-purple-400">✂️ ${val.replace('Sugerencia: ','')}</span>`;
+                    else if(val.includes('Ajuste Interno')) estado = `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val.replace('Sugerencia: ','').replace('Ajuste Interno ', 'Ajuste ')}</span>`;
+                    else if(val.startsWith('Sugerencia')) estado = `<span class="text-amber-700 dark:text-amber-300">💡 ${val.replace('Sugerencia: ','')}</span>`;
+                    else estado = `<span class="text-slate-500 font-bold">⏳ Pendiente</span>`;
+
+                    return `<div class="flex flex-col items-center">${estado}${etiqHtml}</div>`;
                 }
             },
             { 

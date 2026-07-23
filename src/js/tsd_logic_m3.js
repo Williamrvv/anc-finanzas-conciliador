@@ -1930,7 +1930,8 @@ window.TSDLogic = {
             setTimeout(() => loader.classList.add('hidden'), 300);
 
             // Limpieza y alerta final
-            await window.SysUI.alert(`El cierre de TSD se ha guardado exitosamente.\nLos folios bancarios han sido sellados.`, "Bóveda Actualizada", "success");
+            const folioMsg = data.folio ? `\n\n📁 Folio del cierre: ${data.folio}` : '';
+            await window.SysUI.alert(`Consolidado TSD archivado con éxito. Este folio es su referencia para auditoría y búsquedas futuras.${folioMsg}`, "Bóveda Actualizada", "success");
             
             this.lastTSD = [];
             this.lastBancos = [];
