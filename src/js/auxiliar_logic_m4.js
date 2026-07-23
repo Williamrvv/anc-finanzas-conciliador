@@ -381,18 +381,7 @@ window.AuxiliarLogic = {
                     if (evString) {
                         extrasHtml += `<div class="text-[9px] text-blue-600 dark:text-blue-400 font-bold mt-0.5 flex items-center gap-1 justify-center"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> Evidencia Visual</div>`;
                     }
-                    // Nombre de etiqueta discreto al pie: manual (🏷️) o sugerencia automática
-                    let etiqHtml = '';
-                    let etiqNombre = null;
-                    if (row._colorEtiq) {
-                        const tE = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
-                        if (tE) etiqNombre = tE.Nombre;
-                    } else if (row._categoriaId === 1 || row._categoriaId === 2) {
-                        etiqNombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
-                    }
-                    if (etiqNombre) {
-                        etiqHtml = `<div class="text-[8px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 lowercase tracking-normal">🏷️ ${etiqNombre}</div>`;
-                    }
+                    
                     // Nombre de la etiqueta al pie (manual manda sobre automática), estilo discreto como el recibo de Monto TSD
                     let etiqNombre = null;
                     if (row && row._colorEtiq) {
