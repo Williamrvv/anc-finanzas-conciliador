@@ -724,7 +724,7 @@ window.AuxiliarLogic = {
         }
 
         // Limpia gráficos previos (evita superposición de Chart.js)
-        ['_chCC', '_chVS', '_chBanco', '_chTarjeta'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
+        ['_chCC', '_chBanco', '_chTarjeta'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
 
         // --- DONA: Ingresos por CC (Top 10 + Otros) ---
         const ctxCC = document.getElementById('ch-hist-cc');
@@ -754,39 +754,40 @@ window.AuxiliarLogic = {
             });
         }
 
-        // --- BARRAS HORIZONTALES: tasa de comisión efectiva por tipo de tarjeta ---
-        const ctxVS = document.getElementById('ch-hist-vs');
-        if (ctxVS) {
+        // --- TERMÓMETROS: tasa de comisión efectiva por tipo de tarjeta (HTML/CSS, sin librería) ---
+        const contTarjeta = document.getElementById('term-comision-tarjeta');
+        if (contTarjeta) {
             // Tasa efectiva = comisión / bruto. Ordenada de la más cara a la más barata.
             const filas = Object.entries(comxTarjeta)
                 .filter(([, v]) => v.bruto > 0)
                 .map(([tarjeta, v]) => ({ tarjeta, tasa: (v.com / v.bruto) * 100, com: v.com, bruto: v.bruto }))
                 .sort((a, b) => b.tasa - a.tasa);
-            const paleta = ['#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#10b981','#14b8a6','#0ea5e9','#3b82f6','#6366f1','#94a3b8'];
-            this._chVS = new Chart(ctxVS.getContext('2d'), {
-                type: 'bar',
-                data: {
-                    labels: filas.map(f => f.tarjeta),
-                    datasets: [{ label: 'Comisión efectiva', data: filas.map(f => f.tasa), backgroundColor: filas.map((_, i) => paleta[i % paleta.length]), _com: filas.map(f => f.com), _bruto: filas.map(f => f.bruto) }]
-                },
-                plugins: [ChartDataLabels],
-                options: {
-                    indexAxis: 'y',
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: { callbacks: { label: (c) => {
-                            const com = c.dataset._com[c.dataIndex], bruto = c.dataset._bruto[c.dataIndex];
-                            return `${c.raw.toFixed(2)}% · comisión ${fmt(com)} sobre ${fmt(bruto)}`;
-                        } } },
-                        datalabels: { anchor: 'end', align: 'end', color: tick, font: { size: 9, weight: 'bold' }, formatter: (v) => v.toFixed(2) + '%' }
-                    },
-                    scales: {
-                        x: { ticks: { color: tick, callback: (v) => v + '%' } },
-                        y: { ticks: { color: tick, font: { size: 11, weight: 'bold' } } }
-                    }
-                }
-            });
+
+            if (filas.length === 0) {
+                contTarjeta.innerHTML = '<div class="text-xs text-slate-400 italic text-center py-6">Sin datos de comisión en el rango</div>';
+            } else {
+                const maxTasa = Math.max(...filas.map(f => f.tasa), 0.01); // escala relativa a la más cara
+                // Verde (barato) → rojo (caro) según posición relativa a la tasa máxima
+                const colorDe = (tasa) => {
+                    const r = tasa / maxTasa; // 0..1
+                    if (r > 0.75) return '#ef4444';
+                    if (r > 0.5)  return '#f59e0b';
+                    if (r > 0.25) return '#eab308';
+                    return '#10b981';
+                };
+                contTarjeta.innerHTML = filas.map(f => {
+                    const ancho = Math.max((f.tasa / maxTasa) * 100, 3); // mínimo 3% para que siempre se vea la barrita
+                    const col = colorDe(f.tasa);
+                    return `
+                        <div class="flex items-center gap-2 text-xs" title="Comisión ${fmt(f.com)} sobre venta ${fmt(f.bruto)}">
+                            <div class="w-20 shrink-0 font-bold text-slate-600 dark:text-slate-300 truncate text-right">${f.tarjeta}</div>
+                            <div class="flex-1 bg-slate-200 dark:bg-slate-700 rounded-full h-3 overflow-hidden">
+                                <div class="h-full rounded-full transition-all" style="width:${ancho}%; background:${col}"></div>
+                            </div>
+                            <div class="w-14 shrink-0 font-mono font-bold text-slate-700 dark:text-slate-200 text-right">${f.tasa.toFixed(2)}%</div>
+                        </div>`;
+                }).join('');
+            }
         }
         // --- BARRAS: Ingreso Bruto por Tipo de Tarjeta ---
         const ctxTar = document.getElementById('ch-hist-tarjeta');
