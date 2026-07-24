@@ -652,7 +652,7 @@ window.AuxiliarLogic = {
         const porEntidad = {}; // { 'BAC': {tsd, banco}, ... }
         const porBanco = {};   // { 'BAC': {bruto, com, ret, neto} }
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
-        const porDia = {}; // { '2026-07-20': {com, bruto}, ... } evolución diaria de comisión efectiva
+        const porSucursalBanco = {}; // { 'Belen': {BAC: monto, DAVI: monto}, ... } % de cobro por banco en cada sucursal
 
         const ccFiltro = this._ccSeleccionados; // null = sin filtro de CC
         (data || []).forEach(r => {
@@ -668,15 +668,13 @@ window.AuxiliarLogic = {
                 porCC[cc] = (porCC[cc] || 0) + (Number(t.MontoCRC) || 0);
                 if (cc !== 'Sin CC' && t.Sucursal) ccNombre[cc] = t.Sucursal;
             });
-            // Evolución diaria de la comisión efectiva: se agrupa por fecha de folio (eje temporal)
-            const dia = r.FechaFolio && r.FechaFolio !== '-' ? String(r.FechaFolio).substring(0, 10) : null;
-            if (dia) {
-                (r._bancoArr || []).forEach(b => {
-                    if (!porDia[dia]) porDia[dia] = { com: 0, bruto: 0 };
-                    porDia[dia].com += Number(b.Comision) || 0;
-                    porDia[dia].bruto += Number(b.MontoBrutoBanco) || 0;
-                });
-            }
+            // Reparto de cobro por banco dentro de cada sucursal (para barras apiladas 100%)
+            (r._bancoArr || []).forEach(b => {
+                const suc = String(b.Sucursal || 'Sin sucursal').trim();
+                const banco = String(b.Banco || '').toUpperCase().includes('BAC') ? 'BAC' : 'DAVI';
+                if (!porSucursalBanco[suc]) porSucursalBanco[suc] = { BAC: 0, DAVI: 0 };
+                porSucursalBanco[suc][banco] += Number(b.MontoBrutoBanco) || 0;
+            });
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
                 totalBanco += monto;
