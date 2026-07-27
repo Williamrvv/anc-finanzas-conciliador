@@ -724,7 +724,7 @@ window.AuxiliarLogic = {
         }
 
         // Limpia gráficos previos (evita superposición de Chart.js)
-        ['_chCC', '_chBanco', '_chTarjeta'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
+        ['_chCC', '_chVS', '_chBanco', '_chTarjeta'].forEach(k => { if (this[k]) { this[k].destroy(); this[k] = null; } });
 
         // --- DONA: Ingresos por CC (Top 10 + Otros) ---
         const ctxCC = document.getElementById('ch-hist-cc');
@@ -754,47 +754,38 @@ window.AuxiliarLogic = {
             });
         }
 
-        // --- LÍNEA: evolución diaria de la comisión efectiva (interactivo) ---
+        // --- BARRAS APILADAS 100%: reparto del cobro por banco en cada sucursal ---
         const ctxVS = document.getElementById('ch-hist-vs');
         if (ctxVS) {
-            const dias = Object.keys(porDia).sort(); // orden cronológico
-            const tasas = dias.map(d => porDia[d].bruto > 0 ? (porDia[d].com / porDia[d].bruto) * 100 : 0);
-            // Etiqueta corta dd/mm para el eje
-            const etiquetas = dias.map(d => { const p = d.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}` : d; });
+            // Ordenar sucursales por volumen total (las de más movimiento primero)
+            const sucs = Object.keys(porSucursalBanco)
+                .filter(s => (porSucursalBanco[s].BAC + porSucursalBanco[s].DAVI) > 0)
+                .sort((a, b) => (porSucursalBanco[b].BAC + porSucursalBanco[b].DAVI) - (porSucursalBanco[a].BAC + porSucursalBanco[a].DAVI));
+            const pct = (parte, suc) => { const t = porSucursalBanco[suc].BAC + porSucursalBanco[suc].DAVI; return t > 0 ? (parte / t) * 100 : 0; };
             this._chVS = new Chart(ctxVS.getContext('2d'), {
-                type: 'line',
+                type: 'bar',
                 data: {
-                    labels: etiquetas,
-                    datasets: [{
-                        label: 'Comisión efectiva',
-                        data: tasas,
-                        borderColor: '#6366f1',
-                        backgroundColor: 'rgba(99,102,241,0.12)',
-                        fill: true,
-                        tension: 0.35,
-                        pointRadius: 4,
-                        pointHoverRadius: 6,
-                        pointBackgroundColor: '#6366f1',
-                        _com: dias.map(d => porDia[d].com),
-                        _bruto: dias.map(d => porDia[d].bruto)
-                    }]
+                    labels: sucs,
+                    datasets: [
+                        { label: 'Davibank', data: sucs.map(s => pct(porSucursalBanco[s].DAVI, s)), backgroundColor: '#16a34a', _raw: sucs.map(s => porSucursalBanco[s].DAVI) },
+                        { label: 'BAC',      data: sucs.map(s => pct(porSucursalBanco[s].BAC, s)),  backgroundColor: '#dc2626', _raw: sucs.map(s => porSucursalBanco[s].BAC) }
+                    ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { display: false },
+                        legend: { position: 'bottom', labels: { color: tick, font: { size: 11 }, boxWidth: 12 } },
                         tooltip: { callbacks: {
-                            title: (items) => 'Folio del ' + items[0].label,
                             label: (c) => {
-                                const com = c.dataset._com[c.dataIndex], bruto = c.dataset._bruto[c.dataIndex];
-                                return `${c.raw.toFixed(2)}% · comisión ${fmt(com)} de ${fmt(bruto)}`;
+                                const monto = c.dataset._raw ? c.dataset._raw[c.dataIndex] : 0;
+                                return `${c.dataset.label}: ${c.raw.toFixed(1)}% (${fmt(monto)})`;
                             }
                         } }
                     },
                     scales: {
-                        x: { ticks: { color: tick, font: { size: 10 } }, grid: { display: false } },
-                        y: { ticks: { color: tick, callback: (v) => v.toFixed(1) + '%' }, grid: { color: tick + '22' } }
+                        x: { stacked: true, ticks: { color: tick, font: { size: 9 }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
+                        y: { stacked: true, max: 100, ticks: { color: tick, callback: (v) => v + '%' }, grid: { color: tick + '22' } }
                     }
                 }
             });
