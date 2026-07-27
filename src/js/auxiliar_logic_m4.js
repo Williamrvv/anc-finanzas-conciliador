@@ -498,6 +498,7 @@ window.AuxiliarLogic = {
 
         this.currentHistorialData = data;
         this._ccSeleccionados = (selF.cc && selF.cc.length > 0) ? selF.cc.map(String) : null;
+        this._sucSeleccionadas = (selF.sucursal && selF.sucursal.length > 0) ? selF.sucursal.map(String) : null;
         this.renderHistorialGrid();
         this.renderHistorialDash(data);
         this.renderBancosConciliadosM4();
@@ -641,7 +642,15 @@ window.AuxiliarLogic = {
     // Dashboards con barras hechas en casa (sin librerías, todo del propio sistema)
     renderHistorialDash: function(data) {
         if (typeof Chart === 'undefined') return;
-        const fmt = (n) => '₡' + Math.round(n).toLocaleString('es-CR');
+        // Formato de moneda consistente: ₡ con separador de miles (espacio) y sin decimales
+        const fmt = (n) => new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC', maximumFractionDigits: 0 }).format(n || 0).replace(/\./g, ' ');
+        // Formato compacto para etiquetas sobre las barras (evita saturar): ₡1,2M / ₡340k
+        const fmtCorto = (n) => {
+            const v = Math.abs(n || 0);
+            if (v >= 1000000) return '₡' + (n / 1000000).toFixed(1).replace('.', ',') + 'M';
+            if (v >= 1000) return '₡' + Math.round(n / 1000) + 'k';
+            return '₡' + Math.round(n || 0);
+        };
         const dark = document.documentElement.classList.contains('dark');
         const tick = dark ? '#94a3b8' : '#475569';
 
@@ -654,11 +663,13 @@ window.AuxiliarLogic = {
         const porTarjeta = {}; // { 'VISA': monto, ... } Ingreso bruto por tipo de tarjeta
         const porSucursalBanco = {}; // { 'Belen': {BAC: monto, DAVI: monto}, ... } % de cobro por banco en cada sucursal
 
-        const ccFiltro = this._ccSeleccionados; // null = sin filtro de CC
+        const ccFiltro = this._ccSeleccionados;   // null = sin filtro de CC
+        const sucFiltro = this._sucSeleccionadas; // null = sin filtro de sucursal
         (data || []).forEach(r => {
             (r._tsdArr || []).forEach(t => {
                 // Cuando hay filtro de CC, solo cuentan las transacciones TSD de ese CC
                 if (ccFiltro && !ccFiltro.includes(String(t.CentroCosto))) return;
+                if (sucFiltro && !sucFiltro.includes(String(t.Sucursal))) return;
                 totalTSD += Number(t.MontoCRC) || 0;
                 // Tipo de Tarjeta: SOLO desde TSD (única fuente real de la marca)
                 const tt = String(t.TipoTarjeta || '').trim().toUpperCase() || 'S/D';
@@ -671,6 +682,8 @@ window.AuxiliarLogic = {
             // Reparto de cobro por banco dentro de cada sucursal (para barras apiladas 100%)
             (r._bancoArr || []).forEach(b => {
                 const suc = String(b.Sucursal || 'Sin sucursal').trim();
+                // Respeta el filtro de sucursal: solo las marcadas entran al gráfico
+                if (sucFiltro && !sucFiltro.includes(suc)) return;
                 const banco = String(b.Banco || '').toUpperCase().includes('BAC') ? 'BAC' : 'DAVI';
                 if (!porSucursalBanco[suc]) porSucursalBanco[suc] = { BAC: 0, DAVI: 0 };
                 porSucursalBanco[suc][banco] += Number(b.MontoBrutoBanco) || 0;
@@ -748,7 +761,7 @@ window.AuxiliarLogic = {
                     datalabels: {
                         color: '#fff', font: { size: 9, weight: 'bold' },
                         display: (ctx) => totalCC > 0 && (ctx.dataset.data[ctx.dataIndex] / totalCC) > 0.05,
-                        formatter: (val) => val >= 1000 ? '₡' + Math.round(val / 1000) + 'k' : '₡' + Math.round(val)
+                        formatter: (val) => fmtCorto(val)
                     }
                 } }
             });
@@ -802,7 +815,7 @@ window.AuxiliarLogic = {
                 options: { responsive: true, maintainAspectRatio: false, plugins: {
                     legend: { display: false },
                     tooltip: { callbacks: { label: (c) => 'Ingreso Bruto: ' + fmt(c.raw) } },
-                    datalabels: { anchor: 'end', align: 'top', color: tick, font: { size: 8, weight: 'bold' }, formatter: (v) => v >= 1000 ? '₡' + Math.round(v / 1000) + 'k' : (v > 0 ? '₡' + Math.round(v) : '') }
+                    datalabels: { anchor: 'end', align: 'top', color: tick, font: { size: 8, weight: 'bold' }, formatter: (v) => v > 0 ? fmtCorto(v) : '' }
                 }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
             });
         }
@@ -877,7 +890,7 @@ window.AuxiliarLogic = {
                             display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 7,
                             formatter: (val, ctx) => {
                                 const monto = ctx.dataset._raw[ctx.dataIndex] || 0;
-                                return monto >= 1000 ? '₡' + Math.round(monto / 1000) + 'k' : '₡' + Math.round(monto);
+                                return fmtCorto(monto);
                             }
                         }
                     },

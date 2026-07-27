@@ -150,7 +150,7 @@
                 <div id="dash-m4-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3"></div>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
                     <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">
-                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">💰 Ingresos por Centro de Costo <span class="text-[9px] normal-case font-normal text-slate-400">(según TSD)</span></div>
+                        <div class="text-xs font-bold uppercase text-slate-500 mb-2">💰 Ingresos por Centro de Costo</div>
                         <div style="height:240px"><canvas id="ch-hist-cc"></canvas></div>
                     </div>
                     <div class="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded-lg p-3">

@@ -28,14 +28,16 @@ if ($modoGlobal && mb_strlen($term) < 3) {
 try {
     $pdo = Database::connect();
 
-    // MODO "ÚLTIMO": resolver la fecha del registro más reciente del historial
+    // MODO "ÚLTIMO": resolver la fecha de pago más reciente del historial
     $fechaUltimo = null;
     if (isset($_GET['ultimo'])) {
         $qMax = $pdo->query("
-            SELECT MAX(CAST(c.ConsolidadoTSD AS DATE))
+            SELECT MAX(COALESCE(t.FechaPago, TRY_CONVERT(date, b.FECHA_PAGO), TRY_CONVERT(date, s.Fecha_Pago)))
             FROM Tbl_Transacciones_Maestra m
-            INNER JOIN Tbl_Conciliacion_Cierres c ON m.IdCierre = c.IdCierre
-            WHERE m.IdMatchTSD IS NOT NULL AND m.TipoCruceTSD LIKE '%[AUX]%' AND c.ConsolidadoTSD IS NOT NULL
+            LEFT JOIN Tbl_Detalle_TSD t ON m.IdTransaccion = t.IdTransaccion AND m.Banco = 'TSD'
+            LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion AND m.Banco = 'BAC'
+            LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion AND m.Banco = 'Davibank'
+            WHERE m.IdMatchTSD IS NOT NULL AND m.TipoCruceTSD LIKE '%[AUX]%'
         ");
         $fechaUltimo = $qMax->fetchColumn();
         if ($fechaUltimo) { $start = $fechaUltimo; $end = $fechaUltimo; }
@@ -65,6 +67,7 @@ try {
             ISNULL(s.Monto_Retencion_ISR,0) AS RetISRDavi,
             COALESCE(b.MONTONETO, s.Monto_Neto) AS MontoNetoBanco,
             c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio,
+            COALESCE(t.FechaPago, TRY_CONVERT(date, b.FECHA_PAGO), TRY_CONVERT(date, s.Fecha_Pago)) AS FechaPagoReal,
             a.Justificacion, a.EvidenciaB64
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Conciliacion_Cierres c ON m.IdCierre = c.IdCierre
@@ -98,7 +101,7 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':term' => $termSql]);
     } else {
-        $sql .= " AND CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end";
+        $sql .= " AND COALESCE(t.FechaPago, TRY_CONVERT(date, b.FECHA_PAGO), TRY_CONVERT(date, s.Fecha_Pago)) BETWEEN :start AND :end";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':start' => $start, ':end' => $end]);
     }
