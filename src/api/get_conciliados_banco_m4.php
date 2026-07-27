@@ -49,9 +49,8 @@ try {
               AND det.Origen = 'DETALLADO'
               AND det.Estado = 'CONCILIADO' 
               AND det.IdMatch IS NOT NULL
-              AND c.ConsolidadoTSD IS NOT NULL
-              AND CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
-            ORDER BY c.IdCierre ASC, det.IdMatch
+              AND TRY_CONVERT(date, dv.FECHA_PAGO) BETWEEN :start AND :end
+            ORDER BY TRY_CONVERT(date, dv.FECHA_PAGO) DESC, det.IdMatch
         ";
     } else {
         $sql = "
@@ -90,9 +89,8 @@ try {
               AND det.Origen = 'DETALLADO'
               AND det.Estado = 'CONCILIADO' 
               AND det.IdMatch IS NOT NULL
-              AND c.ConsolidadoTSD IS NOT NULL
-              AND CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
-            ORDER BY c.IdCierre ASC, det.IdMatch
+              AND TRY_CONVERT(date, dv.Fecha_Pago) BETWEEN :start AND :end
+            ORDER BY TRY_CONVERT(date, dv.Fecha_Pago) DESC, det.IdMatch
         ";
     }
 
