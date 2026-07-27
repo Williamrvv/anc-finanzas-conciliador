@@ -780,6 +780,9 @@ window.AuxiliarLogic = {
                 .filter(s => (porSucursalBanco[s].BAC + porSucursalBanco[s].DAVI) > 0)
                 .sort((a, b) => (porSucursalBanco[b].BAC + porSucursalBanco[b].DAVI) - (porSucursalBanco[a].BAC + porSucursalBanco[a].DAVI));
             const pct = (parte, suc) => { const t = porSucursalBanco[suc].BAC + porSucursalBanco[suc].DAVI; return t > 0 ? (parte / t) * 100 : 0; };
+            // Altura dinámica: cada sucursal necesita ~26px para leerse cómoda (barras horizontales)
+            const canvasVS = ctxVS.canvas || ctxVS;
+            if (canvasVS && canvasVS.parentElement) canvasVS.parentElement.style.height = Math.max(sucs.length * 26 + 60, 300) + 'px';
             this._chVS = new Chart(ctxVS.getContext('2d'), {
                 type: 'bar',
                 data: {
@@ -790,10 +793,16 @@ window.AuxiliarLogic = {
                     ]
                 },
                 options: {
+                    indexAxis: 'y', // barras HORIZONTALES: nombres de sucursal legibles sin rotar
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { position: 'bottom', labels: { color: tick, font: { size: FS.leyenda }, boxWidth: 14 } },
+                        legend: { position: 'top', labels: { color: tick, font: { size: FS.leyenda }, boxWidth: 14 } },
+                        datalabels: {
+                            color: '#fff', font: { size: FS.etiqueta - 2, weight: 'bold' },
+                            display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 8,
+                            formatter: (v) => Math.round(v) + '%'
+                        },
                         tooltip: { callbacks: {
                             label: (c) => {
                                 const monto = c.dataset._raw ? c.dataset._raw[c.dataIndex] : 0;
@@ -802,8 +811,8 @@ window.AuxiliarLogic = {
                         } }
                     },
                     scales: {
-                        x: { stacked: true, ticks: { color: tick, font: { size: FS.eje }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
-                        y: { stacked: true, max: 100, ticks: { color: tick, font: { size: FS.eje }, callback: (v) => v + '%' }, grid: { color: tick + '22' } }
+                        x: { stacked: true, max: 100, ticks: { color: tick, font: { size: FS.eje }, callback: (v) => v + '%' }, grid: { color: tick + '22' } },
+                        y: { stacked: true, ticks: { color: tick, font: { size: FS.eje } }, grid: { display: false } }
                     }
                 }
             });
