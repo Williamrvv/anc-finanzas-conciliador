@@ -653,6 +653,9 @@ window.AuxiliarLogic = {
         };
         const dark = document.documentElement.classList.contains('dark');
         const tick = dark ? '#94a3b8' : '#475569';
+        // Tamaños de fuente unificados para todos los gráficos (más grandes y legibles)
+        const FS = { eje: 14, leyenda: 14, etiqueta: 13, tooltip: 14 };
+        const tooltipFont = { titleFont: { size: FS.tooltip + 1, weight: 'bold' }, bodyFont: { size: FS.tooltip }, padding: 10 };
 
         // Anti-duplicidad: cada lado se cuenta UNA vez. TSD desde _tsdArr, banco desde _bancoArr.
         let totalTSD = 0, totalBanco = 0, totalCom = 0, totalRet = 0;
@@ -758,10 +761,10 @@ window.AuxiliarLogic = {
                 data: { labels, datasets: [{ data: vals, backgroundColor: palette.slice(0, labels.length), borderWidth: 0 }] },
                 plugins: [ChartDataLabels],
                 options: { responsive: true, maintainAspectRatio: false, plugins: {
-                    legend: { position: 'right', labels: { color: tick, font: { size: 10 }, boxWidth: 12 } },
+                    legend: { position: 'right', labels: { color: tick, font: { size: FS.leyenda }, boxWidth: 14 } },
                     tooltip: { callbacks: { label: (c) => c.label + (codigos[c.dataIndex] && codigos[c.dataIndex] !== '—' ? ' · CC ' + codigos[c.dataIndex] : '') + ': ' + fmt(c.raw) } },
                     datalabels: {
-                        color: '#fff', font: { size: 9, weight: 'bold' },
+                        color: '#fff', font: { size: FS.etiqueta, weight: 'bold' },
                         display: (ctx) => totalCC > 0 && (ctx.dataset.data[ctx.dataIndex] / totalCC) > 0.05,
                         formatter: (val) => fmtCorto(val)
                     }
@@ -790,7 +793,7 @@ window.AuxiliarLogic = {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
-                        legend: { position: 'bottom', labels: { color: tick, font: { size: 11 }, boxWidth: 12 } },
+                        legend: { position: 'bottom', labels: { color: tick, font: { size: FS.leyenda }, boxWidth: 14 } },
                         tooltip: { callbacks: {
                             label: (c) => {
                                 const monto = c.dataset._raw ? c.dataset._raw[c.dataIndex] : 0;
@@ -799,8 +802,8 @@ window.AuxiliarLogic = {
                         } }
                     },
                     scales: {
-                        x: { stacked: true, ticks: { color: tick, font: { size: 9 }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
-                        y: { stacked: true, max: 100, ticks: { color: tick, callback: (v) => v + '%' }, grid: { color: tick + '22' } }
+                        x: { stacked: true, ticks: { color: tick, font: { size: FS.eje }, maxRotation: 90, minRotation: 45 }, grid: { display: false } },
+                        y: { stacked: true, max: 100, ticks: { color: tick, font: { size: FS.eje }, callback: (v) => v + '%' }, grid: { color: tick + '22' } }
                     }
                 }
             });
@@ -817,8 +820,8 @@ window.AuxiliarLogic = {
                 options: { responsive: true, maintainAspectRatio: false, plugins: {
                     legend: { display: false },
                     tooltip: { callbacks: { label: (c) => 'Ingreso Bruto: ' + fmt(c.raw) } },
-                    datalabels: { anchor: 'end', align: 'top', color: tick, font: { size: 8, weight: 'bold' }, formatter: (v) => v > 0 ? fmtCorto(v) : '' }
-                }, scales: { x: { ticks: { color: tick, font: { size: 10 } } }, y: { ticks: { color: tick, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
+                    datalabels: { anchor: 'end', align: 'top', color: tick, font: { size: FS.etiqueta, weight: 'bold' }, formatter: (v) => v > 0 ? fmtCorto(v) : '' }
+                }, scales: { x: { ticks: { color: tick, font: { size: FS.eje } } }, y: { ticks: { color: tick, font: { size: FS.eje }, callback: (v) => '₡' + (v / 1000) + 'k' } } } }
             });
         }
 
@@ -874,7 +877,7 @@ window.AuxiliarLogic = {
                     responsive: true, maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            labels: { color: tick, font: { size: 10 }, boxWidth: 12 },
+                            labels: { color: tick, font: { size: FS.leyenda }, boxWidth: 14 },
                             onClick: (e, legendItem, legend) => {
                                 const chart = legend.chart;
                                 const meta = chart.getDatasetMeta(legendItem.datasetIndex);
@@ -887,7 +890,7 @@ window.AuxiliarLogic = {
                             return `${c.dataset.label}: ${fmt(montoReal)} (${c.raw.toFixed(1)}%)`;
                         } } },
                         datalabels: {
-                            color: '#fff', font: { size: 9, weight: 'bold' },
+                            color: '#fff', font: { size: FS.etiqueta, weight: 'bold' },
                             // Solo muestra el monto si el segmento es lo bastante ancho para que quepa
                             display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 7,
                             formatter: (val, ctx) => {
@@ -897,8 +900,8 @@ window.AuxiliarLogic = {
                         }
                     },
                     scales: {
-                        x: { stacked: true, max: 100, ticks: { color: tick, callback: (v) => v + '%' } },
-                        y: { stacked: true, ticks: { color: tick, font: { size: 12, weight: 'bold' } } }
+                       x: { stacked: true, max: 100, ticks: { color: tick, font: { size: FS.eje }, callback: (v) => v + '%' } },
+                        y: { stacked: true, ticks: { color: tick, font: { size: FS.eje + 1, weight: 'bold' } } }
                     }
                 }
             });
