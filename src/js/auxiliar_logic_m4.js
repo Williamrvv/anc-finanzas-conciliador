@@ -679,15 +679,17 @@ window.AuxiliarLogic = {
                 porCC[cc] = (porCC[cc] || 0) + (Number(t.MontoCRC) || 0);
                 if (cc !== 'Sin CC' && t.Sucursal) ccNombre[cc] = t.Sucursal;
             });
-            // Reparto de cobro por banco dentro de cada sucursal (para barras apiladas 100%)
-            (r._bancoArr || []).forEach(b => {
-                const suc = String(b.Sucursal || 'Sin sucursal').trim();
-                // Respeta el filtro de sucursal: solo las marcadas entran al gráfico
-                if (sucFiltro && !sucFiltro.includes(suc)) return;
-                const banco = String(b.Banco || '').toUpperCase().includes('BAC') ? 'BAC' : 'DAVI';
-                if (!porSucursalBanco[suc]) porSucursalBanco[suc] = { BAC: 0, DAVI: 0 };
-                porSucursalBanco[suc][banco] += Number(b.MontoBrutoBanco) || 0;
-            });
+            // Reparto de cobro por banco por sucursal. Usamos la sucursal de TSD del grupo
+            // (mismo vocabulario que el filtro), no b.Sucursal que viene del diccionario y no coincide.
+            const sucGrupo = String((r._tsdArr && r._tsdArr[0] && r._tsdArr[0].Sucursal) || 'Sin sucursal').trim();
+            // Respeta el filtro de sucursal contra el nombre de TSD (el mismo que marca el usuario)
+            if (!sucFiltro || sucFiltro.includes(sucGrupo)) {
+                (r._bancoArr || []).forEach(b => {
+                    const banco = String(b.Banco || '').toUpperCase().includes('BAC') ? 'BAC' : 'DAVI';
+                    if (!porSucursalBanco[sucGrupo]) porSucursalBanco[sucGrupo] = { BAC: 0, DAVI: 0 };
+                    porSucursalBanco[sucGrupo][banco] += Number(b.MontoBrutoBanco) || 0;
+                });
+            }
             (r._bancoArr || []).forEach(b => {
                 const monto = Number(b.MontoBrutoBanco) || 0;
                 totalBanco += monto;
