@@ -87,7 +87,7 @@ try {
             FROM Tbl_Detalle_BAC b
             INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
-            WHERE CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
+            WHERE TRY_CONVERT(date, b.FECHA_PAGO) BETWEEN :start AND :end
             ORDER BY c.IdCierre ASC
         ");
         $stmt->execute([':start' => $startDate, ':end' => $endDate]);
@@ -112,7 +112,7 @@ try {
             FROM Tbl_Detalle_Scotia s
             INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
-            WHERE CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
+            WHERE TRY_CONVERT(date, s.Fecha_Pago) BETWEEN :start AND :end
             ORDER BY c.IdCierre ASC
         ");
         $stmt->execute([':start' => $startDate, ':end' => $endDate]);
@@ -134,7 +134,7 @@ try {
             FROM Tbl_Detalle_TSD t
             INNER JOIN Tbl_Conciliacion_Cierres c ON t.IdCierre = c.IdCierre
             LEFT JOIN Tbl_Transacciones_Maestra m ON t.IdTransaccion = m.IdTransaccion
-            WHERE CAST(c.ConsolidadoTSD AS DATE) BETWEEN :start AND :end
+            WHERE t.FechaPago BETWEEN :start AND :end
             ORDER BY t.FechaPago DESC, t.Contrato
         ");
         $stmt->execute([':start' => $startDate, ':end' => $endDate]);
