@@ -181,30 +181,46 @@ window.ConciliacionLogic = {
             this._uploadsConfigured = true;
         }
         
-        // --- MOTOR DE RECUPERACIÓN MASIVA (INDEXED-DB DRAFT) ---
-        const draftObj = await window.LocalDB.get('conciliacion_draft');
-        
-        if (draftObj) {
-            // Flujo Normal: Preguntar al usuario si desea continuar el borrador
-            const choice = await window.SysUI.confirm(
-                "Se ha detectado un proceso de conciliación guardado en el navegador.\n\n¿Desea restaurar su progreso donde lo dejó?", 
-                "Borrador Encontrado", 
-                "info"
-            );
-            
-            if (choice) {
-                this.restoreDraftFromLocal(draftObj);
-            } else {
-                await window.LocalDB.delete('conciliacion_draft');
-            }
-        } 
-        
-        // ¡CRÍTICO!: Siempre ejecutamos esto al iniciar. Así traemos las excepciones de la BD
-        // independientemente de si restauramos un borrador o no.
-        this.loadPendientes();
+        // --- CARGA MULTIUSUARIO (BORRADOR COMPARTIDO EN BD) ---
+        // 1) SIEMPRE traer primero los pendientes/diferidos de BD (son la autoridad)
+        await this.loadPendientes();
 
-        // INICIAR RELOJ DE AUTO-GUARDADO
+        // 2) ¿Hay un borrador compartido EN CURSO? (metadatos livianos, sin bajar los MB)
+        const meta = await this._borradorApi('meta');
+        if (meta && meta.existe) {
+            if (meta.ocupado) {
+                // Otro usuario con latido fresco -> impedimento (uno a la vez)
+                this._bloqueadoPorOtro = true;
+                await window.SysUI.alert(
+                    `El usuario <b>${meta.ocupadoPor}</b> está trabajando este cierre en este momento.\n\nNo pueden trabajar dos personas a la vez en la misma conciliación. Intentá de nuevo en unos minutos.`,
+                    "Cierre ocupado", "warning"
+                );
+            } else {
+                const choice = await window.SysUI.confirm(
+                    `Hay una conciliación en curso iniciada por <b>${meta.usuarioInicio}</b> (última edición: ${meta.usuarioUltimo}).\n\n¿Desea continuar sobre ese trabajo?`,
+                    "Conciliación en curso", "info"
+                );
+                if (choice) {
+                    const full = await this._borradorApi('get');
+                    if (full && full.existe) {
+                        this._dbDraftVersion = full.version;
+                        this.restoreDraftFromLocal(JSON.parse(full.dataJson)); // MERGE encima de lo pendiente
+                        if (!meta.iniciadoPorMi) {
+                            this._mostrarBannerColaboracion(meta.usuarioInicio);
+                            await window.SysUI.alert(
+                                "Estás continuando una conciliación iniciada por otro usuario. A partir de ahora, lo que guardes queda bajo tu responsabilidad.",
+                                "Trabajo compartido", "info"
+                            );
+                        }
+                    }
+                }
+                // Si dice que no: no lo cargamos; el borrador sigue en BD para que otro lo retome.
+            }
+        }
+
+        // 3) Relojes: latido de presencia (1 min) + autoguardado pesado (10 min)
         this.startAutoSave();
+        this.startHeartbeat();
 
         // BLOQUEO ANTI-DESASTRES (F5 o Cerrar Pestaña)
         window.onbeforeunload = (e) => {
@@ -294,44 +310,66 @@ window.ConciliacionLogic = {
                checkFiles(this.data.files.scotia_pagado);
     },
 
-    // AHORA ES ASÍNCRONA PARA NO CONGELAR LA PANTALLA MIENTRAS GUARDA MEGABYTES
-    saveDraftToLocal: async function(isAutoSave = false) {
+    // Guarda el borrador COMPARTIDO en BD (snapshot atómico). tipo: 'auto' | 'manual'
+    saveDraftToLocal: async function(tipo = 'auto') {
+        if (tipo === true || tipo === false) tipo = 'auto'; // compat. con llamadas viejas (boolean)
+
+        if (this._bloqueadoPorOtro) return { ok: false, bloqueado: true };
+        if (this._online === false) return { ok: false, offline: true }; // sin conexión: ya avisamos
+
+        // Anti-solape: el autoguardado se salta si hay uno en curso; el manual aborta el que corre
+        if (this._saveInProgress) {
+            if (tipo === 'auto') return { ok: false, skipped: true };
+            if (this._saveAbort) this._saveAbort.abort();
+        }
+
+        // Snapshot ATÓMICO en este instante (JSON.stringify es síncrono: nada se cuela a mitad)
+        const dataJson = JSON.stringify({
+            data: this.data,
+            manualBAC: this.manualMatches || [],
+            manualScotia: this.manualMatchesScotia || [],
+            deferred: this.deferredRows || { det: [], pag: [] }
+        });
+        const tamano = dataJson.length;
+
+        this._saveInProgress = true;
+        this._saveAbort = new AbortController();
+        const signal = this._saveAbort.signal;
+
+        const enviar = (baseVersion) => this._borradorApi('save',
+            { dataJson, baseVersion: baseVersion || 0, tipo, tamano, comprimido: 0 }, { signal });
+
         try {
-            const draft = {
-                data: this.data,
-                manualBAC: this.manualMatches || [],
-                manualScotia: this.manualMatchesScotia || [],
-                deferred: this.deferredRows || { det: [], pag: [] }
-            };
-            
-            // Usamos el motor IndexedDB en lugar de LocalStorage
-            await window.LocalDB.save('conciliacion_draft', draft);
-            
-            if (!isAutoSave) {
-                this.resetState(); 
-                console.log("💾 Borrador guardado por navegación en IndexedDB.");
-            } else {
-                console.log(`⏱️ [Auto-Save] Progreso respaldado en IndexedDB a las ${new Date().toLocaleTimeString()}`);
-                this.showAutoSaveToast();
+            let r = await enviar(this._dbDraftVersion);
+            // Conflicto de versión (mismo dueño): refresco y reintento UNA vez
+            if (r && r.conflict) {
+                this._dbDraftVersion = r.version;
+                r = await enviar(this._dbDraftVersion);
             }
+            if (r && r.ok) {
+                this._dbDraftVersion = r.version;
+                if (tipo === 'auto') this.showAutoSaveToast();
+            }
+            return r;
         } catch (e) {
-            console.error("Fallo al guardar en IndexedDB:", e);
-            if (!isAutoSave) alert("Error crítico al intentar guardar el progreso en el navegador.");
+            if (e.name === 'AbortError') return { ok: false, aborted: true }; // lo canceló un guardado manual
+            this._setOnline(false); // fallo de red -> modo offline
+            throw e;
+        } finally {
+            this._saveInProgress = false;
+            this._saveAbort = null;
         }
     },
 
-    // --- MOTOR DE AUTO-GUARDADO (CADA 1 MINUTOS) ---
+    // --- AUTOGUARDADO PESADO (CADA 10 MINUTOS) ---
     startAutoSave: function() {
-        // 1. Limpiar cualquier intervalo fantasma anterior
         if (this._autoSaveInterval) clearInterval(this._autoSaveInterval);
-        
-        // 2. Ejecutar cada 180,000 milisegundos (3 minutos)
         this._autoSaveInterval = setInterval(() => {
-            // Solo sobrescribir el archivo si hay datos (no acumula, reemplaza)
+            if (this._bloqueadoPorOtro || this._online === false) return;
             if (this.hasUnsavedData()) {
-                this.saveDraftToLocal(true);
+                this.saveDraftToLocal('auto').catch(() => {}); // se salta solo si ya hay uno en curso
             }
-        }, 60000);
+        }, 600000); // 10 minutos
     },
 
     showAutoSaveToast: function() {
@@ -353,11 +391,146 @@ window.ConciliacionLogic = {
         }, 3000);
     },
 
+    // ==========================================================
+    // MULTIUSUARIO: API, LATIDO, CONEXIÓN Y UI DE GUARDADO
+    // ==========================================================
+    _dbDraftVersion: null,
+    _saveInProgress: false,
+    _saveAbort: null,
+    _bloqueadoPorOtro: false,
+    _online: true,
+    _heartbeatInterval: null,
+
+    _borradorApi: async function(action, payload = {}, opts = {}) {
+        const res = await fetch('api/heartbeat_borrador.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({ action, modulo: 'M2' }, payload)),
+            signal: opts.signal || undefined
+        });
+        return await res.json();
+    },
+
+    // Latido de presencia cada 1 min (+ detección de conexión + refresco de sesión)
+    startHeartbeat: function() {
+        if (this._heartbeatInterval) clearInterval(this._heartbeatInterval);
+        const beat = async () => {
+            try {
+                const r = await this._borradorApi('beat');
+                this._setOnline(true);
+                if (r && r.ocupado) {
+                    if (!this._bloqueadoPorOtro) {
+                        this._bloqueadoPorOtro = true;
+                        window.SysUI.alert(`El usuario <b>${r.ocupadoPor}</b> tomó el control de este cierre.\n\nTu sesión ya no está guardando.`, "Cierre ocupado", "warning");
+                    }
+                } else {
+                    this._bloqueadoPorOtro = false;
+                    if (r && r.version != null && this._dbDraftVersion == null) this._dbDraftVersion = r.version;
+                }
+            } catch (e) {
+                this._setOnline(false); // sin conexión: seguir trabajando, pero sin guardar
+            }
+        };
+        beat();
+        this._heartbeatInterval = setInterval(beat, 60000); // 1 minuto
+    },
+
+    // Aviso persistente de conexión perdida
+    _setOnline: function(ok) {
+        if (this._online === ok) return;
+        this._online = ok;
+        let el = document.getElementById('offline-warning');
+        if (!ok) {
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'offline-warning';
+                el.className = 'fixed top-4 right-4 bg-red-600 text-white text-xs px-4 py-2.5 rounded-lg shadow-xl z-[9999] flex items-center gap-2 max-w-xs';
+                el.innerHTML = '<span class="animate-pulse text-base leading-none">⚠</span><span>Sin conexión — tu progreso <b>no se está guardando</b>. Podés seguir trabajando; se reanudará al volver la conexión.</span>';
+                document.body.appendChild(el);
+            }
+        } else if (el) {
+            el.remove();
+        }
+    },
+
+    // Banner discreto cuando continúo el trabajo de otra persona
+    _mostrarBannerColaboracion: function(usuarioInicio) {
+        let el = document.getElementById('colab-banner');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'colab-banner';
+            el.className = 'fixed bottom-4 right-4 bg-indigo-600 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg z-[9998] flex items-center gap-2 select-none';
+            document.body.appendChild(el);
+        }
+        el.innerHTML = `<span class="animate-pulse">◆</span> Continuando cierre de <b>${usuarioInicio}</b>`;
+    },
+
+    // Estados visuales del botón "Conservar Borrador" + barra inferior
+    _btnGuardando: function(btn) {
+        let bar = document.getElementById('save-progress-bar');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'save-progress-bar';
+            bar.style.cssText = 'position:fixed;bottom:0;left:0;height:3px;width:0;z-index:9999;background:#3b82f6;transition:width .4s ease;box-shadow:0 0 8px rgba(59,130,246,.7)';
+            document.body.appendChild(bar);
+        }
+        bar.style.background = '#3b82f6';
+        bar.style.width = '15%';
+        requestAnimationFrame(() => { bar.style.width = '80%'; });
+        if (btn) {
+            if (btn._orig == null) btn._orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg> Guardando...';
+        }
+    },
+    _btnGuardado: function(btn) {
+        const bar = document.getElementById('save-progress-bar');
+        if (bar) { bar.style.background = '#22c55e'; bar.style.width = '100%'; setTimeout(() => { bar.style.width = '0'; }, 1200); }
+        if (btn) {
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+            btn.classList.add('!bg-green-500', '!text-white', '!border-green-500');
+            btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg> ¡Guardado!';
+            setTimeout(() => this._btnReset(btn), 5000);
+        }
+    },
+    _btnReset: function(btn) {
+        const bar = document.getElementById('save-progress-bar');
+        if (bar) bar.style.width = '0';
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-70', 'cursor-not-allowed', '!bg-green-500', '!text-white', '!border-green-500');
+            if (btn._orig != null) btn.innerHTML = btn._orig;
+        }
+    },
+
     restoreDraftFromLocal: function(draftObj) {
         console.log("📦 Restaurando borrador masivo (IndexedDB)...");
         
-        // 1. Restaurar Estado en RAM
-        this.data = draftObj.data;
+        // 1. FUSIONAR el borrador ENCIMA de lo pendiente ya cargado (no reemplazar)
+        //    De-dup por _uid: los pendientes de BD (frescos) mandan; se agrega solo la capa humana.
+        const d = draftObj.data || {};
+        this.data = this.data || {};
+        const seen = new Set();
+        ['detalle', 'pagado', 'scotia_detalle', 'scotia_pagado'].forEach(k => {
+            if (!Array.isArray(this.data[k])) this.data[k] = [];
+            this.data[k].forEach(r => { if (r && r._uid != null) seen.add(String(r._uid)); });
+        });
+        ['detalle', 'pagado', 'scotia_detalle', 'scotia_pagado'].forEach(k => {
+            (d[k] || []).forEach(r => {
+                if (r && r._uid != null && seen.has(String(r._uid))) return; // ya presente (pendiente de BD)
+                this.data[k].push(r);
+                if (r && r._uid != null) seen.add(String(r._uid));
+            });
+        });
+        this.data.files = this.data.files || { bac_detalle: [], bac_pagado: [], scotia_detalle: [], scotia_pagado: [] };
+        ['bac_detalle', 'bac_pagado', 'scotia_detalle', 'scotia_pagado'].forEach(f => {
+            const u = new Set(this.data.files[f] || []);
+            ((d.files && d.files[f]) || []).forEach(x => u.add(x));
+            this.data.files[f] = Array.from(u);
+        });
+        this.data.headers = Object.assign({}, d.headers || {}, this.data.headers || {});
+        this.data.processed = this.data.processed || {};
         this.manualMatches = draftObj.manualBAC || [];
         this.manualMatchesScotia = draftObj.manualScotia || [];
         this.deferredRows = draftObj.deferred || { det: [], pag: [] };
@@ -1722,10 +1895,10 @@ window.ConciliacionLogic = {
             const purge = (arr) => { if (Array.isArray(arr)) arr.length = 0; };
             
             if (saveBac && saveSco) {
-                // Doble golpe: Borrar llave y forzar null para matar IndexedDB
-                await window.LocalDB.delete('conciliacion_draft');
-                await window.LocalDB.save('conciliacion_draft', null);
-            } 
+                // Cierre total: liberar y BORRAR el borrador compartido en BD (los diferidos NO se tocan)
+                await this._borradorApi('delete');
+                this._dbDraftVersion = null;
+            }
             else {
                 // GUARDADO PARCIAL MUTANTE: Limpiar físicamente los arrays
                 if (saveBac) {
@@ -1742,7 +1915,7 @@ window.ConciliacionLogic = {
                     if (window.ScotiaLogic) purge(window.ScotiaLogic.manualMatchesScotia);
                     delete this.data.processed.scotia_matches;
                 }
-                await this.saveDraftToLocal(false);
+                await this.saveDraftToLocal('auto'); // persistir el residuo (diferidos/otro banco) en BD
             }
     
             // 9. LIMPIAR PANTALLA
@@ -1754,15 +1927,19 @@ window.ConciliacionLogic = {
             // 10. RECARGA SPA (SOFT RESET INTELIGENTE SIN F5)
             this.resetState();
             
-            // Si fue guardado parcial, extraemos silenciosamente lo que sobró (Sin preguntar)
+            // Traer primero los pendientes frescos (incluye lo recién guardado en BD)
+            await this.loadPendientes();
+
+            // Si fue guardado parcial, montar el residuo del borrador ENCIMA de lo pendiente
             if (!saveBac || !saveSco) {
-                const draftObj = await window.LocalDB.get('conciliacion_draft');
-                if (draftObj) this.restoreDraftFromLocal(draftObj);
+                const full = await this._borradorApi('get');
+                if (full && full.existe) {
+                    this._dbDraftVersion = full.version;
+                    this.restoreDraftFromLocal(JSON.parse(full.dataJson));
+                }
             }
-            
-            // Inyectar inmediatamente los pendientes recién guardados desde la BD
-            this.loadPendientes();
             this.startAutoSave();
+            this.startHeartbeat();
     
         } catch (error) {
             clearInterval(progressInterval);
@@ -1990,7 +2167,49 @@ window.ConciliacionFunctions = {
     updateThreshold: function(v, bank) { window.ConciliacionLogic.updateThreshold(v, bank); },
     exportToExcel: function() { alert("Exportar pendiente."); },
     saveSnapshot: function() { window.ConciliacionLogic.saveSnapshot(); },
-    forceLocalSave: function() { if(window.ConciliacionLogic) window.ConciliacionLogic.saveDraftToLocal(true); },
+    forceLocalSave: async function() {
+        const L = window.ConciliacionLogic;
+        if (!L) return;
+        if (L._bloqueadoPorOtro) { window.SysUI && SysUI.alert("Otro usuario tiene el control de este cierre.", "No disponible", "warning"); return; }
+        if (L._online === false) { window.SysUI && SysUI.alert("Sin conexión. No se puede guardar hasta restaurarla.", "Sin conexión", "warning"); return; }
+        const btn = document.getElementById('btn-conservar-borrador');
+        L._btnGuardando(btn);
+        try {
+            const r = await L.saveDraftToLocal('manual');
+            if (r && r.ok === true) {
+                L._btnGuardado(btn);
+            } else {
+                L._btnReset(btn);
+                window.SysUI && SysUI.alert("No se pudo guardar el borrador." + (r && r.error ? "\n\n" + r.error : ""), "Error al guardar", "error");
+            }
+        } catch (e) {
+            L._btnReset(btn);
+            window.SysUI && SysUI.alert("Error al guardar el borrador:\n\n" + e.message, "Error al guardar", "error");
+        }
+    },
+
+    startNewConciliation: async function() {
+        const L = window.ConciliacionLogic;
+        if (!L) return;
+        const ok = await window.SysUI.confirm(
+            "Vas a <b>borrar la conciliación en curso guardada</b> (incluida la de otros usuarios) y empezar una nueva desde cero.\n\nLos datos diferidos/pendientes NO se borran. ¿Continuar?",
+            "Empezar de cero", "warning");
+        if (!ok) return;
+        const meta = await L._borradorApi('meta');
+        if (meta && meta.existe && !meta.iniciadoPorMi) {
+            const ok2 = await window.SysUI.confirm(
+                `Esta conciliación la inició <b>${meta.usuarioInicio}</b>. Si la borrás, la decisión y sus consecuencias quedan bajo tu responsabilidad. ¿Confirmás?`,
+                "Confirmación de responsabilidad", "warning");
+            if (!ok2) return;
+        }
+        await L._borradorApi('delete');
+        L._dbDraftVersion = null;
+        L.resetState();
+        await L.loadPendientes();
+        L.startAutoSave();
+        L.startHeartbeat();
+        window.SysUI && SysUI.alert("Se limpió el borrador. Podés cargar archivos nuevos.", "Listo", "success");
+    },
 
     // --- PUENTES DICCIONARIO ---
     openDiccionario: function() { window.ConciliacionLogic.openDiccionario(); },

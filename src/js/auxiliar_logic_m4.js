@@ -780,9 +780,9 @@ window.AuxiliarLogic = {
                 .filter(s => (porSucursalBanco[s].BAC + porSucursalBanco[s].DAVI) > 0)
                 .sort((a, b) => (porSucursalBanco[b].BAC + porSucursalBanco[b].DAVI) - (porSucursalBanco[a].BAC + porSucursalBanco[a].DAVI));
             const pct = (parte, suc) => { const t = porSucursalBanco[suc].BAC + porSucursalBanco[suc].DAVI; return t > 0 ? (parte / t) * 100 : 0; };
-            // Altura dinámica: cada sucursal necesita ~26px para leerse cómoda (barras horizontales)
+            // Ancho dinámico: cada sucursal necesita ~30px para que la barra vertical y su rótulo (rotado) se lean
             const canvasVS = ctxVS.canvas || ctxVS;
-            if (canvasVS && canvasVS.parentElement) canvasVS.parentElement.style.height = Math.max(sucs.length * 26 + 60, 300) + 'px';
+            if (canvasVS && canvasVS.parentElement) canvasVS.parentElement.style.width = Math.max(sucs.length * 30 + 60, 300) + 'px';
             this._chVS = new Chart(ctxVS.getContext('2d'), {
                 type: 'bar',
                 data: {
@@ -793,9 +793,10 @@ window.AuxiliarLogic = {
                     ]
                 },
                 options: {
-                    indexAxis: 'y', // barras HORIZONTALES: nombres de sucursal legibles sin rotar
+                    indexAxis: 'x', // barras VERTICALES
                     responsive: true, maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
+                    // 'nearest' + intersect:true => el tooltip lee SOLO el segmento exacto bajo el cursor (no el vecino)
+                    interaction: { mode: 'nearest', intersect: true },
                     plugins: {
                         legend: { position: 'top', labels: { color: tick, font: { size: FS.leyenda }, boxWidth: 14 } },
                         datalabels: {
@@ -811,8 +812,8 @@ window.AuxiliarLogic = {
                         } }
                     },
                     scales: {
-                        x: { stacked: true, max: 100, ticks: { color: tick, font: { size: FS.eje }, callback: (v) => v + '%' }, grid: { color: tick + '22' } },
-                        y: { stacked: true, ticks: { color: tick, font: { size: FS.eje } }, grid: { display: false } }
+                        x: { stacked: true, ticks: { color: tick, font: { size: FS.eje }, autoSkip: false, maxRotation: 90, minRotation: 90 }, grid: { display: false } },
+                        y: { stacked: true, max: 100, ticks: { color: tick, font: { size: FS.eje }, callback: (v) => v + '%' }, grid: { color: tick + '22' } }
                     }
                 }
             });
