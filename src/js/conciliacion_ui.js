@@ -196,25 +196,42 @@ window.ConciliacionLogic = {
                     "Cierre ocupado", "warning"
                 );
             } else {
-                const choice = await window.SysUI.confirm(
-                    `Hay una conciliación en curso iniciada por <b>${meta.usuarioInicio}</b> (última edición: ${meta.usuarioUltimo}).\n\n¿Desea continuar sobre ese trabajo?`,
-                    "Conciliación en curso", "info"
-                );
-                if (choice) {
-                    const full = await this._borradorApi('get');
-                    if (full && full.existe) {
-                        this._dbDraftVersion = full.version;
-                        this.restoreDraftFromLocal(JSON.parse(full.dataJson)); // MERGE encima de lo pendiente
-                        if (!meta.iniciadoPorMi) {
-                            this._mostrarBannerColaboracion(meta.usuarioInicio);
-                            await window.SysUI.alert(
-                                "Estás continuando una conciliación iniciada por otro usuario. A partir de ahora, lo que guardes queda bajo tu responsabilidad.",
-                                "Trabajo compartido", "info"
-                            );
+                // Decisión de entrada: CARGAR el borrador o EMPEZAR DESDE CERO (igual que hoy,
+                // con la diferencia de que ahora puede ser el autoguardado de OTRO usuario).
+                let decidido = false;
+                while (!decidido) {
+                    const cargar = await window.SysUI.confirm(
+                        `Existe una conciliación en curso, último autoguardado hecho por <b>${meta.usuarioInicio}</b> (${meta.usuarioUltimo}).\n\nAceptar = CARGAR y continuar ese trabajo.\nCancelar = EMPEZAR DESDE CERO.`,
+                        "Borrador encontrado", "info"
+                    );
+                    if (cargar) {
+                        const full = await this._borradorApi('get');
+                        if (full && full.existe) {
+                            this._dbDraftVersion = full.version;
+                            this.restoreDraftFromLocal(JSON.parse(full.dataJson)); // MERGE encima de lo pendiente
+                            if (!meta.iniciadoPorMi) {
+                                this._mostrarBannerColaboracion(meta.usuarioInicio);
+                                await window.SysUI.alert(
+                                    "Estás continuando una conciliación iniciada por otro usuario. A partir de ahora, lo que guardes queda bajo tu responsabilidad.",
+                                    "Trabajo compartido", "info"
+                                );
+                            }
                         }
+                        decidido = true;
+                    } else {
+                        // Empezar desde cero: advertir que se elimina el autoguardado ajeno y se sobrescribe
+                        const confirmar = await window.SysUI.confirm(
+                            `Si empieza desde cero se ELIMINARÁ el último autoguardado hecho por <b>${meta.usuarioInicio}</b> y se sobrescribirá con el suyo.\n\n(Los datos diferidos/pendientes NO se borran.)\n\n¿Confirma empezar desde cero?`,
+                            "Empezar desde cero", "warning"
+                        );
+                        if (confirmar) {
+                            await this._borradorApi('delete');
+                            this._dbDraftVersion = null; // su trabajo creará un borrador nuevo
+                            decidido = true;
+                        }
+                        // Si no confirma, vuelve a mostrar la decisión.
                     }
                 }
-                // Si dice que no: no lo cargamos; el borrador sigue en BD para que otro lo retome.
             }
         }
 
@@ -465,18 +482,29 @@ window.ConciliacionLogic = {
         el.innerHTML = `<span class="animate-pulse">◆</span> Continuando cierre de <b>${usuarioInicio}</b>`;
     },
 
-    // Estados visuales del botón "Conservar Borrador" + barra inferior
-    _btnGuardando: function(btn) {
+    // Estados visuales del botón "Conservar Borrador" + barra JUSTO DEBAJO del botón
+    _posBarraBajoBtn: function(btn) {
         let bar = document.getElementById('save-progress-bar');
         if (!bar) {
             bar = document.createElement('div');
             bar.id = 'save-progress-bar';
-            bar.style.cssText = 'position:fixed;bottom:0;left:0;height:3px;width:0;z-index:9999;background:#3b82f6;transition:width .4s ease;box-shadow:0 0 8px rgba(59,130,246,.7)';
+            bar.style.cssText = 'position:fixed;height:3px;width:0;z-index:9999;background:#3b82f6;border-radius:2px;transition:width .35s ease;box-shadow:0 0 8px rgba(59,130,246,.7)';
             document.body.appendChild(bar);
         }
+        if (btn) {
+            const rect = btn.getBoundingClientRect();
+            bar.style.left = rect.left + 'px';
+            bar.style.top = (rect.bottom + 3) + 'px';
+            bar._btnWidth = rect.width;
+        }
+        return bar;
+    },
+    _btnGuardando: function(btn) {
+        const bar = this._posBarraBajoBtn(btn);
         bar.style.background = '#3b82f6';
-        bar.style.width = '15%';
-        requestAnimationFrame(() => { bar.style.width = '80%'; });
+        bar.style.width = '0';
+        const full = bar._btnWidth || 120;
+        requestAnimationFrame(() => { bar.style.width = (full * 0.8) + 'px'; });
         if (btn) {
             if (btn._orig == null) btn._orig = btn.innerHTML;
             btn.disabled = true;
@@ -485,8 +513,10 @@ window.ConciliacionLogic = {
         }
     },
     _btnGuardado: function(btn) {
-        const bar = document.getElementById('save-progress-bar');
-        if (bar) { bar.style.background = '#22c55e'; bar.style.width = '100%'; setTimeout(() => { bar.style.width = '0'; }, 1200); }
+        const bar = this._posBarraBajoBtn(btn);
+        bar.style.background = '#22c55e';
+        bar.style.width = (bar._btnWidth || 120) + 'px';
+        setTimeout(() => { bar.style.width = '0'; }, 1200);
         if (btn) {
             btn.classList.remove('opacity-70', 'cursor-not-allowed');
             btn.classList.add('!bg-green-500', '!text-white', '!border-green-500');
@@ -2186,29 +2216,6 @@ window.ConciliacionFunctions = {
             L._btnReset(btn);
             window.SysUI && SysUI.alert("Error al guardar el borrador:\n\n" + e.message, "Error al guardar", "error");
         }
-    },
-
-    startNewConciliation: async function() {
-        const L = window.ConciliacionLogic;
-        if (!L) return;
-        const ok = await window.SysUI.confirm(
-            "Vas a <b>borrar la conciliación en curso guardada</b> (incluida la de otros usuarios) y empezar una nueva desde cero.\n\nLos datos diferidos/pendientes NO se borran. ¿Continuar?",
-            "Empezar de cero", "warning");
-        if (!ok) return;
-        const meta = await L._borradorApi('meta');
-        if (meta && meta.existe && !meta.iniciadoPorMi) {
-            const ok2 = await window.SysUI.confirm(
-                `Esta conciliación la inició <b>${meta.usuarioInicio}</b>. Si la borrás, la decisión y sus consecuencias quedan bajo tu responsabilidad. ¿Confirmás?`,
-                "Confirmación de responsabilidad", "warning");
-            if (!ok2) return;
-        }
-        await L._borradorApi('delete');
-        L._dbDraftVersion = null;
-        L.resetState();
-        await L.loadPendientes();
-        L.startAutoSave();
-        L.startHeartbeat();
-        window.SysUI && SysUI.alert("Se limpió el borrador. Podés cargar archivos nuevos.", "Listo", "success");
     },
 
     // --- PUENTES DICCIONARIO ---

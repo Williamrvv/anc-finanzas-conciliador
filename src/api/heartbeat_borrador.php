@@ -42,8 +42,9 @@ try {
                        b.FechaUltimo, b.TamanoBytes, b.Comprimido,
                        CASE WHEN b.FechaHeartbeat > DATEADD(MINUTE, -$stale, GETDATE())
                             THEN 1 ELSE 0 END AS Fresco,
-                       ua.Nombre AS NombreActivo, ui.Nombre AS NombreInicio,
-                       uu.Nombre AS NombreUltimo
+                       LTRIM(RTRIM(ISNULL(ua.Nombre,'') + ' ' + ISNULL(ua.Apellidos,''))) AS NombreActivo,
+                       LTRIM(RTRIM(ISNULL(ui.Nombre,'') + ' ' + ISNULL(ui.Apellidos,''))) AS NombreInicio,
+                       LTRIM(RTRIM(ISNULL(uu.Nombre,'') + ' ' + ISNULL(uu.Apellidos,''))) AS NombreUltimo
                 FROM Tbl_Conciliacion_Borradores b
                 LEFT JOIN Tbl_Usuarios ua ON ua.Email = b.UsuarioActivo
                 LEFT JOIN Tbl_Usuarios ui ON ui.Email = b.UsuarioInicio
