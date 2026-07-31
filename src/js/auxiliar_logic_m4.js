@@ -1407,7 +1407,16 @@ window.AuxiliarLogic = {
         this.currentSugData = gridData.filter(r => String(r.EstadoMatch).startsWith('Manual'));
         // Tabla Inferior (Bandeja): Todo lo demás (Sugerencias 1 a 9 y Pendientes)
         this.currentLimboData = gridData.filter(r => !String(r.EstadoMatch).startsWith('Manual'));
-        
+
+        // Los ajustes manuales creados en esta sesión que quedaron SIN categoría
+        // flotan al inicio para que el usuario los vea y los clasifique.
+        // Al recargar la página pierden el privilegio y caen donde corresponda.
+        const recientes = this._ajustesRecientes || [];
+        if (recientes.length) {
+            const arriba = (r) => recientes.includes(String(r._dbId)) && !r._colorEtiq ? 0 : 1;
+            this.currentLimboData.sort((a, b) => arriba(a) - arriba(b));
+        }
+
         this.renderGrid();
     },
 
@@ -1453,12 +1462,17 @@ window.AuxiliarLogic = {
                         badge = `<span class="block mb-1 text-[9px] font-black uppercase ${cssSis} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none">${icono} ${nombreSis}</span>`;
                     }
 
+                    // Sólo los ajustes manuales creados en el Auxiliar se pueden eliminar
+                    const del = window.AuxiliarLogic._esAjusteBorrable(row)
+                        ? `<span onclick="event.stopPropagation(); window.AuxiliarLogic.eliminarAjusteManual('${row._dbId}')" title="Eliminar este ajuste manual" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-middle rounded text-red-500 hover:text-white hover:bg-red-500 cursor-pointer transition-colors select-none text-[10px] leading-none">&#10005;</span>`
+                        : '';
+
                     if (row._isMulti) {
                         return `<div>${badge}${renderMulti(row, true, 'Contrato')}</div>`;
                     }
                     
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    return `<div>${badge}${val}</div>`;
+                    return `<div>${badge}${val}${del}</div>`;
                 }
             },
             { 
@@ -2350,6 +2364,407 @@ window.AuxiliarLogic = {
         }
     },
 
+    // =====================================================================
+    // AJUSTE MANUAL M4  —  alta de movimientos bancarios sin conciliar
+    // Reglas: Contracargo/Devolución -> Davibank | Mantenimiento -> BAC
+    //         Datáfono -> respeta el banco actual. Siempre editable.
+    //         Mantenimiento y Datáfono NO calculan comisiones ni retenciones.
+    // =====================================================================
+    _ajusteSucursales: [],
+    _ajustesRecientes: [],   // solo en memoria: flotan arriba hasta recargar
+
+    // ¿Es un ajuste manual creado en el Auxiliar y todavía sin pareja de TSD?
+    _esAjusteBorrable: function(row) {
+        if (!row || row._isMulti) return false;
+        if (String(row.EstadoMatch || '').startsWith('Manual')) return false; // ya aprobado en pantalla
+        const raw = Array.isArray(row._bancoRaw) ? row._bancoRaw : (row._bancoRaw ? [row._bancoRaw] : []);
+        if (raw.length !== 1) return false;
+        const tsd = Array.isArray(row._tsdRaw) ? row._tsdRaw : (row._tsdRaw ? [row._tsdRaw] : []);
+        if (tsd.length > 0) return false;   // si ya casó con TSD, no se toca
+        return Number(raw[0].EsAjusteM4) === 1;
+    },
+
+    eliminarAjusteManual: async function(idTransaccion) {
+        const ok = await window.SysUI.confirm(
+            `Se eliminará definitivamente el ajuste manual <b>${idTransaccion}</b> junto con su detalle bancario, su folio y su respaldo de auditoría.\n\nEsta acción no se puede deshacer. ¿Continuar?`,
+            "Eliminar ajuste manual", "warning"
+        );
+        if (!ok) return;
+
+        try {
+            const res = await fetch('api/save_ajuste_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'delete', id: idTransaccion })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                window.SysUI.alert(data.error || 'No se pudo eliminar el ajuste.', 'Fallo', 'error');
+                return;
+            }
+            this._ajustesRecientes = (this._ajustesRecientes || []).filter(x => x !== String(idTransaccion));
+            await this.fetchPendientes();
+            window.SysUI.alert('Ajuste eliminado.', 'Listo', 'success');
+        } catch (e) {
+            window.SysUI.alert('Error de conexión: ' + e.message, 'Fallo', 'error');
+        }
+    },
+
+    abrirAjusteManual: async function() {
+        this._ajusteCatManual = false;   // cada apertura vuelve a sugerir categoría
+        const tags = this.customTags || [];
+        const opsCat = tags.map(t => `<option value="${t.IdEtiqueta}">${t.Nombre}</option>`).join('');
+
+        const html = `
+        <div class="space-y-3 text-left whitespace-normal" id="adj-form">
+            <!-- FILA 1: QUÉ Y DÓNDE -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de ajuste *</label>
+                    <select id="adj-tipo" class="w-full p-2 text-xs font-bold border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-400">
+                        <option value="Contracargo">Contracargo</option>
+                        <option value="Devolución">Devolución</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Datáfono">Datáfono</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Banco *</label>
+                    <select id="adj-banco" class="w-full p-2 text-xs font-bold border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-400">
+                        <option value="DAVIBANK">Davibank</option>
+                        <option value="BAC">BAC Credomatic</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- FILA 2: SUCURSAL (autocompleta afiliado/terminal/CC) -->
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sucursal *</label>
+                <input list="adj-sucursales" id="adj-sucursal" autocomplete="off" placeholder="Escriba y elija la sucursal..."
+                    class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-400">
+                <datalist id="adj-sucursales"></datalist>
+                <div id="adj-sucursal-info" class="mt-1 text-[10px] text-slate-500 dark:text-slate-400 min-h-[14px]"></div>
+            </div>
+
+            <!-- FILA 3: FECHAS -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha del ajuste *</label>
+                    <input type="date" id="adj-fecha" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha de pago *</label>
+                    <input type="date" id="adj-fpago" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                </div>
+            </div>
+
+            <!-- FILA 4: IDENTIFICADORES -->
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Autorización *</label>
+                    <input id="adj-auth" placeholder="000000" class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Últimos 4 *</label>
+                    <input id="adj-tarjeta" maxlength="4" placeholder="4471" class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Asiento Softland *</label>
+                    <input id="adj-softland" placeholder="AS-2026-04512" class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                </div>
+            </div>
+
+            <!-- FILA 5: MONTOS (cambia según banco) -->
+            <div class="border border-slate-200 dark:border-slate-700 rounded-lg p-3 bg-slate-50 dark:bg-slate-900/40">
+                <div class="grid grid-cols-2 gap-3 items-end">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monto del ajuste *</label>
+                        <input type="number" step="0.01" id="adj-neto" placeholder="0.00"
+                            class="w-full p-2 text-sm font-bold font-mono border-2 border-orange-400 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                        <div class="text-[9px] text-slate-400 mt-0.5">Use signo negativo si resta.</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[10px] font-bold text-slate-500 uppercase">Total con cargos</div>
+                        <div id="adj-bruto" class="text-xl font-mono font-bold text-emerald-600 dark:text-emerald-400">₡0,00</div>
+                    </div>
+                </div>
+                <div id="adj-montos-banco" class="grid grid-cols-4 gap-2 mt-3"></div>
+            </div>
+
+            <!-- FILA 6: CORTESÍA -> ya cae categorizado en el auxiliar -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Categoría del auxiliar</label>
+                    <select id="adj-categoria" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                        <option value="">Sin categoría (aparecerá arriba)</option>
+                        ${opsCat}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nota</label>
+                    <input id="adj-nota" placeholder="Opcional" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Motivo</label>
+                <input id="adj-motivo" placeholder="Se guarda junto al asiento de Softland" class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+            </div>
+
+            <div id="adj-error" class="hidden text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2 whitespace-pre-line"></div>
+
+            <button id="adj-save-btn" class="w-full bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                Guardar ajuste
+            </button>
+        </div>`;
+
+        window.SysUI._createModal('Nuevo Ajuste Manual', html, [
+            { text: 'Cancelar', value: false, class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors' }
+        ], 'info', 'max-w-3xl');
+
+        // Valores por defecto cómodos: hoy en ambas fechas
+        const hoy = new Date().toISOString().slice(0, 10);
+        const fE = document.getElementById('adj-fecha'); if (fE) fE.value = hoy;
+        const fP = document.getElementById('adj-fpago'); if (fP) fP.value = hoy;
+
+        // Enganches
+        document.getElementById('adj-tipo').addEventListener('change', (e) => this._ajusteTipoCambio(e.target.value));
+        document.getElementById('adj-banco').addEventListener('change', () => { this._ajusteCargarSucursales(); this._ajustePintarMontos(); });
+        document.getElementById('adj-sucursal').addEventListener('input', () => this._ajusteSucursalElegida());
+        document.getElementById('adj-neto').addEventListener('input', () => this._ajusteCalcular());
+        document.getElementById('adj-categoria').addEventListener('change', () => { this._ajusteCatManual = true; });
+        document.getElementById('adj-save-btn').addEventListener('click', () => this.guardarAjusteManual());
+
+        this._ajusteTipoCambio('Contracargo');   // arranca con la regla del tipo por defecto
+        await this._ajusteCargarSucursales();
+        const inpSuc = document.getElementById('adj-sucursal');
+        if (inpSuc) inpSuc.focus();
+    },
+
+    // El tipo manda el banco (editable) y define si hay cálculo o no
+    _ajusteTipoCambio: function(tipo) {
+        const selBanco = document.getElementById('adj-banco');
+        if (!selBanco) return;
+        if (tipo === 'Contracargo' || tipo === 'Devolución') selBanco.value = 'DAVIBANK';
+        else if (tipo === 'Mantenimiento') selBanco.value = 'BAC';
+        // Datáfono: respeta el banco que ya esté seleccionado
+        this._ajusteAutoCategoria(tipo);
+        this._ajusteCargarSucursales();
+        this._ajustePintarMontos();
+    },
+
+    // Cortesía: si existe una categoría con nombre parecido al tipo, se elige sola.
+    // Si el usuario ya escogió una a mano, se respeta su decisión.
+    _ajusteAutoCategoria: function(tipo) {
+        const sel = document.getElementById('adj-categoria');
+        if (!sel || this._ajusteCatManual) return;
+
+        const norm = (v) => String(v || '').toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z]/g, '')
+            .replace(/(es|s)$/, '');   // singular/plural: "Contracargos" == "Contracargo"
+
+        const raiz = norm(tipo);
+        if (!raiz) { sel.value = ''; return; }
+
+        const match = (this.customTags || []).find(t => {
+            const n = norm(t.Nombre);
+            if (!n) return false;
+            if (n === raiz) return true;
+            return n.length >= 5 && raiz.length >= 5 && (n.includes(raiz) || raiz.includes(n));
+        });
+
+        sel.value = match ? String(match.IdEtiqueta) : '';
+    },
+
+    _ajusteCargarSucursales: async function() {
+        const banco = (document.getElementById('adj-banco') || {}).value || 'DAVIBANK';
+        try {
+            const res = await fetch('api/get_sucursales_m4.php?banco=' + encodeURIComponent(banco));
+            const json = await res.json();
+            this._ajusteSucursales = (json && json.success) ? (json.data || []) : [];
+        } catch (e) { this._ajusteSucursales = []; }
+
+        const dl = document.getElementById('adj-sucursales');
+        if (dl) dl.innerHTML = this._ajusteSucursales.map(s => `<option value="${s.NombreSucursal}">`).join('');
+        this._ajusteSucursalElegida();
+    },
+
+    // Con la sucursal se resuelven solos afiliado, terminal y centro de costo
+    _ajusteSucursalElegida: function() {
+        const val = (document.getElementById('adj-sucursal') || {}).value || '';
+        const info = document.getElementById('adj-sucursal-info');
+        const s = this._ajusteSucursales.find(x => String(x.NombreSucursal).trim().toUpperCase() === val.trim().toUpperCase());
+        this._ajusteSucSel = s || null;
+        if (!info) return;
+        info.innerHTML = s
+            ? `<span class="text-emerald-600 dark:text-emerald-400">✓ Afiliado <b>${s.Afiliado}</b> · Terminal <b>${s.CodigoSucursal || '—'}</b> · CC <b>${s.CentroCosto || '—'}</b></span>`
+            : (val ? '<span class="text-amber-600">Elija una sucursal de la lista</span>' : '');
+    },
+
+    // Bloque de montos: BAC y Davibank tienen columnas distintas
+    _ajustePintarMontos: function() {
+        const cont = document.getElementById('adj-montos-banco');
+        if (!cont) return;
+        const banco = (document.getElementById('adj-banco') || {}).value || 'DAVIBANK';
+        const tipo = (document.getElementById('adj-tipo') || {}).value || '';
+        const sinCargos = (tipo === 'Mantenimiento' || tipo === 'Datáfono');
+
+        const inp = (id, lbl, color) => `<div>
+            <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">${lbl}</label>
+            <input type="number" step="0.01" id="${id}" placeholder="0.00"
+                class="w-full p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 ${color} outline-none"></div>`;
+
+        const hintPrev = document.getElementById('adj-hint-sincargos');
+        if (hintPrev) hintPrev.remove();
+
+        if (banco === 'BAC') {
+            cont.innerHTML = inp('adj-com', 'Comisión' + (sinCargos ? '' : ' 1.95%'), 'text-red-600')
+                + inp('adj-ret1', 'Ret. Ventas' + (sinCargos ? '' : ' 5.31%'), 'text-orange-600')
+                + inp('adj-ret2', 'Ret. Renta' + (sinCargos ? '' : ' 1.76%'), 'text-orange-600')
+                + `<div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">ACI${sinCargos ? '' : ' 0.42%'}</label>
+                     <div class="flex items-center gap-1">
+                       <input type="checkbox" id="adj-aci-chk" class="accent-orange-600">
+                       <input type="number" step="0.01" id="adj-aci" placeholder="0.00" class="w-full p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                     </div></div>`;
+        } else {
+            cont.innerHTML = `<div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Tasa comisión</label>
+                    <select id="adj-tasa" class="w-full p-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
+                        <option value="0" ${sinCargos ? 'selected' : ''}>0.00%</option>
+                        <option value="0.0195" ${sinCargos ? '' : 'selected'}>1.95%</option>
+                        <option value="0.025">2.50%</option>
+                    </select></div>`
+                + inp('adj-com', 'Comisión', 'text-red-600')
+                + inp('adj-ret1', 'Ret. IVA' + (sinCargos ? '' : ' 5.30%'), 'text-orange-600')
+                + inp('adj-ret2', 'Ret. ISR' + (sinCargos ? '' : ' 1.76%'), 'text-orange-600');
+        }
+
+        // Datáfono y Mantenimiento no calculan nada, pero los campos siguen EDITABLES
+        if (sinCargos) {
+            cont.insertAdjacentHTML('afterend',
+                `<div id="adj-hint-sincargos" class="text-[9px] text-slate-500 dark:text-slate-400 mt-2 italic">
+                    Este tipo no calcula cargos automáticamente. Puede escribirlos a mano si aplica.
+                 </div>`);
+        }
+
+        // Recalcular el total en vivo ante cualquier edición manual
+        ['adj-com', 'adj-ret1', 'adj-ret2', 'adj-aci', 'adj-tasa', 'adj-aci-chk'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', () => this._ajusteCalcular());
+            el.addEventListener('change', () => this._ajusteCalcular());
+        });
+        this._ajusteCalcular();
+    },
+
+    // Calculadora inversa: el usuario escribe el monto y el resto se deriva
+    _ajusteCalcular: function() {
+        const g = (id) => document.getElementById(id);
+        const num = (id) => parseFloat((g(id) || {}).value) || 0;
+        const banco = (g('adj-banco') || {}).value || 'DAVIBANK';
+        const tipo = (g('adj-tipo') || {}).value || '';
+        const neto = num('adj-neto');
+        const sinCargos = (tipo === 'Mantenimiento' || tipo === 'Datáfono');
+        const soloComision = (tipo === 'Contracargo' || tipo === 'Devolución');
+
+        if (sinCargos) {
+            // NO se autocompleta nada: se respeta lo que el usuario escriba a mano.
+            // (Los campos nacen vacíos porque el bloque se re-dibuja al cambiar el tipo.)
+        } else if (banco === 'BAC') {
+            if (g('adj-com')) g('adj-com').value = (neto * 0.0195).toFixed(2);
+            if (g('adj-ret1')) g('adj-ret1').value = soloComision ? '0.00' : (neto * 0.0531).toFixed(2);
+            if (g('adj-ret2')) g('adj-ret2').value = soloComision ? '0.00' : (neto * 0.0176).toFixed(2);
+            const chk = g('adj-aci-chk');
+            if (g('adj-aci')) g('adj-aci').value = (chk && chk.checked) ? (neto * 0.0042).toFixed(2) : '0.00';
+        } else {
+            const tasa = parseFloat((g('adj-tasa') || {}).value) || 0;
+            if (g('adj-com')) g('adj-com').value = (neto * tasa).toFixed(2);
+            if (g('adj-ret1')) g('adj-ret1').value = soloComision ? '0.00' : (neto * 0.0530).toFixed(2);
+            if (g('adj-ret2')) g('adj-ret2').value = soloComision ? '0.00' : (neto * 0.0176).toFixed(2);
+        }
+
+        const bruto = neto + num('adj-com') + num('adj-ret1') + num('adj-ret2') + num('adj-aci');
+        const disp = g('adj-bruto');
+        if (disp) disp.innerText = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC' }).format(bruto).replace(/\./g, ' ');
+        return bruto;
+    },
+
+    guardarAjusteManual: async function() {
+        const g = (id) => document.getElementById(id);
+        const val = (id) => ((g(id) || {}).value || '').trim();
+        const num = (id) => parseFloat((g(id) || {}).value) || 0;
+        const btn = g('adj-save-btn');
+        const errBox = g('adj-error');
+        const mostrarError = (msg) => { if (errBox) { errBox.innerText = msg; errBox.classList.remove('hidden'); } };
+        if (errBox) errBox.classList.add('hidden');
+
+        const banco = val('adj-banco'), tipo = val('adj-tipo');
+        const suc = this._ajusteSucSel;
+        const neto = num('adj-neto');
+
+        // Todo lo obligatorio alimenta el hash: sin esto el registro no sería único
+        const faltan = [];
+        if (!suc) faltan.push('Sucursal (elíjala de la lista)');
+        if (!val('adj-fecha')) faltan.push('Fecha del ajuste');
+        if (!val('adj-fpago')) faltan.push('Fecha de pago');
+        if (!val('adj-auth')) faltan.push('Autorización');
+        if (!val('adj-tarjeta')) faltan.push('Últimos 4 de tarjeta');
+        if (!val('adj-softland')) faltan.push('ID de asiento Softland');
+        if (!neto) faltan.push('Monto del ajuste');
+        if (faltan.length) return mostrarError('Faltan datos obligatorios:\n• ' + faltan.join('\n• '));
+
+        const bruto = this._ajusteCalcular();
+        const U = (v) => String(v || '').trim().toUpperCase();
+
+        // Mismo formato de hash que el Módulo 2 (12 campos separados por |)
+        const bancoHash = (banco === 'DAVIBANK') ? 'SCOTIA' : 'BAC';
+        const hashString = `${bancoHash}|AJUSTE|${val('adj-fecha')}|${U(suc.NombreSucursal)}|${U(suc.Afiliado)}|${U(suc.CodigoSucursal)}|${U(val('adj-auth'))}|${U(val('adj-tarjeta'))}|${U(val('adj-softland'))}|${bruto}|${neto}|`;
+
+        const payload = {
+            banco, tipo,
+            fecha: val('adj-fecha'), fechaPago: val('adj-fpago'),
+            sucursal: suc.NombreSucursal, afiliado: suc.Afiliado,
+            terminal: suc.CodigoSucursal, centroCosto: suc.CentroCosto,
+            autorizacion: val('adj-auth'), tarjeta: val('adj-tarjeta'),
+            softland: val('adj-softland'), motivo: val('adj-motivo'),
+            nota: val('adj-nota'), idEtiqueta: val('adj-categoria'),
+            neto, bruto,
+            comision: num('adj-com'), ret1: num('adj-ret1'), ret2: num('adj-ret2'),
+            aci: num('adj-aci'), porcComision: parseFloat(val('adj-tasa')) || 0,
+            hashString
+        };
+
+        if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-wait'); btn.innerHTML = 'Guardando...'; }
+        const restaurarBtn = () => {
+            if (!btn) return;
+            btn.disabled = false;
+            btn.classList.remove('opacity-60', 'cursor-wait');
+            btn.innerHTML = 'Guardar ajuste';
+        };
+
+        try {
+            const res = await fetch('api/save_ajuste_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.success) { restaurarBtn(); return mostrarError(data.error || 'No se pudo guardar el ajuste.'); }
+
+            // Sin categoría => flota arriba hasta que se recargue la página
+            if (data.sinCategoria) this._ajustesRecientes.push(String(data.id));
+
+            const form = document.getElementById('adj-form');
+            const overlay = form ? form.closest('.fixed') : null;
+            if (overlay) overlay.remove();
+
+            await window.SysUI.alert(`Ajuste registrado como <b>${data.id}</b>.\n\nYa está en la bandeja esperando su pareja de TSD.`, 'Ajuste creado', 'success');
+            this.fetchPendientes();
+        } catch (e) {
+            restaurarBtn();
+            mostrarError('Error de conexión: ' + e.message);
+        }
+    },
+
     openTagManager: async function() {
         const paleta = ['slate', 'red', 'orange', 'amber', 'yellow', 'lime', 'emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose'];
         
@@ -2458,10 +2873,21 @@ window.AuxiliarLogic = {
                 </div>
             </div>`;
 
-        const choice = await window.SysUI._createModal("✏️ Editar Etiqueta", html, [
+        const promesaModal = window.SysUI._createModal("✏️ Editar Etiqueta", html, [
             {text: 'Cancelar', value: null, class: 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white px-4 py-2 rounded-lg font-bold transition-colors'},
             {text: 'Guardar', value: 'save', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
         ], "info");
+
+        // El modal se DESTRUYE del DOM antes de resolver la promesa: si leyéramos los
+        // inputs después del await serían null. Capturamos los valores en vivo.
+        let nombreNuevo = tag.Nombre;
+        let descNueva = tag.Descripcion || '';
+        const inpNom = document.getElementById('edit-tag-nombre');
+        const inpDes = document.getElementById('edit-tag-desc');
+        if (inpNom) inpNom.addEventListener('input', () => { nombreNuevo = inpNom.value; });
+        if (inpDes) inpDes.addEventListener('input', () => { descNueva = inpDes.value; });
+
+        const choice = await promesaModal;
 
         if (choice === 'save') {
             try {
@@ -2470,8 +2896,8 @@ window.AuxiliarLogic = {
                     body: JSON.stringify({
                         IdEtiqueta: tag.IdEtiqueta,
                         ColorCSS: tag.ColorCSS,
-                        Nombre: document.getElementById('edit-tag-nombre').value.trim(),
-                        Descripcion: document.getElementById('edit-tag-desc').value.trim()
+                        Nombre: String(nombreNuevo).trim(),
+                        Descripcion: String(descNueva).trim()
                     })
                 });
                 const json = await res.json();
@@ -2801,14 +3227,28 @@ window.AuxiliarLogic = {
             <textarea id="modal-etiq-nota" class="w-full p-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white outline-none resize-none h-24 focus:ring-2 focus:ring-blue-500 shadow-inner" placeholder="Escriba su nota/investigación aquí...">${row._notaEtiq || ''}</textarea>
         `;
 
-        const choice = await window.SysUI._createModal("🏷️ Etiqueta de Seguimiento", html, [
+        const promesaEtiq = window.SysUI._createModal("🏷️ Etiqueta de Seguimiento", html, [
             {text: 'Cancelar', value: null, class: 'bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-white px-4 py-2 rounded-lg font-bold transition-colors'},
             {text: 'Guardar Etiqueta', value: 'save', class: 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors'}
         ], "info");
 
+        // Mismo cuidado que en editTag: el DOM ya no existe después del await.
+        let colorSel = row._colorEtiq || '';
+        let notaSel = row._notaEtiq || '';
+        const inpColor = document.getElementById('modal-etiq-color');
+        const inpNota = document.getElementById('modal-etiq-nota');
+        if (inpColor) {
+            const sincroColor = () => { colorSel = inpColor.value; };
+            inpColor.addEventListener('change', sincroColor);
+            document.querySelectorAll('.etiq-btn').forEach(b => b.addEventListener('click', () => setTimeout(sincroColor, 0)));
+        }
+        if (inpNota) inpNota.addEventListener('input', () => { notaSel = inpNota.value; });
+
+        const choice = await promesaEtiq;
+
         if (choice === 'save') {
-            const color = document.getElementById('modal-etiq-color').value;
-            const nota = document.getElementById('modal-etiq-nota').value.trim();
+            const color = colorSel;
+            const nota = String(notaSel).trim();
 
             try {
                 const res = await fetch('api/save_etiqueta_m4.php', {

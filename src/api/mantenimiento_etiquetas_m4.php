@@ -30,12 +30,40 @@ try {
     }
     else if ($method === 'PUT') {
         $input = json_decode(file_get_contents('php://input'), true);
-        if (!$input || empty($input['IdEtiqueta']) || empty($input['ColorCSS'])) {
+        if (!$input || empty($input['IdEtiqueta'])) {
             echo json_encode(['success' => false, 'error' => 'Faltan datos']); exit;
         }
-        $stmt = $pdo->prepare("UPDATE Tbl_Etiquetas_M4 SET ColorCSS = ? WHERE IdEtiqueta = ?");
-        $stmt->execute([$input['ColorCSS'], $input['IdEtiqueta']]);
-        echo json_encode(['success' => true]);
+        $id = $input['IdEtiqueta'];
+
+        // Las etiquetas de SISTEMA no pueden cambiar de nombre: la detección
+        // automática (Contracargos / Devoluciones) se guía por ese nombre exacto.
+        $q = $pdo->prepare("SELECT EsSistema FROM Tbl_Etiquetas_M4 WHERE IdEtiqueta = ?");
+        $q->execute([$id]);
+        $fila = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$fila) { echo json_encode(['success' => false, 'error' => 'La etiqueta no existe']); exit; }
+        $esSistema = (int)$fila['EsSistema'] === 1;
+
+        // UPDATE dinámico: se actualiza SOLO lo que venga en la petición.
+        // Así este mismo endpoint sirve para el cambio de color y para la edición.
+        $sets = []; $vals = [];
+
+        if (isset($input['ColorCSS']) && trim($input['ColorCSS']) !== '') {
+            $sets[] = "ColorCSS = ?";      $vals[] = trim($input['ColorCSS']);
+        }
+        if (!$esSistema && isset($input['Nombre']) && trim($input['Nombre']) !== '') {
+            $sets[] = "Nombre = ?";        $vals[] = trim($input['Nombre']);
+        }
+        if (array_key_exists('Descripcion', $input)) {
+            $sets[] = "Descripcion = ?";   $vals[] = trim((string)$input['Descripcion']);
+        }
+
+        if (!$sets) { echo json_encode(['success' => false, 'error' => 'No hay cambios que guardar']); exit; }
+
+        $vals[] = $id;
+        $stmt = $pdo->prepare("UPDATE Tbl_Etiquetas_M4 SET " . implode(', ', $sets) . " WHERE IdEtiqueta = ?");
+        $stmt->execute($vals);
+
+        echo json_encode(['success' => true, 'esSistema' => $esSistema, 'campos' => count($sets)]);
     }
     else if ($method === 'DELETE') {
         $input = json_decode(file_get_contents('php://input'), true);

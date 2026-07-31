@@ -77,7 +77,14 @@
                     <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                     <h3 class="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">Sugerencias del Algoritmo y Bandeja de Pendientes</h3>
                 </div>
-                <span class="text-[10px] text-amber-600 dark:text-amber-500 font-medium">Doble clic para auditar y aprobar</span>
+                <div class="flex items-center gap-3">
+                    <span class="text-[10px] text-amber-600 dark:text-amber-500 font-medium">Doble clic para auditar y aprobar</span>
+                    <button onclick="window.AuxiliarLogic.abrirAjusteManual()" title="Registrar un ajuste manual del banco (contracargo, devolución, mantenimiento o datáfono)"
+                        class="flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-white/70 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-700 border border-amber-300 dark:border-amber-700 px-2 py-1 rounded-md transition-colors shadow-sm">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg>
+                        Ajuste manual
+                    </button>
+                </div>
             </div>
             <div id="table-limbo-m4" style="height: 500px; min-height: 300px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
