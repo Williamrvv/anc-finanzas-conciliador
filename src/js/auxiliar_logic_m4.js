@@ -1585,8 +1585,8 @@ window.AuxiliarLogic = {
             {
                 title: "📝 Nota", field: "_notaEtiq", width: 200, cssClass: "text-[10px]",
                 formatter: (cell) => {
-                    // OJO: hay que leer la FILA, no sólo el valor: aquí vive el botón de borrado.
-                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    // OJO: VanillaGrid entrega getRow(), NO getData(). Aquí vive el botón de borrado.
+                    const row = (typeof cell === 'object' && cell) ? (cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell)) : cell;
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
 
                     const nota = val
@@ -2433,13 +2433,24 @@ window.AuxiliarLogic = {
         .adj-del-btn {
             display:inline-flex; align-items:center; line-height:1; cursor:pointer; user-select:none;
             font-size:9px; font-weight:700; letter-spacing:.02em;
-            padding:3px 6px; border-radius:9999px;
-            color:#cbd5e1; background:transparent; border:1px solid transparent;
-            transition: color .25s, background .25s, border-color .25s, transform .25s cubic-bezier(.4,0,.2,1);
+            padding:3px 7px; border-radius:9999px;
+            color:#dc2626; background:transparent; border:1px solid transparent; box-shadow:none;
+            transition: color .25s, background .25s, border-color .25s, box-shadow .3s ease,
+                        transform .25s cubic-bezier(.4,0,.2,1);
         }
-        .adj-del-btn:hover { color:#dc2626; background:#fef2f2; border-color:#fecaca; transform:translateY(-1px); }
-        .dark .adj-del-btn { color:#475569; }
-        .dark .adj-del-btn:hover { color:#f87171; background:rgba(127,29,29,.25); border-color:#991b1b; }
+        /* En reposo sólo se ve el ícono, encendido como una lucecita roja */
+        .adj-del-btn svg { filter: drop-shadow(0 0 3px rgba(239,68,68,.85)); }
+        .adj-del-btn:hover {
+            color:#fff; background:#dc2626; border-color:#ef4444; transform:translateY(-1px);
+            box-shadow: 0 0 14px rgba(239,68,68,.75), 0 0 26px rgba(239,68,68,.35);
+        }
+        .adj-del-btn:hover svg { filter:none; }
+        .dark .adj-del-btn { color:#f87171; }
+        .dark .adj-del-btn svg { filter: drop-shadow(0 0 4px rgba(248,113,113,.95)); }
+        .dark .adj-del-btn:hover {
+            color:#fff; background:#dc2626; border-color:#f87171;
+            box-shadow: 0 0 16px rgba(248,113,113,.85), 0 0 30px rgba(248,113,113,.40);
+        }
         .adj-del-btn svg { width:11px; height:11px; flex:none; transition:transform .3s cubic-bezier(.34,1.56,.64,1); }
         .adj-del-btn:hover svg { transform:rotate(-12deg) scale(1.15); }
         .adj-del-label {
