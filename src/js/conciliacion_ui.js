@@ -186,16 +186,22 @@ window.ConciliacionLogic = {
         await this.loadPendientes();
 
         // 2) ¿Hay un borrador compartido EN CURSO? (metadatos livianos, sin bajar los MB)
-        const meta = await this._borradorApi('meta');
-        if (meta && meta.existe) {
-            if (meta.ocupado) {
-                // Otro usuario con latido fresco -> impedimento (uno a la vez)
-                this._bloqueadoPorOtro = true;
-                await window.SysUI.alert(
-                    `El usuario <b>${meta.ocupadoPor}</b> está trabajando este cierre en este momento.\n\nNo pueden trabajar dos personas a la vez en la misma conciliación. Intentá de nuevo en unos minutos.`,
-                    "Cierre ocupado", "warning"
-                );
-            } else {
+        try {
+            const meta = await this._borradorApi('meta');
+            if (meta && meta.existe) {
+                if (meta.ocupado) {
+                    // Otro usuario con latido fresco -> MODO SÓLO LECTURA (carga el trabajo, no deja editar)
+                    const full = await this._borradorApi('get');
+                    if (full && full.existe) {
+                        this._dbDraftVersion = full.version;
+                        this.restoreDraftFromLocal(JSON.parse(full.dataJson));
+                    }
+                    this._activarSoloLectura(meta.ocupadoPor);
+                    await window.SysUI.alert(
+                        `El usuario <b>${meta.ocupadoPor}</b> está trabajando en una conciliación en este momento.\n\nNo pueden trabajar dos personas a la vez, así que se cargó su trabajo en <b>MODO SÓLO LECTURA</b>: puede consultarlo, pero no editar ni guardar.\n\nRecargue la página más tarde para verificar si ya quedó libre.`,
+                        "Conciliación ocupada", "warning"
+                    );
+                } else {
                 // Decisión de entrada: CARGAR el borrador o EMPEZAR DESDE CERO (igual que hoy,
                 // con la diferencia de que ahora puede ser el autoguardado de OTRO usuario).
                 let decidido = false;
@@ -232,7 +238,11 @@ window.ConciliacionLogic = {
                         // Si no confirma, vuelve a mostrar la decisión.
                     }
                 }
+                }
             }
+        } catch (e) {
+            // Nunca abortar el init por un fallo del borrador: los relojes deben arrancar igual
+            console.error("No se pudo consultar el borrador compartido:", e);
         }
 
         // 3) Relojes: latido de presencia (1 min) + autoguardado pesado (10 min)
@@ -331,6 +341,7 @@ window.ConciliacionLogic = {
     saveDraftToLocal: async function(tipo = 'auto') {
         if (tipo === true || tipo === false) tipo = 'auto'; // compat. con llamadas viejas (boolean)
 
+        if (this._soloLectura) return { ok: false, soloLectura: true };
         if (this._bloqueadoPorOtro) return { ok: false, bloqueado: true };
         if (this._online === false) return { ok: false, offline: true }; // sin conexión: ya avisamos
 
@@ -381,12 +392,20 @@ window.ConciliacionLogic = {
     // --- AUTOGUARDADO PESADO (CADA 10 MINUTOS) ---
     startAutoSave: function() {
         if (this._autoSaveInterval) clearInterval(this._autoSaveInterval);
+        if (this._soloLectura) return; // en sólo lectura no se autoguarda
         this._autoSaveInterval = setInterval(() => {
-            if (this._bloqueadoPorOtro || this._online === false) return;
+            // Si el usuario salió del Módulo 2, apagar el reloj
+            if (!this._moduloAbierto()) { clearInterval(this._autoSaveInterval); this._autoSaveInterval = null; return; }
+            if (this._soloLectura || this._bloqueadoPorOtro || this._online === false) return;
             if (this.hasUnsavedData()) {
                 this.saveDraftToLocal('auto').catch(() => {}); // se salta solo si ya hay uno en curso
             }
-        }, 600000); // 10 minutos
+        }, 300000); // 5 minutos
+    },
+
+    // El Módulo 2 está abierto si su contenedor sigue en el DOM (el router reemplaza #app)
+    _moduloAbierto: function() {
+        return !!document.getElementById('conciliacion-module');
     },
 
     showAutoSaveToast: function() {
@@ -415,6 +434,7 @@ window.ConciliacionLogic = {
     _saveInProgress: false,
     _saveAbort: null,
     _bloqueadoPorOtro: false,
+    _soloLectura: false,
     _online: true,
     _heartbeatInterval: null,
 
@@ -428,17 +448,23 @@ window.ConciliacionLogic = {
         return await res.json();
     },
 
-    // Latido de presencia cada 1 min (+ detección de conexión + refresco de sesión)
+    // Latido de presencia cada 1 min (SOLO mientras el Módulo 2 esté abierto)
     startHeartbeat: function() {
         if (this._heartbeatInterval) clearInterval(this._heartbeatInterval);
+        if (this._soloLectura) return; // en sólo lectura no reclamamos presencia
         const beat = async () => {
+            // Si el usuario salió del Módulo 2, apagar el latido (libera el candado por vencimiento)
+            if (!this._moduloAbierto()) { this.stopHeartbeat(); return; }
             try {
                 const r = await this._borradorApi('beat');
                 this._setOnline(true);
                 if (r && r.ocupado) {
-                    if (!this._bloqueadoPorOtro) {
-                        this._bloqueadoPorOtro = true;
-                        window.SysUI.alert(`El usuario <b>${r.ocupadoPor}</b> tomó el control de este cierre.\n\nTu sesión ya no está guardando.`, "Cierre ocupado", "warning");
+                    if (!this._soloLectura) {
+                        this._activarSoloLectura(r.ocupadoPor);
+                        window.SysUI.alert(
+                            `El usuario <b>${r.ocupadoPor}</b> está trabajando en una conciliación en este momento.\n\nSe activó el <b>MODO SÓLO LECTURA</b>: su trabajo ya no se está guardando. Recargue la página más tarde para verificar si quedó libre.`,
+                            "Conciliación ocupada", "warning"
+                        );
                     }
                 } else {
                     this._bloqueadoPorOtro = false;
@@ -450,6 +476,52 @@ window.ConciliacionLogic = {
         };
         beat();
         this._heartbeatInterval = setInterval(beat, 60000); // 1 minuto
+    },
+
+    stopHeartbeat: function() {
+        if (this._heartbeatInterval) clearInterval(this._heartbeatInterval);
+        this._heartbeatInterval = null;
+    },
+
+    // MODO SÓLO LECTURA: apaga relojes, bloquea edición y avisa hasta que se recargue
+    _activarSoloLectura: function(usuario) {
+        this._soloLectura = true;
+        this._bloqueadoPorOtro = true;
+
+        if (this._autoSaveInterval) { clearInterval(this._autoSaveInterval); this._autoSaveInterval = null; }
+        this.stopHeartbeat();
+
+        // Bloqueo por CSS: cubre también los botones que nacen después (popups)
+        if (!document.getElementById('solo-lectura-style')) {
+            const st = document.createElement('style');
+            st.id = 'solo-lectura-style';
+            st.textContent = `body.modo-solo-lectura #btn-save-snapshot,
+                body.modo-solo-lectura #btn-conservar-borrador,
+                body.modo-solo-lectura #btn-add-adj,
+                body.modo-solo-lectura #btn-save-adj,
+                body.modo-solo-lectura #btn-manual {
+                    pointer-events: none !important;
+                    opacity: .45 !important;
+                    cursor: not-allowed !important;
+                    filter: grayscale(1);
+                }`;
+            document.head.appendChild(st);
+        }
+        document.body.classList.add('modo-solo-lectura');
+        ['btn-save-snapshot', 'btn-conservar-borrador', 'btn-add-adj', 'btn-save-adj'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.disabled = true;
+        });
+
+        // Anuncio persistente (se va sólo al recargar el sitio)
+        let el = document.getElementById('solo-lectura-banner');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'solo-lectura-banner';
+            el.className = 'fixed top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-xl z-[9999] flex items-center gap-2';
+            document.body.appendChild(el);
+        }
+        el.innerHTML = `<span>👁</span> MODO SÓLO LECTURA — ${usuario || 'otro usuario'} está trabajando en una conciliación. Recargue para reintentar.`;
     },
 
     // Aviso persistente de conexión perdida
