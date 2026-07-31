@@ -346,7 +346,7 @@ window.AuxiliarLogic = {
             { 
                 title: "Cliente / Notas", field: "Cliente", width: 180, cssClass: "text-[10px]",
                 formatter: (cell) => {
-                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    const row = (typeof cell === 'object' && cell) ? (cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell)) : cell;
                     const val = (typeof cell === 'object' && cell.getValue ? cell.getValue() : cell) || '-';
                     let nota = '';
                     if (row._notaEtiq) {
