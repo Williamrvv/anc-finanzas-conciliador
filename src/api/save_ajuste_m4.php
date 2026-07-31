@@ -38,9 +38,9 @@ if (($in['action'] ?? '') === 'delete') {
 
         if (!$reg) { echo json_encode(['success' => false, 'error' => 'El registro no existe']); exit; }
 
-        // Candado 1: SOLO ajustes manuales (de cualquier módulo). Nunca filas de archivo bancario.
-        if ($reg['Origen'] !== 'AJUSTE') {
-            echo json_encode(['success' => false, 'error' => 'Solo se pueden eliminar ajustes manuales. Las transacciones importadas de archivos bancarios no se borran desde aquí.']); exit;
+        // Candado 1: SOLO ajustes creados en el Auxiliar. El marcador es ArchivoOrigen.
+        if (strpos((string)($reg['ArchivoOrigen'] ?? ''), 'Ajuste Manual M4') === false) {
+            echo json_encode(['success' => false, 'error' => 'Solo se pueden eliminar los ajustes manuales creados en el Auxiliar Contable.']); exit;
         }
         // Candado 2: si ya casó con TSD, borrarlo rompería la conciliación.
         if (!empty($reg['IdMatchTSD'])) {

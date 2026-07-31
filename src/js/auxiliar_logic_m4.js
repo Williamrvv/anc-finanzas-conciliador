@@ -1496,10 +1496,7 @@ window.AuxiliarLogic = {
                         <div class="flex justify-between items-center w-full">
                             ${contentHtml}
                         </div>
-                        <div class="absolute right-0 top-0 flex flex-col items-end gap-1">
-                            ${(!row._isMulti && row._dbId) ? `<button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>` : ''}
-                            ${window.AuxiliarLogic._esAjusteBorrable(row) ? window.AuxiliarLogic._btnBorrarHtml(row._dbId) : ''}
-                        </div>
+                        ${(!row._isMulti && row._dbId) ? `<button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="absolute right-0 top-0 opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>` : ''}
                         ${notaHtml}
                     </div>`;
                 }
@@ -1588,9 +1585,23 @@ window.AuxiliarLogic = {
             {
                 title: "📝 Nota", field: "_notaEtiq", width: 200, cssClass: "text-[10px]",
                 formatter: (cell) => {
+                    // OJO: hay que leer la FILA, no sólo el valor: aquí vive el botón de borrado.
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    if (!val) return '<span class="text-slate-300 dark:text-slate-600">-</span>';
-                    return `<div class="italic font-medium text-slate-600 dark:text-slate-300 break-words whitespace-normal leading-tight" title="${val}">💬 ${val}</div>`;
+
+                    const nota = val
+                        ? `<div class="italic font-medium text-slate-600 dark:text-slate-300 break-words whitespace-normal leading-tight" title="${val}">💬 ${val}</div>`
+                        : '<span class="text-slate-300 dark:text-slate-600">-</span>';
+
+                    const del = window.AuxiliarLogic._esAjusteBorrable(row)
+                        ? window.AuxiliarLogic._btnBorrarHtml(row._dbId)
+                        : '';
+
+                    if (!del) return nota;
+                    return `<div class="flex items-center justify-between gap-2 w-full">
+                                <div class="min-w-0 flex-1">${nota}</div>
+                                ${del}
+                            </div>`;
                 }
             }
         ];
@@ -2379,10 +2390,14 @@ window.AuxiliarLogic = {
         const raw = Array.isArray(row._bancoRaw) ? row._bancoRaw : (row._bancoRaw ? [row._bancoRaw] : []);
         // Sólo filas con UN movimiento bancario (no grupos de varios depósitos).
         if (raw.length !== 1) return false;
-        // OJO: no exigimos que la fila esté sin sugerencia de TSD. Una sugerencia del
-        // algoritmo NO es una conciliación; todo lo que llega a la bandeja viene con
-        // IdMatchTSD NULL, y el servidor vuelve a verificarlo antes de borrar.
-        return Number(raw[0].EsAjusteManual) === 1;
+        const b = raw[0] || {};
+        // Detección tolerante: sirve la bandera calculada O el ArchivoOrigen crudo,
+        // así el botón funciona aunque el servidor tenga una versión previa del SQL.
+        if (Number(b.EsAjusteManual) === 1) return true;
+        if (Number(b.EsAjusteM4) === 1) return true;
+        return String(b.ArchivoOrigen || '').indexOf('Ajuste Manual M4') !== -1;
+        // Nota: no exigimos ausencia de sugerencia de TSD. Una sugerencia NO es una
+        // conciliación; el servidor revalida IdMatchTSD IS NULL antes de borrar.
     },
 
     // =====================================================================
@@ -2855,9 +2870,12 @@ window.AuxiliarLogic = {
         const soloComision = (tipo === 'Contracargo' || tipo === 'Devolución');
 
         if (sinCargos) {
-            // Sin cálculo automático. EXCEPCIÓN: si el usuario elige una tasa de comisión
-            // a propósito, esa es una orden explícita y sí se recalcula la comisión.
-            if (banco !== 'BAC') {
+            // Sin cálculo automático. EXCEPCIÓN: marcar el ACI o elegir una tasa son
+            // acciones explícitas del usuario, así que esas sí se calculan.
+            if (banco === 'BAC') {
+                const chkM = g('adj-aci-chk');
+                if (chkM && g('adj-aci')) g('adj-aci').value = chkM.checked ? (neto * 0.0042).toFixed(2) : '';
+            } else {
                 const tasaM = parseFloat((g('adj-tasa') || {}).value) || 0;
                 if (tasaM > 0 && g('adj-com')) g('adj-com').value = (neto * tasaM).toFixed(2);
             }
