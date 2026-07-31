@@ -500,13 +500,17 @@ window.ConciliacionLogic = {
         return bar;
     },
     _btnGuardando: function(btn) {
+        // Fijar el ancho ANTES de cambiar el texto para que el botón no encoja y la barra calce
+        if (btn) {
+            if (btn._orig == null) btn._orig = btn.innerHTML;
+            btn.style.width = btn.offsetWidth + 'px';
+        }
         const bar = this._posBarraBajoBtn(btn);
         bar.style.background = '#3b82f6';
         bar.style.width = '0';
         const full = bar._btnWidth || 120;
         requestAnimationFrame(() => { bar.style.width = (full * 0.8) + 'px'; });
         if (btn) {
-            if (btn._orig == null) btn._orig = btn.innerHTML;
             btn.disabled = true;
             btn.classList.add('opacity-70', 'cursor-not-allowed');
             btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path></svg> Guardando...';
@@ -529,6 +533,7 @@ window.ConciliacionLogic = {
         if (bar) bar.style.width = '0';
         if (btn) {
             btn.disabled = false;
+            btn.style.width = ''; // liberar el ancho fijado
             btn.classList.remove('opacity-70', 'cursor-not-allowed', '!bg-green-500', '!text-white', '!border-green-500');
             if (btn._orig != null) btn.innerHTML = btn._orig;
         }

@@ -133,12 +133,14 @@ try {
                     $ins = $pdo->prepare("INSERT INTO Tbl_Conciliacion_Borradores
                         (Modulo, Estado, DataJson, Comprimido, [Version], TamanoBytes, EnEdicion,
                          UsuarioActivo, FechaHeartbeat, UsuarioInicio, UsuarioUltimo, FechaInicio, FechaUltimo)
-                        VALUES (:m, 'EN_CURSO', :d, :c, 1, :t, 1, :me, GETDATE(), :me, :me, GETDATE(), GETDATE())");
-                    $ins->bindParam(':m',  $modulo);
-                    $ins->bindParam(':d',  $dataJson, PDO::PARAM_STR);
-                    $ins->bindParam(':c',  $comprimido, PDO::PARAM_INT);
-                    $ins->bindParam(':t',  $tamano, PDO::PARAM_INT);
-                    $ins->bindParam(':me', $emailUser);
+                        VALUES (:m, 'EN_CURSO', :d, :c, 1, :t, 1, :meA, GETDATE(), :meI, :meU, GETDATE(), GETDATE())");
+                    $ins->bindParam(':m',   $modulo);
+                    $ins->bindParam(':d',   $dataJson, PDO::PARAM_STR);
+                    $ins->bindParam(':c',   $comprimido, PDO::PARAM_INT);
+                    $ins->bindParam(':t',   $tamano, PDO::PARAM_INT);
+                    $ins->bindParam(':meA', $emailUser); // SQLSRV no permite reusar el mismo :param
+                    $ins->bindParam(':meI', $emailUser);
+                    $ins->bindParam(':meU', $emailUser);
                     $ins->execute();
                     echo json_encode(['success' => true, 'ok' => true, 'version' => 1, 'creado' => true]);
                 } catch (PDOException $e) {
@@ -150,22 +152,25 @@ try {
             }
 
             if ($tipo === 'manual') {
+                // El guardado manual NO toca la presencia (la maneja el latido)
                 $sql = "UPDATE Tbl_Conciliacion_Borradores
                         SET DataJson = :d, Comprimido = :c, TamanoBytes = :t,
-                            [Version] = [Version] + 1, UsuarioUltimo = :me, FechaUltimo = GETDATE()
+                            [Version] = [Version] + 1, UsuarioUltimo = :meU, FechaUltimo = GETDATE()
                         WHERE IdBorrador = :id AND [Version] = :base";
             } else {
+                // Autoguardado: además refresca la presencia
                 $sql = "UPDATE Tbl_Conciliacion_Borradores
                         SET DataJson = :d, Comprimido = :c, TamanoBytes = :t,
-                            [Version] = [Version] + 1, UsuarioUltimo = :me, FechaUltimo = GETDATE(),
-                            EnEdicion = 1, UsuarioActivo = :me, FechaHeartbeat = GETDATE()
+                            [Version] = [Version] + 1, UsuarioUltimo = :meU, FechaUltimo = GETDATE(),
+                            EnEdicion = 1, UsuarioActivo = :meA, FechaHeartbeat = GETDATE()
                         WHERE IdBorrador = :id AND [Version] = :base";
             }
             $up = $pdo->prepare($sql);
             $up->bindParam(':d',    $dataJson, PDO::PARAM_STR);
             $up->bindParam(':c',    $comprimido, PDO::PARAM_INT);
             $up->bindParam(':t',    $tamano, PDO::PARAM_INT);
-            $up->bindParam(':me',   $emailUser);
+            $up->bindParam(':meU',  $emailUser);
+            if ($tipo !== 'manual') $up->bindParam(':meA', $emailUser);
             $up->bindValue(':id',   (int)$row['IdBorrador'], PDO::PARAM_INT);
             $up->bindValue(':base', $baseVersion, PDO::PARAM_INT);
             $up->execute();
