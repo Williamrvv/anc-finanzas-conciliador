@@ -1464,7 +1464,7 @@ window.AuxiliarLogic = {
 
                     // Sólo los ajustes manuales SIN conciliar se pueden eliminar
                     const del = window.AuxiliarLogic._esAjusteBorrable(row)
-                        ? `<span class="inline-flex items-center ml-1 align-middle">${window.AuxiliarLogic._btnBorrarHtml(row._dbId)}</span>`
+                        ? window.AuxiliarLogic._btnBorrarHtml(row._dbId)
                         : '';
 
                     if (row._isMulti) {
@@ -2384,35 +2384,108 @@ window.AuxiliarLogic = {
         return Number(raw[0].EsAjusteM4) === 1;
     },
 
-    // Estado inicial del botón (confirmación en dos pasos, sin modal)
+    // =====================================================================
+    // BOTÓN ELIMINAR AJUSTE MANUAL — perfil bajo, transformación animada
+    // Reposo: sólo un ícono tenue.  Hover: revela "Eliminar".
+    // Clic: se transforma en "¿Seguro?  No · Sí".
+    // Sin respuesta en 3s: vuelve solo, con una disolvencia suave.
+    // =====================================================================
+    _inyectarEstilosBorrado: function() {
+        if (document.getElementById('adj-del-styles')) return;
+        const st = document.createElement('style');
+        st.id = 'adj-del-styles';
+        st.textContent = `
+        @keyframes adjMorphIn {
+            0%   { opacity: 0; transform: scale(.55) rotate(-6deg); }
+            60%  { opacity: 1; transform: scale(1.12) rotate(2deg); }
+            100% { opacity: 1; transform: scale(1) rotate(0); }
+        }
+        @keyframes adjMorphBack {
+            0%   { opacity: 0; transform: scale(1.25); filter: blur(2px); }
+            100% { opacity: 1; transform: scale(1); filter: blur(0); }
+        }
+        @keyframes adjHalo {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.50); }
+            50%      { box-shadow: 0 0 0 5px rgba(220,38,38,0); }
+        }
+        @keyframes adjRowOut {
+            0%   { opacity: 1; transform: translateX(0) scale(1); }
+            35%  { opacity: .85; transform: translateX(-6px) scale(.995); }
+            100% { opacity: 0; transform: translateX(46px) scale(.96); }
+        }
+        .adj-del-wrap { display:inline-flex; align-items:center; vertical-align:middle; margin-left:6px; }
+        .adj-del-btn {
+            display:inline-flex; align-items:center; line-height:1; cursor:pointer; user-select:none;
+            font-size:9px; font-weight:700; letter-spacing:.02em;
+            padding:3px 6px; border-radius:9999px;
+            color:#cbd5e1; background:transparent; border:1px solid transparent;
+            transition: color .25s, background .25s, border-color .25s, transform .25s cubic-bezier(.4,0,.2,1);
+        }
+        .adj-del-btn:hover { color:#dc2626; background:#fef2f2; border-color:#fecaca; transform:translateY(-1px); }
+        .dark .adj-del-btn { color:#475569; }
+        .dark .adj-del-btn:hover { color:#f87171; background:rgba(127,29,29,.25); border-color:#991b1b; }
+        .adj-del-btn svg { width:11px; height:11px; flex:none; transition:transform .3s cubic-bezier(.34,1.56,.64,1); }
+        .adj-del-btn:hover svg { transform:rotate(-12deg) scale(1.15); }
+        .adj-del-label {
+            max-width:0; opacity:0; overflow:hidden; white-space:nowrap; margin-left:0;
+            transition:max-width .3s cubic-bezier(.4,0,.2,1), opacity .22s ease, margin-left .3s;
+        }
+        .adj-del-btn:hover .adj-del-label { max-width:70px; opacity:1; margin-left:4px; }
+        .adj-del-confirm {
+            display:inline-flex; align-items:center; gap:4px; line-height:1;
+            font-size:9px; font-weight:800; padding:3px 7px; border-radius:9999px;
+            background:linear-gradient(135deg,#dc2626,#b91c1c); color:#fff; white-space:nowrap;
+            animation: adjMorphIn .34s cubic-bezier(.34,1.56,.64,1), adjHalo 1.7s ease-out .34s infinite;
+        }
+        .adj-del-opt {
+            cursor:pointer; padding:1px 5px; border-radius:9999px; background:rgba(255,255,255,.20);
+            transition: background .18s, transform .18s cubic-bezier(.34,1.56,.64,1);
+        }
+        .adj-del-opt:hover { background:rgba(255,255,255,.55); transform:scale(1.12); }
+        .adj-del-back { animation: adjMorphBack .3s cubic-bezier(.4,0,.2,1); }
+        .adj-row-out { animation: adjRowOut .5s cubic-bezier(.55,0,.9,.35) forwards; }
+        `;
+        document.head.appendChild(st);
+    },
+
+    _btnBorrarInner: function(id) {
+        return `<span class="adj-del-btn" title="Eliminar este ajuste manual"
+                    onclick="event.stopPropagation(); window.AuxiliarLogic._pedirConfirmBorrado(this.parentElement, '${id}')">
+                    <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M4 7h16M9 7V4h6v3"></path></svg>
+                    <span class="adj-del-label">Eliminar</span>
+                </span>`;
+    },
+
     _btnBorrarHtml: function(id) {
-        return `<button onclick="event.stopPropagation(); window.AuxiliarLogic._pedirConfirmBorrado(this.parentElement, '${id}')"
-                    title="Eliminar este ajuste manual"
-                    class="flex items-center gap-1 text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/25 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded transition-colors select-none">
-                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M4 7h16"></path></svg>
-                    Eliminar
-                </button>`;
+        this._inyectarEstilosBorrado();
+        return `<span class="adj-del-wrap">${this._btnBorrarInner(id)}</span>`;
     },
 
-    // Paso 2: "¿Seguro?" con Sí / No. Si no responde, vuelve solo a los 5 segundos.
-    _pedirConfirmBorrado: function(cont, id) {
-        if (!cont) return;
-        if (cont._tBorrar) clearTimeout(cont._tBorrar);
-        cont.innerHTML = `<span class="flex items-center gap-1 text-[9px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded select-none">
+    // Transformación: el botón se convierte en la pregunta
+    _pedirConfirmBorrado: function(wrap, id) {
+        if (!wrap) return;
+        if (wrap._tBorrar) clearTimeout(wrap._tBorrar);
+        wrap.innerHTML = `<span class="adj-del-confirm">
                 ¿Seguro?
-                <span onclick="event.stopPropagation(); window.AuxiliarLogic.eliminarAjusteManual('${id}')" class="cursor-pointer bg-white/25 hover:bg-white/45 px-1 rounded transition-colors">Sí</span>
-                <span onclick="event.stopPropagation(); window.AuxiliarLogic._cancelarBorrado(this.closest('span').parentElement, '${id}')" class="cursor-pointer bg-white/25 hover:bg-white/45 px-1 rounded transition-colors">No</span>
+                <span class="adj-del-opt" onclick="event.stopPropagation(); window.AuxiliarLogic._cancelarBorrado(this.closest('.adj-del-wrap'), '${id}')">No</span>
+                <span class="adj-del-opt" onclick="event.stopPropagation(); window.AuxiliarLogic.eliminarAjusteManual('${id}', this)">Sí</span>
             </span>`;
-        cont._tBorrar = setTimeout(() => window.AuxiliarLogic._cancelarBorrado(cont, id), 5000);
+        wrap._tBorrar = setTimeout(() => window.AuxiliarLogic._cancelarBorrado(wrap, id), 3000);
     },
 
-    _cancelarBorrado: function(cont, id) {
-        if (!cont) return;
-        if (cont._tBorrar) clearTimeout(cont._tBorrar);
-        cont.innerHTML = this._btnBorrarHtml(id);
+    _cancelarBorrado: function(wrap, id) {
+        if (!wrap) return;
+        if (wrap._tBorrar) clearTimeout(wrap._tBorrar);
+        wrap.innerHTML = this._btnBorrarInner(id);
+        const b = wrap.querySelector('.adj-del-btn');
+        if (b) b.classList.add('adj-del-back');
     },
 
-    eliminarAjusteManual: async function(idTransaccion) {
+    eliminarAjusteManual: async function(idTransaccion, el) {
+        // La fila se despide antes de que la base confirme; si algo falla, regresa.
+        const fila = el ? (el.closest('tr') || el.closest('[role="row"]') || el.closest('.vg-row')) : null;
+        if (fila) fila.classList.add('adj-row-out');
+
         try {
             const res = await fetch('api/save_ajuste_m4.php', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2420,13 +2493,16 @@ window.AuxiliarLogic = {
             });
             const data = await res.json();
             if (!data.success) {
+                if (fila) fila.classList.remove('adj-row-out');   // la fila vuelve a su sitio
                 window.SysUI.alert(data.error || 'No se pudo eliminar el ajuste.', 'Fallo', 'error');
                 return;
             }
+            // Dejamos que la animación de salida termine antes de repintar la tabla
+            await new Promise(r => setTimeout(r, 380));
             this._ajustesRecientes = (this._ajustesRecientes || []).filter(x => x !== String(idTransaccion));
             await this.fetchPendientes();
-            window.SysUI.alert('Ajuste eliminado.', 'Listo', 'success');
         } catch (e) {
+            if (fila) fila.classList.remove('adj-row-out');
             window.SysUI.alert('Error de conexión: ' + e.message, 'Fallo', 'error');
         }
     },
