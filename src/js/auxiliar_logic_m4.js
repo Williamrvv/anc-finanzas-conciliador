@@ -1462,9 +1462,9 @@ window.AuxiliarLogic = {
                         badge = `<span class="block mb-1 text-[9px] font-black uppercase ${cssSis} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none">${icono} ${nombreSis}</span>`;
                     }
 
-                    // Sólo los ajustes manuales creados en el Auxiliar se pueden eliminar
+                    // Sólo los ajustes manuales SIN conciliar se pueden eliminar
                     const del = window.AuxiliarLogic._esAjusteBorrable(row)
-                        ? `<span onclick="event.stopPropagation(); window.AuxiliarLogic.eliminarAjusteManual('${row._dbId}')" title="Eliminar este ajuste manual" class="inline-flex items-center justify-center w-4 h-4 ml-1 align-middle rounded text-red-500 hover:text-white hover:bg-red-500 cursor-pointer transition-colors select-none text-[10px] leading-none">&#10005;</span>`
+                        ? `<span class="inline-flex items-center ml-1 align-middle">${window.AuxiliarLogic._btnBorrarHtml(row._dbId)}</span>`
                         : '';
 
                     if (row._isMulti) {
@@ -2384,13 +2384,35 @@ window.AuxiliarLogic = {
         return Number(raw[0].EsAjusteM4) === 1;
     },
 
-    eliminarAjusteManual: async function(idTransaccion) {
-        const ok = await window.SysUI.confirm(
-            `Se eliminará definitivamente el ajuste manual <b>${idTransaccion}</b> junto con su detalle bancario, su folio y su respaldo de auditoría.\n\nEsta acción no se puede deshacer. ¿Continuar?`,
-            "Eliminar ajuste manual", "warning"
-        );
-        if (!ok) return;
+    // Estado inicial del botón (confirmación en dos pasos, sin modal)
+    _btnBorrarHtml: function(id) {
+        return `<button onclick="event.stopPropagation(); window.AuxiliarLogic._pedirConfirmBorrado(this.parentElement, '${id}')"
+                    title="Eliminar este ajuste manual"
+                    class="flex items-center gap-1 text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/25 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800 px-1.5 py-0.5 rounded transition-colors select-none">
+                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M4 7h16"></path></svg>
+                    Eliminar
+                </button>`;
+    },
 
+    // Paso 2: "¿Seguro?" con Sí / No. Si no responde, vuelve solo a los 5 segundos.
+    _pedirConfirmBorrado: function(cont, id) {
+        if (!cont) return;
+        if (cont._tBorrar) clearTimeout(cont._tBorrar);
+        cont.innerHTML = `<span class="flex items-center gap-1 text-[9px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded select-none">
+                ¿Seguro?
+                <span onclick="event.stopPropagation(); window.AuxiliarLogic.eliminarAjusteManual('${id}')" class="cursor-pointer bg-white/25 hover:bg-white/45 px-1 rounded transition-colors">Sí</span>
+                <span onclick="event.stopPropagation(); window.AuxiliarLogic._cancelarBorrado(this.closest('span').parentElement, '${id}')" class="cursor-pointer bg-white/25 hover:bg-white/45 px-1 rounded transition-colors">No</span>
+            </span>`;
+        cont._tBorrar = setTimeout(() => window.AuxiliarLogic._cancelarBorrado(cont, id), 5000);
+    },
+
+    _cancelarBorrado: function(cont, id) {
+        if (!cont) return;
+        if (cont._tBorrar) clearTimeout(cont._tBorrar);
+        cont.innerHTML = this._btnBorrarHtml(id);
+    },
+
+    eliminarAjusteManual: async function(idTransaccion) {
         try {
             const res = await fetch('api/save_ajuste_m4.php', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2439,9 +2461,11 @@ window.AuxiliarLogic = {
             <!-- FILA 2: SUCURSAL (autocompleta afiliado/terminal/CC) -->
             <div>
                 <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sucursal *</label>
-                <input list="adj-sucursales" id="adj-sucursal" autocomplete="off" placeholder="Escriba y elija la sucursal..."
-                    class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-400">
-                <datalist id="adj-sucursales"></datalist>
+                <div class="relative">
+                    <input id="adj-sucursal" autocomplete="off" placeholder="Escriba parte del nombre para buscar..."
+                        class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-400">
+                    <div id="adj-suc-lista" class="hidden absolute z-[20] left-0 right-0 mt-1 max-h-44 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl text-xs"></div>
+                </div>
                 <div id="adj-sucursal-info" class="mt-1 text-[10px] text-slate-500 dark:text-slate-400 min-h-[14px]"></div>
             </div>
 
@@ -2464,7 +2488,7 @@ window.AuxiliarLogic = {
                     <input id="adj-auth" placeholder="000000" class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
                 </div>
                 <div>
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Últimos 4 *</label>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tarjeta: últimos 4 dígitos *</label>
                     <input id="adj-tarjeta" maxlength="4" placeholder="4471" class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
                 </div>
                 <div>
@@ -2530,7 +2554,16 @@ window.AuxiliarLogic = {
         // Enganches
         document.getElementById('adj-tipo').addEventListener('change', (e) => this._ajusteTipoCambio(e.target.value));
         document.getElementById('adj-banco').addEventListener('change', () => { this._ajusteCargarSucursales(); this._ajustePintarMontos(); });
-        document.getElementById('adj-sucursal').addEventListener('input', () => this._ajusteSucursalElegida());
+        const inpSucursal = document.getElementById('adj-sucursal');
+        inpSucursal.addEventListener('input', () => this._ajusteBuscarSucursal());
+        inpSucursal.addEventListener('focus', () => this._ajusteBuscarSucursal());
+        inpSucursal.addEventListener('keydown', (e) => this._ajusteTeclaSucursal(e));
+        inpSucursal.addEventListener('blur', () => {
+            setTimeout(() => {
+                const box = document.getElementById('adj-suc-lista');
+                if (box) box.classList.add('hidden');
+            }, 150);
+        });
         document.getElementById('adj-neto').addEventListener('input', () => this._ajusteCalcular());
         document.getElementById('adj-categoria').addEventListener('change', () => { this._ajusteCatManual = true; });
         document.getElementById('adj-save-btn').addEventListener('click', () => this.guardarAjusteManual());
@@ -2585,16 +2618,93 @@ window.AuxiliarLogic = {
             this._ajusteSucursales = (json && json.success) ? (json.data || []) : [];
         } catch (e) { this._ajusteSucursales = []; }
 
-        const dl = document.getElementById('adj-sucursales');
-        if (dl) dl.innerHTML = this._ajusteSucursales.map(s => `<option value="${s.NombreSucursal}">`).join('');
+        this._ajusteSucIdx = -1;
         this._ajusteSucursalElegida();
+    },
+
+    // Normaliza para buscar sin importar tildes ni mayúsculas
+    _ajusteNorm: function(v) {
+        return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    },
+
+    // Búsqueda EN VIVO: filtra por cualquier parte del nombre mientras se escribe
+    _ajusteBuscarSucursal: function() {
+        const inp = document.getElementById('adj-sucursal');
+        const box = document.getElementById('adj-suc-lista');
+        if (!inp || !box) return;
+
+        const q = this._ajusteNorm(inp.value).trim();
+        const lista = (this._ajusteSucursales || []).filter(s => {
+            if (!q) return true;
+            return this._ajusteNorm(s.NombreSucursal).includes(q)
+                || this._ajusteNorm(s.Afiliado).includes(q)
+                || this._ajusteNorm(s.CodigoSucursal).includes(q);
+        }).slice(0, 40);
+
+        this._ajusteSucFiltradas = lista;
+        this._ajusteSucIdx = -1;
+
+        if (!lista.length) {
+            box.innerHTML = `<div class="px-3 py-2 text-slate-400 italic">Sin coincidencias</div>`;
+            box.classList.remove('hidden');
+        } else {
+            box.innerHTML = lista.map((s, i) => `
+                <div data-i="${i}" class="adj-suc-item px-3 py-2 cursor-pointer hover:bg-orange-50 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0">
+                    <div class="font-bold text-slate-700 dark:text-slate-200">${s.NombreSucursal}</div>
+                    <div class="text-[9px] text-slate-400">Afiliado ${s.Afiliado} · Terminal ${s.CodigoSucursal || '—'}</div>
+                </div>`).join('');
+            box.classList.remove('hidden');
+            box.querySelectorAll('.adj-suc-item').forEach(el => {
+                el.addEventListener('mousedown', (ev) => {
+                    ev.preventDefault();
+                    this._ajusteTomarSucursal(parseInt(el.dataset.i, 10));
+                });
+            });
+        }
+        this._ajusteSucursalElegida();
+    },
+
+    _ajusteTomarSucursal: function(i) {
+        const s = (this._ajusteSucFiltradas || [])[i];
+        if (!s) return;
+        const inp = document.getElementById('adj-sucursal');
+        if (inp) inp.value = s.NombreSucursal;
+        const box = document.getElementById('adj-suc-lista');
+        if (box) box.classList.add('hidden');
+        // Guardamos el objeto EXACTO elegido: hay sucursales con el mismo nombre y
+        // distinto afiliado, así que re-buscar por nombre tomaría el equivocado.
+        this._ajusteSucSel = s;
+        const info = document.getElementById('adj-sucursal-info');
+        if (info) info.innerHTML = `<span class="text-emerald-600 dark:text-emerald-400">✓ Afiliado <b>${s.Afiliado}</b> · Terminal <b>${s.CodigoSucursal || '—'}</b> · CC <b>${s.CentroCosto || '—'}</b></span>`;
+    },
+
+    // Teclado: bajar, subir, elegir, cerrar
+    _ajusteTeclaSucursal: function(e) {
+        const box = document.getElementById('adj-suc-lista');
+        if (!box || box.classList.contains('hidden')) return;
+        const items = box.querySelectorAll('.adj-suc-item');
+        if (!items.length) return;
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            this._ajusteSucIdx = (e.key === 'ArrowDown')
+                ? Math.min((this._ajusteSucIdx ?? -1) + 1, items.length - 1)
+                : Math.max((this._ajusteSucIdx ?? 0) - 1, 0);
+            items.forEach((el, k) => el.classList.toggle('bg-orange-100', k === this._ajusteSucIdx));
+            items[this._ajusteSucIdx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            this._ajusteTomarSucursal(this._ajusteSucIdx >= 0 ? this._ajusteSucIdx : 0);
+        } else if (e.key === 'Escape') {
+            box.classList.add('hidden');
+        }
     },
 
     // Con la sucursal se resuelven solos afiliado, terminal y centro de costo
     _ajusteSucursalElegida: function() {
         const val = (document.getElementById('adj-sucursal') || {}).value || '';
         const info = document.getElementById('adj-sucursal-info');
-        const s = this._ajusteSucursales.find(x => String(x.NombreSucursal).trim().toUpperCase() === val.trim().toUpperCase());
+        const s = (this._ajusteSucursales || []).find(x => String(x.NombreSucursal).trim().toUpperCase() === val.trim().toUpperCase());
         this._ajusteSucSel = s || null;
         if (!info) return;
         info.innerHTML = s
@@ -2668,8 +2778,12 @@ window.AuxiliarLogic = {
         const soloComision = (tipo === 'Contracargo' || tipo === 'Devolución');
 
         if (sinCargos) {
-            // NO se autocompleta nada: se respeta lo que el usuario escriba a mano.
-            // (Los campos nacen vacíos porque el bloque se re-dibuja al cambiar el tipo.)
+            // Sin cálculo automático. EXCEPCIÓN: si el usuario elige una tasa de comisión
+            // a propósito, esa es una orden explícita y sí se recalcula la comisión.
+            if (banco !== 'BAC') {
+                const tasaM = parseFloat((g('adj-tasa') || {}).value) || 0;
+                if (tasaM > 0 && g('adj-com')) g('adj-com').value = (neto * tasaM).toFixed(2);
+            }
         } else if (banco === 'BAC') {
             if (g('adj-com')) g('adj-com').value = (neto * 0.0195).toFixed(2);
             if (g('adj-ret1')) g('adj-ret1').value = soloComision ? '0.00' : (neto * 0.0531).toFixed(2);

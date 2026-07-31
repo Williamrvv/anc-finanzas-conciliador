@@ -80,7 +80,7 @@
                 <div class="flex items-center gap-3">
                     <span class="text-[10px] text-amber-600 dark:text-amber-500 font-medium">Doble clic para auditar y aprobar</span>
                     <button onclick="window.AuxiliarLogic.abrirAjusteManual()" title="Registrar un ajuste manual del banco (contracargo, devolución, mantenimiento o datáfono)"
-                        class="flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-white/70 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-700 border border-amber-300 dark:border-amber-700 px-2 py-1 rounded-md transition-colors shadow-sm">
+                        class="flex items-center gap-1 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 border border-indigo-700 px-2.5 py-1 rounded-md transition-colors shadow-md">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg>
                         Ajuste manual
                     </button>

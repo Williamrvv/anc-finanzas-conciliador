@@ -20,6 +20,7 @@ try {
     $sql = "SELECT Afiliado, CentroCosto, CodigoSucursal, NombreSucursal, Banco
             FROM Tbl_Diccionario_Afiliados
             WHERE Activo = 1 AND UPPER(LTRIM(RTRIM(Banco))) = :b
+              AND NombreSucursal IS NOT NULL AND LTRIM(RTRIM(NombreSucursal)) <> ''
             ORDER BY NombreSucursal ASC";
     $st = $pdo->prepare($sql);
     $st->execute([':b' => $banco]);
@@ -29,7 +30,9 @@ try {
     if (!$rows) {
         $rows = $pdo->query("SELECT Afiliado, CentroCosto, CodigoSucursal, NombreSucursal, Banco
                              FROM Tbl_Diccionario_Afiliados
-                             WHERE Activo = 1 ORDER BY NombreSucursal ASC")->fetchAll(PDO::FETCH_ASSOC);
+                             WHERE Activo = 1
+                               AND NombreSucursal IS NOT NULL AND LTRIM(RTRIM(NombreSucursal)) <> ''
+                             ORDER BY NombreSucursal ASC")->fetchAll(PDO::FETCH_ASSOC);
         $parcial = true;
     }
 
