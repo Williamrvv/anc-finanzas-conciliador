@@ -1462,17 +1462,12 @@ window.AuxiliarLogic = {
                         badge = `<span class="block mb-1 text-[9px] font-black uppercase ${cssSis} border px-1 py-0.5 rounded w-max tracking-wider shadow-sm select-none">${icono} ${nombreSis}</span>`;
                     }
 
-                    // Sólo los ajustes manuales SIN conciliar se pueden eliminar
-                    const del = window.AuxiliarLogic._esAjusteBorrable(row)
-                        ? window.AuxiliarLogic._btnBorrarHtml(row._dbId)
-                        : '';
-
                     if (row._isMulti) {
                         return `<div>${badge}${renderMulti(row, true, 'Contrato')}</div>`;
                     }
                     
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    return `<div>${badge}${val}${del}</div>`;
+                    return `<div>${badge}${val}</div>`;
                 }
             },
             { 
@@ -1501,7 +1496,10 @@ window.AuxiliarLogic = {
                         <div class="flex justify-between items-center w-full">
                             ${contentHtml}
                         </div>
-                        ${(!row._isMulti && row._dbId) ? `<button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="absolute right-0 top-0 opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>` : ''}
+                        <div class="absolute right-0 top-0 flex flex-col items-end gap-1">
+                            ${(!row._isMulti && row._dbId) ? `<button onclick="event.stopPropagation(); window.AuxiliarLogic.openEtiquetaModal('${row._uid}')" class="opacity-40 hover:opacity-100 transition-opacity p-0.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-blue-100 hover:text-blue-600 text-slate-800 dark:text-white" title="Añadir Etiqueta">🏷️</button>` : ''}
+                            ${window.AuxiliarLogic._esAjusteBorrable(row) ? window.AuxiliarLogic._btnBorrarHtml(row._dbId) : ''}
+                        </div>
                         ${notaHtml}
                     </div>`;
                 }
@@ -2375,12 +2373,15 @@ window.AuxiliarLogic = {
 
     // ¿Es un ajuste manual creado en el Auxiliar y todavía sin pareja de TSD?
     _esAjusteBorrable: function(row) {
-        if (!row || row._isMulti) return false;
-        if (String(row.EstadoMatch || '').startsWith('Manual')) return false; // ya aprobado en pantalla
+        if (!row) return false;
+        // Lo aprobado en pantalla ya salió de la bandeja: no se borra desde aquí.
+        if (String(row.EstadoMatch || '').startsWith('Manual')) return false;
         const raw = Array.isArray(row._bancoRaw) ? row._bancoRaw : (row._bancoRaw ? [row._bancoRaw] : []);
+        // Sólo filas con UN movimiento bancario (no grupos de varios depósitos).
         if (raw.length !== 1) return false;
-        const tsd = Array.isArray(row._tsdRaw) ? row._tsdRaw : (row._tsdRaw ? [row._tsdRaw] : []);
-        if (tsd.length > 0) return false;   // si ya casó con TSD, no se toca
+        // OJO: no exigimos que la fila esté sin sugerencia de TSD. Una sugerencia del
+        // algoritmo NO es una conciliación; todo lo que llega a la bandeja viene con
+        // IdMatchTSD NULL, y el servidor vuelve a verificarlo antes de borrar.
         return Number(raw[0].EsAjusteM4) === 1;
     },
 
@@ -2413,7 +2414,7 @@ window.AuxiliarLogic = {
             35%  { opacity: .85; transform: translateX(-6px) scale(.995); }
             100% { opacity: 0; transform: translateX(46px) scale(.96); }
         }
-        .adj-del-wrap { display:inline-flex; align-items:center; vertical-align:middle; margin-left:6px; }
+        .adj-del-wrap { display:inline-flex; align-items:center; vertical-align:middle; }
         .adj-del-btn {
             display:inline-flex; align-items:center; line-height:1; cursor:pointer; user-select:none;
             font-size:9px; font-weight:700; letter-spacing:.02em;
