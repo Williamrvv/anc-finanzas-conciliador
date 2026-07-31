@@ -108,4 +108,4 @@ try {
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => "Error Genérico: " . $e->getMessage()]);
 }
-?>
+?> 
