@@ -60,7 +60,7 @@ try {
             CAST(a.Justificacion AS NVARCHAR(MAX)) AS Justificacion,
             CAST(m.ColorEtiqueta AS VARCHAR(20)) AS ColorEtiqueta, 
             CAST(m.NotaUsuario AS NVARCHAR(255)) AS NotaUsuario,
-            CAST(CASE WHEN m.Origen = 'AJUSTE' AND m.ArchivoOrigen = 'Ajuste Manual M4' THEN 1 ELSE 0 END AS INT) AS EsAjusteM4
+            CAST(CASE WHEN m.Origen = 'AJUSTE' THEN 1 ELSE 0 END AS INT) AS EsAjusteManual
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion
         LEFT JOIN Tbl_Ajustes_Auditoria a ON m.IdTransaccion = a.IdTransaccion
@@ -86,7 +86,7 @@ try {
             CAST(MAX(a.Justificacion) AS NVARCHAR(MAX)) AS Justificacion,
             CAST(MAX(m.ColorEtiqueta) AS VARCHAR(20)) AS ColorEtiqueta, 
             CAST(MAX(m.NotaUsuario) AS NVARCHAR(255)) AS NotaUsuario,
-            CAST(MAX(CASE WHEN m.Origen = 'AJUSTE' AND m.ArchivoOrigen = 'Ajuste Manual M4' THEN 1 ELSE 0 END) AS INT) AS EsAjusteM4
+            CAST(MAX(CASE WHEN m.Origen = 'AJUSTE' THEN 1 ELSE 0 END) AS INT) AS EsAjusteManual
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion
         LEFT JOIN Tbl_Ajustes_Auditoria a ON m.IdTransaccion = a.IdTransaccion

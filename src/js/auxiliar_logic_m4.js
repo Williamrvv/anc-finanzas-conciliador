@@ -2382,7 +2382,7 @@ window.AuxiliarLogic = {
         // OJO: no exigimos que la fila esté sin sugerencia de TSD. Una sugerencia del
         // algoritmo NO es una conciliación; todo lo que llega a la bandeja viene con
         // IdMatchTSD NULL, y el servidor vuelve a verificarlo antes de borrar.
-        return Number(raw[0].EsAjusteM4) === 1;
+        return Number(raw[0].EsAjusteManual) === 1;
     },
 
     // =====================================================================
