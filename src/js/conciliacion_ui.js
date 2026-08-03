@@ -499,16 +499,26 @@ window.ConciliacionLogic = {
                 body.modo-solo-lectura #btn-conservar-borrador,
                 body.modo-solo-lectura #btn-add-adj,
                 body.modo-solo-lectura #btn-save-adj,
-                body.modo-solo-lectura #btn-manual {
+                body.modo-solo-lectura #btn-manual,
+                body.modo-solo-lectura .btn-deshacer {
                     pointer-events: none !important;
                     opacity: .45 !important;
                     cursor: not-allowed !important;
                     filter: grayscale(1);
+                }
+                /* El banner empuja la página hacia abajo en vez de tapar el menú */
+                body.modo-solo-lectura { padding-top: 34px !important; }
+                #solo-lectura-banner {
+                    position: fixed; top: 0; left: 0; right: 0; height: 34px; z-index: 9999;
+                    display: flex; align-items: center; justify-content: center; gap: 8px;
+                    background: linear-gradient(90deg,#b45309,#f59e0b,#b45309);
+                    color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+                    box-shadow: 0 2px 10px rgba(0,0,0,.25);
                 }`;
             document.head.appendChild(st);
         }
         document.body.classList.add('modo-solo-lectura');
-        ['btn-save-snapshot', 'btn-conservar-borrador', 'btn-add-adj', 'btn-save-adj'].forEach(id => {
+        ['btn-save-snapshot', 'btn-conservar-borrador', 'btn-add-adj', 'btn-save-adj', 'btn-manual'].forEach(id => {
             const b = document.getElementById(id);
             if (b) b.disabled = true;
         });
@@ -518,8 +528,7 @@ window.ConciliacionLogic = {
         if (!el) {
             el = document.createElement('div');
             el.id = 'solo-lectura-banner';
-            el.className = 'fixed top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-xl z-[9999] flex items-center gap-2';
-            document.body.appendChild(el);
+            document.body.appendChild(el);   // el estilo vive en la hoja de sólo lectura
         }
         el.innerHTML = `<span>👁</span> MODO SÓLO LECTURA — ${usuario || 'otro usuario'} está trabajando en una conciliación. Recargue para reintentar.`;
     },

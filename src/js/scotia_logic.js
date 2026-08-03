@@ -668,7 +668,7 @@ window.ScotiaLogic = {
                     if(r._isManual) {
                         content += `<span class="ml-2 text-purple-600" title="${r._manualReason}">🤝</span>`;
                         // BOTÓN ELIMINAR DIRECTO EN LA TABLA
-                        content += `<button onclick="window.ConciliacionLogic.undoManualScotiaMatch('${r._groupID}')" class="ml-2 bg-red-100 hover:bg-red-200 text-red-600 px-1.5 py-0.5 rounded text-[9px] shadow-sm font-bold uppercase transition-colors" title="Eliminar ajuste y restaurar">Deshacer</button>`;
+                        content += `<button onclick="window.ConciliacionLogic.undoManualScotiaMatch('${r._groupID}')" class="btn-deshacer ml-2 bg-red-100 hover:bg-red-200 text-red-600 px-1.5 py-0.5 rounded text-[9px] shadow-sm font-bold uppercase transition-colors" title="Eliminar ajuste y restaurar">Deshacer</button>`;
                     }
                     const hasAdj = (r.rowsDet && r.rowsDet.some(d => d._isAdjustment)) || (r.rowsPag && r.rowsPag.some(d => d._isAdjustment));
                     if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene Fila Ficticia">🛠️</span>`;
@@ -836,6 +836,11 @@ window.ScotiaLogic = {
     },
 
     undoManualScotiaMatch: function(groupID) {
+        // MODO SÓLO LECTURA: otro usuario tiene el control de esta conciliación
+        if (this._soloLectura) {
+            if (window.SysUI) SysUI.alert("Está en <b>modo sólo lectura</b>: no puede deshacer conciliaciones.", "Acción bloqueada", "warning");
+            return;
+        }
         if(!confirm("¿Deshacer esta conciliación y restaurar los datos iniciales? Las filas creadas manualmente se eliminarán.")) return;
 
         // 1. Destruir ajustes ficticios
