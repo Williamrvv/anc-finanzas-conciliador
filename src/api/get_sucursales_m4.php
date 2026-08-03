@@ -1,6 +1,6 @@
 <?php
 // ============================================================================
-//  get_sucursales_m4.php — Autocomplete de sucursales para el Ajuste Manual M4
+//  get_sucursales_m4.php — Autocomplete de sucursales para el ajuste manual (AJUSTE-M4)
 // ============================================================================
 session_start();
 error_reporting(0);

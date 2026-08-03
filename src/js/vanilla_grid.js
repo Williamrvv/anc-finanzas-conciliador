@@ -1,6 +1,11 @@
 class VanillaGrid {
     constructor(containerId, data, columns, options = {}) {
         this.container = document.querySelector(containerId);
+        // El menú del navegador nunca debe aparecer sobre la tabla: cabecera, fila de
+        // filtros, cuerpo, totales y zona vacía. El menú propio del grid sigue igual.
+        if (this.container) {
+            this.container.addEventListener('contextmenu', e => e.preventDefault());
+        }
         this.originalData = data;
         this.displayData = [...data];
         this.columns = columns;
@@ -905,6 +910,7 @@ class VanillaGrid {
             <button class="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-700" id="ctx-filter">🔍 Filtrar por esto</button>
             <button class="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-slate-700" id="ctx-copy">📋 Copiar valor</button>
         `;
+        menu.addEventListener('contextmenu', ev => ev.preventDefault());
         document.body.appendChild(menu);
         
         document.getElementById('ctx-filter').onclick = () => {

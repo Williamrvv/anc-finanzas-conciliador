@@ -39,7 +39,7 @@ if (($in['action'] ?? '') === 'delete') {
         if (!$reg) { echo json_encode(['success' => false, 'error' => 'El registro no existe']); exit; }
 
         // Candado 1: SOLO ajustes creados en el Auxiliar. El marcador es ArchivoOrigen.
-        if (strpos((string)($reg['ArchivoOrigen'] ?? ''), 'Ajuste Manual M4') === false) {
+        if (strpos((string)($reg['ArchivoOrigen'] ?? ''), 'AJUSTE-M4') !== 0) {
             echo json_encode(['success' => false, 'error' => 'Solo se pueden eliminar los ajustes manuales creados en el Auxiliar Contable.']); exit;
         }
         // Candado 2: si ya casó con TSD, borrarlo rompería la conciliación.
@@ -157,7 +157,7 @@ try {
         "INSERT INTO Tbl_Transacciones_Maestra
          (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID,
           Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, ColorEtiqueta, NotaUsuario)
-         VALUES (?, ?, ?, 'AJUSTE', 'CONCILIADO', ?, ?, ?, ?, ?, ?, ?, 'Ajuste Manual M4', ?, ?, ?)"
+         VALUES (?, ?, ?, 'AJUSTE', 'CONCILIADO', ?, ?, ?, ?, ?, ?, ?, 'AJUSTE-M4', ?, ?, ?)"
     );
     $stMaestra->execute([
         $idTrans, $idCierre, $bancoDB, $idMatch, $fecha, $afiliado,
@@ -191,7 +191,7 @@ try {
              VALUES (?, ?, ?, ?, 'CRC', 'AJUSTE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)"
         );
         $stDet->execute([
-            $idTrans, $idCierre, 'Ajuste Manual M4', $fechaPago, $sucursal, $afiliado, $sucursal,
+            $idTrans, $idCierre, 'AJUSTE-M4', $fechaPago, $sucursal, $afiliado, $sucursal,
             $fecha, $softland, $terminal, null, $auth, $tarjeta,
             $bruto, $bruto, $comision, $porcCom,
             $retA, ($retA != 0 ? 0.0530 : 0), $retB, $neto,

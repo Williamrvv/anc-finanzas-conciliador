@@ -86,8 +86,8 @@ window.AuxiliarLogic = {
         try {
             const res = await fetch('api/mantenimiento_etiquetas_m4.php');
             const json = await res.json();
-            if(json.success) this.customTags = json.data;
-            this.injectLegend();
+            if(json.success) { this.customTags = json.data; this._aplicarOrdenGuardado(); }
+            this.injectLegend(); 
         } catch(e) { console.error("Error al cargar etiquetas", e); }
     },
 
@@ -96,7 +96,7 @@ window.AuxiliarLogic = {
     aplicarFiltroEtiqueta: function() {
         if (!this.gridLimbo) return;
         const sel = this._tagFilter || [];
-        if (sel.length === 0) { this.gridLimbo.updateData(this.currentLimboData); return; }
+        if (sel.length === 0) { this.gridLimbo.updateData(this._ordenarFilas(this.currentLimboData)); return; }
 
         // Las etiquetas de SISTEMA viven en dos identidades: el marcado manual (_colorEtiq)
         // y la detección automática (_categoriaId: Contracargos=1, Devoluciones=2).
@@ -114,7 +114,7 @@ window.AuxiliarLogic = {
             (r._colorEtiq && sel.some(id => id.toString() === r._colorEtiq.toString())) ||
             catsSel.has(r._categoriaId)
         );
-        this.gridLimbo.updateData(data);
+        this.gridLimbo.updateData(this._ordenarFilas(data));
     },
     toggleFiltroEtiqueta: function(idEtiqueta) {
         // Multi-select: cada chip se enciende/apaga de forma independiente y se acumulan (OR)
@@ -123,6 +123,168 @@ window.AuxiliarLogic = {
         this._tagFilter = ya ? sel.filter(id => id.toString() !== idEtiqueta.toString()) : [...sel, idEtiqueta];
         this.injectLegend();          // Repinta los chips (activos con anillo azul)
         this.aplicarFiltroEtiqueta(); // Repinta la tabla
+    },
+
+    // =====================================================================
+    // ORDEN DE ETIQUETAS (persistente en el navegador) Y PRIORIDAD DE LA TABLA
+    // =====================================================================
+    _LS_ORDEN: 'm4_orden_etiquetas',
+    _LS_PRIORIDAD: 'm4_prioridad_orden',
+
+    _leerOrdenGuardado: function() {
+        try {
+            const v = JSON.parse(localStorage.getItem(this._LS_ORDEN));
+            return Array.isArray(v) ? v.map(String) : [];
+        } catch (e) { return []; }
+    },
+    _guardarOrden: function(ids) {
+        try { localStorage.setItem(this._LS_ORDEN, JSON.stringify(ids.map(String))); } catch (e) {}
+    },
+
+    getPrioridad: function() {
+        try { return localStorage.getItem(this._LS_PRIORIDAD) === 'categorias' ? 'categorias' : 'sugerencias'; }
+        catch (e) { return 'sugerencias'; }
+    },
+    setPrioridad: function(valor) {
+        try { localStorage.setItem(this._LS_PRIORIDAD, valor); } catch (e) {}
+        this.injectLegend();
+        this.aplicarFiltroEtiqueta();
+    },
+
+    // Reordena customTags según lo guardado. Las etiquetas NUEVAS van al final
+    // y las borradas desaparecen solas: nunca se pierde ni se inventa nada.
+    _aplicarOrdenGuardado: function() {
+        const pos = new Map(this._leerOrdenGuardado().map((id, i) => [String(id), i]));
+        const AL_FINAL = Number.MAX_SAFE_INTEGER;
+        this.customTags.sort((a, b) => {
+            const ia = pos.has(String(a.IdEtiqueta)) ? pos.get(String(a.IdEtiqueta)) : AL_FINAL;
+            const ib = pos.has(String(b.IdEtiqueta)) ? pos.get(String(b.IdEtiqueta)) : AL_FINAL;
+            return ia - ib;
+        });
+        this._guardarOrden(this.customTags.map(t => t.IdEtiqueta));
+    },
+
+    // Etiqueta efectiva de una fila: la manual manda; si no, la detectada por el sistema.
+    _tagDeFila: function(row) {
+        if (row._colorEtiq) return String(row._colorEtiq);
+        if (row._categoriaId === 1 || row._categoriaId === 2) {
+            const nombre = row._categoriaId === 1 ? 'Contracargos' : 'Devoluciones';
+            const t = (this.customTags || []).find(x => Number(x.EsSistema) === 1 && x.Nombre === nombre);
+            if (t) return String(t.IdEtiqueta);
+        }
+        return null;
+    },
+
+    // ORDEN MAESTRO de la bandeja. Array.sort es estable: los empates conservan
+    // su posición original, así que reordenar nunca revuelve datos.
+    _ordenarFilas: function(arr) {
+        if (!Array.isArray(arr)) return [];
+        const orden = new Map((this.customTags || []).map((t, i) => [String(t.IdEtiqueta), i]));
+        const SIN_TAG = orden.size + 1;
+        const recientes = this._ajustesRecientes || [];
+        const prio = this.getPrioridad();
+
+        return arr.slice().sort((a, b) => {
+            // Nivel 0: ajustes recién creados y sin clasificar, siempre arriba (sólo esta sesión)
+            const ra = (recientes.includes(String(a._dbId)) && !a._colorEtiq) ? 0 : 1;
+            const rb = (recientes.includes(String(b._dbId)) && !b._colorEtiq) ? 0 : 1;
+            if (ra !== rb) return ra - rb;
+
+            // Nivel 1 y 2: según la preferencia del usuario
+            const sa = a.EstadoMatch === 'Pendiente' ? 1 : 0;   // 0 = sugerencia del algoritmo
+            const sb = b.EstadoMatch === 'Pendiente' ? 1 : 0;
+            const ka = this._tagDeFila(a), kb = this._tagDeFila(b);
+            const ta = orden.has(ka) ? orden.get(ka) : SIN_TAG;
+            const tb = orden.has(kb) ? orden.get(kb) : SIN_TAG;
+
+            return (prio === 'categorias') ? ((ta - tb) || (sa - sb)) : ((sa - sb) || (ta - tb));
+        });
+    },
+
+    // Guía visual de inserción: una línea luminosa ENTRE dos chips.
+    // Nunca se resalta el chip destino, para no dar la falsa idea de reemplazo.
+    _lineaDrop: function() {
+        let l = document.getElementById('etiq-drop-line');
+        if (!l) {
+            l = document.createElement('span');
+            l.id = 'etiq-drop-line';
+            l.style.cssText = 'width:3px; align-self:stretch; min-height:26px; flex:none;' +
+                'border-radius:2px; pointer-events:none;' +
+                'background:linear-gradient(180deg,#818cf8,#4f46e5);' +
+                'box-shadow:0 0 9px rgba(99,102,241,.95), 0 0 18px rgba(99,102,241,.45);';
+        }
+        return l;
+    },
+    _quitarLineaDrop: function() {
+        const l = document.getElementById('etiq-drop-line');
+        if (l && l.parentNode) l.parentNode.removeChild(l);
+        this._dropDestino = null;
+    },
+
+    // Arrastrar chips para reordenar.
+    _engancharArrastre: function() {
+        const chips = document.querySelectorAll('#etiq-legend .etiq-chip');
+        chips.forEach(chip => {
+            chip.addEventListener('dragstart', (e) => {
+                this._dragTagId = chip.dataset.tagId;
+                chip.style.opacity = '.35';
+                if (e.dataTransfer) {
+                    e.dataTransfer.effectAllowed = 'move';
+                    try { e.dataTransfer.setData('text/plain', chip.dataset.tagId); } catch (err) {}
+                }
+            });
+
+            chip.addEventListener('dragend', () => {
+                chip.style.opacity = '';
+                this._quitarLineaDrop();
+                this._dragTagId = null;
+            });
+
+            chip.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                if (!this._dragTagId) return;
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+
+                // Mitad izquierda => insertar ANTES; mitad derecha => DESPUÉS
+                const r = chip.getBoundingClientRect();
+                const antes = e.clientX < (r.left + r.width / 2);
+
+                const linea = this._lineaDrop();
+                const ref = antes ? chip : chip.nextSibling;
+                if (ref === linea) { this._dropDestino = { id: chip.dataset.tagId, antes }; return; }
+                if (linea.nextSibling !== ref || linea.parentNode !== chip.parentNode) {
+                    chip.parentNode.insertBefore(linea, ref);
+                }
+                this._dropDestino = { id: chip.dataset.tagId, antes };
+            });
+
+            chip.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const origen = this._dragTagId || (e.dataTransfer ? e.dataTransfer.getData('text/plain') : null);
+                const dest = this._dropDestino;
+                this._quitarLineaDrop();
+                if (!origen || !dest) return;
+                this._moverEtiquetaEntre(origen, dest.id, dest.antes);
+            });
+        });
+    },
+
+    // Inserta el chip movido en el hueco indicado. El índice del destino se calcula
+    // DESPUÉS de sacar el elemento, así el resultado es el mismo se arrastre
+    // hacia la izquierda o hacia la derecha (evita el clásico error de ±1).
+    _moverEtiquetaEntre: function(idOrigen, idDestino, antes) {
+        const arr = this.customTags || [];
+        const i = arr.findIndex(t => String(t.IdEtiqueta) === String(idOrigen));
+        if (i < 0) return;
+        const [movido] = arr.splice(i, 1);
+
+        const j = arr.findIndex(t => String(t.IdEtiqueta) === String(idDestino));
+        if (j < 0) { arr.splice(i, 0, movido); return; }   // destino inválido: se deja como estaba
+        arr.splice(antes ? j : j + 1, 0, movido);
+
+        this._guardarOrden(arr.map(t => t.IdEtiqueta));
+        this.injectLegend();            // repinta los chips en el nuevo orden
+        this.aplicarFiltroEtiqueta();   // re-ordena la tabla en vivo, respetando el filtro
     },
 
     injectLegend: function() {
@@ -136,11 +298,22 @@ window.AuxiliarLogic = {
             const css = this.TW_COLORS[tag.ColorCSS] || this.TW_COLORS['slate'];
             const activo = (this._tagFilter || []).some(id => id.toString() === tag.IdEtiqueta.toString());
             const anillo = activo ? 'ring-2 ring-blue-500 ring-offset-1 dark:ring-offset-slate-800 scale-105' : '';
-            html += `<span onclick="window.AuxiliarLogic.toggleFiltroEtiqueta('${tag.IdEtiqueta}')" class="${css} ${anillo} border-b-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-pointer hover:scale-105 hover:shadow-md transition-transform" title="${tag.Descripcion || ''} — Clic para ver solo esta etiqueta (clic de nuevo para quitar el filtro)">${activo ? '✅' : '🏷️'} ${tag.Nombre}</span>`;
+            html += `<span draggable="true" data-tag-id="${tag.IdEtiqueta}" onclick="window.AuxiliarLogic.toggleFiltroEtiqueta('${tag.IdEtiqueta}')" class="etiq-chip ${css} ${anillo} border-b-2 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shadow-sm select-none cursor-grab active:cursor-grabbing hover:scale-105 hover:shadow-md transition-transform" title="${tag.Descripcion || ''} — Clic: filtrar por esta etiqueta · Arrastrar: cambiar el orden">${activo ? '✅' : '🏷️'} ${tag.Nombre}</span>`;
         });
         html += `<span onclick="window.AuxiliarLogic.openTagManager()" class="px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap select-none cursor-pointer border border-dashed border-slate-400 dark:border-slate-500 text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Crear, editar o eliminar etiquetas">✏️ Editar</span>`;
+
+        // Selector de prioridad: qué manda al ordenar la bandeja
+        const prio = this.getPrioridad();
+        const btn = (v, txt, tip) => `<button onclick="window.AuxiliarLogic.setPrioridad('${v}')" title="${tip}" class="px-2 py-1 rounded-md border text-[10px] transition-colors ${prio === v ? 'bg-indigo-600 text-white border-indigo-700 font-bold shadow-sm' : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}">${txt}</button>`;
+        html += `<span class="ml-auto flex items-center gap-1">
+            <span class="text-[10px] font-bold uppercase text-slate-400 mr-1">Primero:</span>
+            ${btn('sugerencias', 'Sugerencias', 'Las coincidencias del algoritmo arriba; dentro de cada bloque, el orden de las etiquetas')}
+            ${btn('categorias', 'Categorías', 'Agrupa por etiqueta según el orden de los chips; dentro de cada etiqueta, primero las sugerencias')}
+        </span>`;
+
         html += '</div>';
         container.children[0].insertAdjacentHTML('afterend', html);
+        this._engancharArrastre();   // los chips se re-crean en cada pintado
     },
 
     init: async function() {
@@ -1408,14 +1581,8 @@ window.AuxiliarLogic = {
         // Tabla Inferior (Bandeja): Todo lo demás (Sugerencias 1 a 9 y Pendientes)
         this.currentLimboData = gridData.filter(r => !String(r.EstadoMatch).startsWith('Manual'));
 
-        // Los ajustes manuales creados en esta sesión que quedaron SIN categoría
-        // flotan al inicio para que el usuario los vea y los clasifique.
-        // Al recargar la página pierden el privilegio y caen donde corresponda.
-        const recientes = this._ajustesRecientes || [];
-        if (recientes.length) {
-            const arriba = (r) => recientes.includes(String(r._dbId)) && !r._colorEtiq ? 0 : 1;
-            this.currentLimboData.sort((a, b) => arriba(a) - arriba(b));
-        }
+        // Orden maestro (ajustes recientes, sugerencias y etiquetas) en un solo lugar
+        this.currentLimboData = this._ordenarFilas(this.currentLimboData);
 
         this.renderGrid();
     },
@@ -2395,7 +2562,7 @@ window.AuxiliarLogic = {
         // así el botón funciona aunque el servidor tenga una versión previa del SQL.
         if (Number(b.EsAjusteManual) === 1) return true;
         if (Number(b.EsAjusteM4) === 1) return true;
-        return String(b.ArchivoOrigen || '').indexOf('Ajuste Manual M4') !== -1;
+        return String(b.ArchivoOrigen || '').indexOf('AJUSTE-M4') === 0;
         // Nota: no exigimos ausencia de sugerencia de TSD. Una sugerencia NO es una
         // conciliación; el servidor revalida IdMatchTSD IS NULL antes de borrar.
     },
