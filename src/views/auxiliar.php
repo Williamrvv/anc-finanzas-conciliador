@@ -177,8 +177,9 @@
             <div id="table-historial-m4" style="height: 600px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
 
-        <!-- TABLA CONCILIADOS BAC -->
-        <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <!-- TABLA CONCILIADOS BAC — OCULTA temporalmente hasta verificar los datos.
+             Para volver a mostrarla: quitar la clase "hidden" de la línea siguiente. -->
+        <div class="hidden flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
             <div class="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2 shrink-0">
                 <span class="text-lg">🏦</span>
                 <h3 class="text-xs font-black text-blue-700 dark:text-blue-400 uppercase tracking-wider">Transacciones Conciliadas — BAC</h3>
@@ -187,8 +188,9 @@
             <div id="table-bac-m4" style="height: 300px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
 
-        <!-- TABLA CONCILIADOS DAVIBANK -->
-        <div class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <!-- TABLA CONCILIADOS DAVIBANK — OCULTA temporalmente hasta verificar los datos.
+             Para volver a mostrarla: quitar la clase "hidden" de la línea siguiente. -->
+        <div class="hidden flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
             <div class="bg-red-50 dark:bg-red-900/30 border-b border-red-200 dark:border-red-800 px-4 py-2 flex items-center gap-2 shrink-0">
                 <span class="text-lg">🏦</span>
                 <h3 class="text-xs font-black text-red-700 dark:text-red-400 uppercase tracking-wider">Transacciones Conciliadas — Davibank</h3>

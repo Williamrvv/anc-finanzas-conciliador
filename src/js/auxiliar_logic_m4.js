@@ -2828,7 +2828,7 @@ window.AuxiliarLogic = {
                 if (box) box.classList.add('hidden');
             }, 150);
         });
-        document.getElementById('adj-neto').addEventListener('input', () => this._ajusteCalcular());
+        document.getElementById('adj-neto').addEventListener('input', () => this._ajusteTotal());
         document.getElementById('adj-categoria').addEventListener('change', () => { this._ajusteCatManual = true; });
         document.getElementById('adj-save-btn').addEventListener('click', () => this.guardarAjusteManual());
 
@@ -3038,10 +3038,6 @@ window.AuxiliarLogic = {
         if (faltan.length) return mostrarError('Faltan datos obligatorios:\n• ' + faltan.join('\n• '));
 
         const bruto = this._ajusteTotal();
-
-        // Mismo formato de hash que el Módulo 2 (12 campos separados por |)
-        const bancoHash = (banco === 'DAVIBANK') ? 'SCOTIA' : 'BAC';
-        const hashString = `${bancoHash}|AJUSTE|${val('adj-fecha')}|${U(suc.NombreSucursal)}|${U(suc.Afiliado)}|${U(suc.CodigoSucursal)}|${U(val('adj-auth'))}|${U(val('adj-tarjeta'))}|${U(val('adj-softland'))}|${bruto}|${neto}|`;
 
         const payload = {
             banco, tipo,
