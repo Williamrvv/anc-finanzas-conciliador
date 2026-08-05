@@ -1,4 +1,12 @@
 window.ConciliacionLogic = {
+
+    // ---------------------------------------------------------------
+    // TOLERANCIA DE CONCILIACIÓN (en colones)
+    // Diferencia máxima admitida para dar un grupo por cuadrado.
+    // Se usa en TODOS los puntos de comparación de BAC, Davibank y el
+    // guardado, para que nunca vuelvan a divergir entre sí.
+    // ---------------------------------------------------------------
+    TOLERANCIA: 2000,
     data: { 
         detalle: [], 
         pagado: [], 
@@ -1559,7 +1567,7 @@ window.ConciliacionLogic = {
 
         const processGroup = (group, banco) => {
             const diff = group.diferencia_val !== undefined ? group.diferencia_val : group.diff;
-            const isMatch = Math.abs(diff) < 1 || group._isManual === true;
+            const isMatch = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA || group._isManual === true;
             const estado = isMatch ? 'CONCILIADO' : 'PENDIENTE';
             const idMatch = isMatch ? group.uuid : null; 
 

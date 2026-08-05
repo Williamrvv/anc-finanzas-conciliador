@@ -483,7 +483,7 @@ window.BACLogic = {
             const classRow = isHistorical ? "bg-amber-50 dark:bg-amber-900/20 border-l-[4px] border-l-amber-500 font-medium" : "";
 
             const diff = dObj.sumNeto - pObj.sum;
-            const isMatch = Math.abs(diff) < 1 && dObj.sumNeto > 0 && pObj.sum > 0;
+            const isMatch = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA && dObj.sumNeto > 0 && pObj.sum > 0;
 
             if (isMatch) {
                 // CASO A: Conciliación Perfecta
@@ -633,7 +633,7 @@ window.BACLogic = {
             const diff = detGroup.sum - matchPagSum;
 
             // SI CUADRA LA LIQUIDACIÓN
-            if (Math.abs(diff) < 1 && matchPagRows.length > 0) {
+            if (Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA && matchPagRows.length > 0) {
                 matched.push({
                     uuid: `${timeKey}-${afiId}-${liq}`,
                     id: `${afiId} - LIQ ${liq}`, 
@@ -657,7 +657,7 @@ window.BACLogic = {
         
         unmatchedDet.forEach(dRow => {
             // Buscamos un pago huérfano con el mismo monto de la venta
-            const matchIdx = unmatchedPag.findIndex(p => Math.abs(dRow._netoACI - p._monto) < 1);
+            const matchIdx = unmatchedPag.findIndex(p => Math.abs(dRow._netoACI - p._monto) <= window.ConciliacionLogic.TOLERANCIA);
             
             if (matchIdx !== -1) {
                 const pRow = unmatchedPag.splice(matchIdx, 1)[0]; // Lo extraemos del array
@@ -1165,7 +1165,7 @@ window.BACLogic = {
         
         // Detectar si ya está conciliado (Diferencia = 0 o es un grupo manual ya guardado)
         const diffVal = data.diferencia_val !== undefined ? data.diferencia_val : data.diff;
-        const isReadOnly = Math.abs(diffVal) < 1 || data._isManual === true;
+        const isReadOnly = Math.abs(diffVal) <= window.ConciliacionLogic.TOLERANCIA || data._isManual === true;
         
         if(!win) return alert("Ventana bloqueada.");
 
@@ -1663,7 +1663,7 @@ window.BACLogic = {
                         }
 
                         const btn = document.getElementById('btn-manual');
-                        const isValid = Math.abs(diff) < 1 && (selV.length > 0 || selB.length > 0);
+                        const isValid = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA && (selV.length > 0 || selB.length > 0);
                         
                         if(isValid) {
                             btn.disabled = false;
