@@ -245,6 +245,13 @@ window.ConciliacionLogic = {
             console.error("No se pudo consultar el borrador compartido:", e);
         }
 
+        // Tipo de cambio del día en curso, sólo informativo, junto al botón de tema
+        if (this.obtenerTipoCambio) {
+            this.obtenerTipoCambio(new Date().toISOString().slice(0, 10))
+                .then(tc => { if (tc && this.mostrarTipoCambio) this.mostrarTipoCambio(tc); })
+                .catch(() => {});
+        }
+
         // 3) Relojes: latido de presencia (1 min) + autoguardado pesado (10 min)
         this.startAutoSave();
         this.startHeartbeat();
@@ -1776,7 +1783,8 @@ window.ConciliacionLogic = {
                 Porc_Retencion_IVA: vPRetIva,
                 Monto_Retencion_ISR: vRetIsr,
                 Monto_Neto: vNeto,
-                Estatus: getV('Estatus', h)
+                Estatus: getV('Estatus', h),
+                Monto_Dolar: (r._montoDolar != null ? r._montoDolar : null)   // link de pago
             };
         }
         else if (banco === 'BAC' && origen === 'PAGADO') {
@@ -1799,7 +1807,8 @@ window.ConciliacionLogic = {
                 Descripcion: getV('Descripci', h) || r._desc,
                 Monto: cleanN(getV('Monto', h)) || cleanN(r._monto),
                 Saldo: cleanN(getV('Saldo', h)),
-                Credito_Debito: getV('Crédito', h) || getV('Credito', h) || getV('Débito', h) || getV('Debito', h) || getV('Tipo', h)
+                Credito_Debito: getV('Crédito', h) || getV('Credito', h) || getV('Débito', h) || getV('Debito', h) || getV('Tipo', h),
+                Monto_Dolar: (r._montoDolar != null ? r._montoDolar : null)   // link de pago
             };
         }
 

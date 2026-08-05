@@ -63,6 +63,7 @@ window.ScotiaLogic = {
             isr: getCurrIdx('retención isr') !== -1 ? getCurrIdx('retención isr') : getCurrIdx('retencion is'),
             fecha: getCurrIdx('fecha'),
             moneda: getCurrIdx('moneda'),
+            nombre: getCurrIdx('nombre'),
             transaccion: getCurrIdx('transacci'),
             orig: getCurrIdx('monto orig'),
             pCom: getCurrIdx('% comisión total') !== -1 ? getCurrIdx('% comisión total') : getCurrIdx('% comision total'),
@@ -165,11 +166,18 @@ window.ScotiaLogic = {
             const rawCurr = currCols.moneda !== -1 ? String(workingRow[currCols.moneda] || '').toUpperCase() : 'COLON';
             const detectedCurr = (rawCurr.includes('DOLAR') || rawCurr.includes('USD')) ? 'USD' : 'CRC';
 
+            // LINK DE PAGO: la columna Nombre trae la palabra LINK (ALAMO LINK, etc.)
+            const nombreCol = currCols.nombre !== -1 ? String(workingRow[currCols.nombre] || '') : '';
+            const esLink = /\bLINK\b/.test(nombreCol.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase());
+
             const rowObj = {
                 _uid: 'scodet_' + Math.random().toString(36).substr(2, 9), 
                 _enabled: true,
                 _extractedId: rawMerId, 
                 _currency: detectedCurr, // <--- Bimonetarismo activado
+                _esLink: esLink,         // link de pago (pasarela), cobrado en dólares
+                _montoDolar: null,       // neto en USD; se llena al convertir
+                _tcAplicado: null,
                 _neto: finalNeto,
                 _bruto: finalBruto,
                 _comision: vCom,
@@ -184,6 +192,9 @@ window.ScotiaLogic = {
             newRows.push(rowObj);
         }
     
+        // Los links de pago vienen en dólares: se convierten a colones ANTES de seguir
+        await this._convertirLinksDetalle(newRows, currCols, indexMap);
+
         const filteredRows = await window.ConciliacionLogic.filterDuplicates(newRows, 'SCOTIA', 'DETALLADO');
         if(filteredRows.length === 0) return;
 
@@ -197,6 +208,7 @@ window.ScotiaLogic = {
         this.updateScotiaFileList('scotia_detalle'); 
         
         if(this.switchTab) this.switchTab('scotia');
+        await this._propagarLinksAlPagado();
         this.runMatchScotiabank();
 
         const dropzone = document.getElementById('drop-scotia-detalle');
@@ -483,6 +495,7 @@ window.ScotiaLogic = {
 
         if(this.runMatchScotiabank) {
             if(this.switchTab) this.switchTab('scotia');
+            await this._propagarLinksAlPagado();
             this.runMatchScotiabank();
         }
         
@@ -494,6 +507,135 @@ window.ScotiaLogic = {
     },
 
     // Ejecuta el cruce de conciliación Scotia
+    // =====================================================================
+    // LINKS DE PAGO (pasarela) — cobrados en DÓLARES en un archivo aparte.
+    // Se convierten a colones con el tipo de cambio de TSD de la Fecha Pago,
+    // guardando aparte el monto original en dólares.
+    // =====================================================================
+    _tcCache: {},
+
+    // Un pedido por fecha; el resultado queda en caché mientras dure la sesión
+    obtenerTipoCambio: async function(fechaISO) {
+        if (!fechaISO) fechaISO = new Date().toISOString().slice(0, 10);
+        if (this._tcCache[fechaISO]) return this._tcCache[fechaISO];
+        try {
+            const res = await fetch('api/get_tipo_cambio.php?fecha=' + encodeURIComponent(fechaISO));
+            const j = await res.json();
+            if (!j.success || !j.tipoCambio) throw new Error(j.error || 'Sin tipo de cambio');
+            this._tcCache[fechaISO] = j.tipoCambio;
+            return j.tipoCambio;
+        } catch (e) {
+            if (window.SysUI) SysUI.alert('No se pudo obtener el tipo de cambio de TSD para ' + fechaISO + '.\n\nLos links de pago quedarán en dólares hasta que se resuelva.', 'Tipo de cambio', 'error');
+            return null;
+        }
+    },
+
+    // Normaliza cualquier fecha del Excel a YYYY-MM-DD
+    _fechaISO: function(v) {
+        if (!v) return null;
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+        const t = String(v).trim();
+        let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+        m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);   // dd/mm/yyyy
+        if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+        return null;
+    },
+
+    _r2: function(n) { return Math.round((Number(n) || 0) * 100) / 100; },
+
+    // Convierte las filas de link de pago del DETALLE.
+    // Redondeo: bruto, neto, IVA e ISR se redondean a 2 decimales y la comisión
+    // absorbe la diferencia, para que neto+comisión+IVA+ISR == bruto exacto.
+    _convertirLinksDetalle: async function(rows, currCols, indexMap) {
+        const links = rows.filter(r => r._esLink && !r._tcAplicado);
+        if (!links.length) return;
+
+        const fecha = this._fechaISO(links[0]._fecha) || new Date().toISOString().slice(0, 10);
+        const tc = await this.obtenerTipoCambio(fecha);
+        if (!tc) return;   // sin tipo de cambio se deja tal cual y ya se avisó
+
+        const k = (idx) => (idx !== -1 && indexMap ? String(indexMap[idx]) : null);
+        const kBruto = k(currCols.bruto), kNeto = k(currCols.neto), kCom = k(currCols.com);
+        const kIva = k(currCols.iva), kIsr = k(currCols.isr), kOrig = k(currCols.orig);
+
+        links.forEach(r => {
+            const usdNeto = r._neto;
+            const brutoC = this._r2(r._bruto * tc);
+            const netoC  = this._r2(r._neto  * tc);
+            const ivaC   = this._r2(r._iva   * tc);
+            const isrC   = this._r2(r._isr   * tc);
+            const comC   = this._r2(brutoC - netoC - ivaC - isrC);   // absorbe el redondeo
+
+            r._montoDolar = usdNeto;      // lo que realmente se pagó, en dólares
+            r._tcAplicado = tc;
+            r._bruto = brutoC; r._neto = netoC; r._comision = comC; r._iva = ivaC; r._isr = isrC;
+
+            // Las celdas crudas también viajan convertidas a la base de datos
+            if (kBruto) r[kBruto] = brutoC;
+            if (kNeto)  r[kNeto]  = netoC;
+            if (kCom)   r[kCom]   = comC;
+            if (kIva)   r[kIva]   = ivaC;
+            if (kIsr)   r[kIsr]   = isrC;
+            if (kOrig)  r[kOrig]  = brutoC;
+        });
+
+        this.mostrarTipoCambio(tc);
+    },
+
+    // El PAGADO no dice en qué moneda viene: hereda la marca del DETALLE.
+    // El comercio de la descripción puede venir recortado ("COMERCIO 90631"
+    // contra MerID "90631045"), así que se acepta por prefijo y se promueve
+    // al MerID completo para que el agrupador existente los una.
+    _propagarLinksAlPagado: async function() {
+        const det = this.data.scotia_detalle || [];
+        const pag = this.data.scotia_pagado || [];
+        if (!det.length || !pag.length) return;
+
+        const merIdsLink = [...new Set(det.filter(r => r._esLink)
+            .map(r => String(r._extractedId || '').trim()).filter(Boolean))];
+        if (!merIdsLink.length) return;
+
+        const pendientes = pag.filter(p => !p._tcAplicado);
+        for (const p of pendientes) {
+            const idPag = String(p._extractedId || '').trim();
+            if (!idPag || idPag === 'SIN_ID') continue;
+
+            // Coincidencia exacta o el del banco es prefijo del MerID completo
+            const merFull = merIdsLink.find(m => m === idPag || (idPag.length >= 4 && m.startsWith(idPag)));
+            if (!merFull) continue;
+
+            // El TC lo HEREDA del detalle con el que emparejó. Nunca se consulta
+            // por separado: dos consultas independientes pueden caer en fechas
+            // distintas y romper un cruce que debe ser exacto.
+            const filaDet = det.find(d => d._esLink && String(d._extractedId).trim() === merFull && d._tcAplicado);
+            const tc = filaDet ? filaDet._tcAplicado
+                               : await this.obtenerTipoCambio(this._fechaISO(p._fecha));
+            if (!tc) continue;
+
+            p._esLink = true;
+            p._extractedId = merFull;              // se promueve para que agrupe
+            p._montoDolar = p._monto;              // original en dólares
+            p._tcAplicado = tc;
+            p._monto = this._r2(p._monto * tc);    // ya en colones
+
+            // La celda cruda del monto también debe viajar convertida
+            const hs = (this.data.headers && this.data.headers.scotia_pagado) || [];
+            const iMonto = hs.findIndex(h => h && String(h).toLowerCase().includes('monto'));
+            if (iMonto !== -1) p[String(iMonto)] = p._monto;
+
+            this.mostrarTipoCambio(tc);
+        }
+    },
+
+    // Indicador discreto junto al botón de tema
+    mostrarTipoCambio: function(tc) {
+        const el = document.getElementById('tc-indicador');
+        if (!el || !tc) return;
+        el.textContent = 'TC: ' + Number(tc).toFixed(2);
+        el.classList.remove('hidden');
+    },
+
     runMatchScotiabank: function() {
         const hasDetalle = this.data.scotia_detalle && this.data.scotia_detalle.length > 0;
         const hasPagado = this.data.scotia_pagado && this.data.scotia_pagado.length > 0;
@@ -669,6 +811,10 @@ window.ScotiaLogic = {
                         content += `<span class="ml-2 text-purple-600" title="${r._manualReason}">🤝</span>`;
                         // BOTÓN ELIMINAR DIRECTO EN LA TABLA
                         content += `<button onclick="window.ConciliacionLogic.undoManualScotiaMatch('${r._groupID}')" class="btn-deshacer ml-2 bg-red-100 hover:bg-red-200 text-red-600 px-1.5 py-0.5 rounded text-[9px] shadow-sm font-bold uppercase transition-colors" title="Eliminar ajuste y restaurar">Deshacer</button>`;
+                    }
+                    const esLinkGrupo = (r.rowsDet && r.rowsDet.some(d => d._esLink)) || (r.rowsPag && r.rowsPag.some(d => d._esLink));
+                    if (esLinkGrupo) {
+                        content += `<span class="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold align-middle bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-600" title="Link de pago (pasarela) — cobrado en dólares y convertido a colones">&#128279; LINK</span>`;
                     }
                     const hasAdj = (r.rowsDet && r.rowsDet.some(d => d._isAdjustment)) || (r.rowsPag && r.rowsPag.some(d => d._isAdjustment));
                     if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene Fila Ficticia">🛠️</span>`;
