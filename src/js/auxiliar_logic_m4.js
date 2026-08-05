@@ -1584,6 +1584,17 @@ window.AuxiliarLogic = {
         // Orden maestro (ajustes recientes, sugerencias y etiquetas) en un solo lugar
         this.currentLimboData = this._ordenarFilas(this.currentLimboData);
 
+        // Aviso único: el ajuste recién editado encontró pareja por sí solo
+        if (this._avisarSiCruza) {
+            const idAviso = this._avisarSiCruza;
+            this._avisarSiCruza = null;
+            const f = this.currentLimboData.find(r => String(r._dbId) === idAviso);
+            const cruzo = f && f._tsdRaw && (Array.isArray(f._tsdRaw) ? f._tsdRaw.length > 0 : true);
+            if (cruzo && window.SysUI) {
+                SysUI.alert('Con el dato nuevo, el algoritmo le encontró una posible pareja de TSD a este ajuste.\n\nRevísela y apruébela si corresponde.', 'Coincidencia encontrada', 'success');
+            }
+        }
+
         this.renderGrid();
     },
 
@@ -1761,7 +1772,7 @@ window.AuxiliarLogic = {
                         : '<span class="text-slate-300 dark:text-slate-600">-</span>';
 
                     const del = window.AuxiliarLogic._esAjusteBorrable(row)
-                        ? window.AuxiliarLogic._btnBorrarHtml(row._dbId)
+                        ? window.AuxiliarLogic._btnEditarHtml(row._dbId)
                         : '';
 
                     if (!del) return nota;
@@ -2543,8 +2554,8 @@ window.AuxiliarLogic = {
     // =====================================================================
     // AJUSTE MANUAL M4  —  alta de movimientos bancarios sin conciliar
     // Reglas: Contracargo/Devolución -> Davibank | Mantenimiento -> BAC
-    //         Datáfono -> respeta el banco actual. Siempre editable.
-    //         Mantenimiento y Datáfono NO calculan comisiones ni retenciones.
+    //         El banco siempre se puede cambiar a mano.
+    //         Comisiones y retenciones se digitan manualmente, sin cálculo automático.
     // =====================================================================
     _ajusteSucursales: [],
     _ajustesRecientes: [],   // solo en memoria: flotan arriba hasta recargar
@@ -2567,118 +2578,106 @@ window.AuxiliarLogic = {
         // conciliación; el servidor revalida IdMatchTSD IS NULL antes de borrar.
     },
 
-    // =====================================================================
-    // BOTÓN ELIMINAR AJUSTE MANUAL — perfil bajo, transformación animada
-    // Reposo: sólo un ícono tenue.  Hover: revela "Eliminar".
-    // Clic: se transforma en "¿Seguro?  No · Sí".
-    // Sin respuesta en 3s: vuelve solo, con una disolvencia suave.
-    // =====================================================================
-    _inyectarEstilosBorrado: function() {
-        if (document.getElementById('adj-del-styles')) return;
-        const st = document.createElement('style');
-        st.id = 'adj-del-styles';
-        st.textContent = `
-        @keyframes adjMorphIn {
-            0%   { opacity: 0; transform: scale(.55) rotate(-6deg); }
-            60%  { opacity: 1; transform: scale(1.12) rotate(2deg); }
-            100% { opacity: 1; transform: scale(1) rotate(0); }
-        }
-        @keyframes adjMorphBack {
-            0%   { opacity: 0; transform: scale(1.25); filter: blur(2px); }
-            100% { opacity: 1; transform: scale(1); filter: blur(0); }
-        }
-        @keyframes adjHalo {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.50); }
-            50%      { box-shadow: 0 0 0 5px rgba(220,38,38,0); }
-        }
-        @keyframes adjRowOut {
-            0%   { opacity: 1; transform: translateX(0) scale(1); }
-            35%  { opacity: .85; transform: translateX(-6px) scale(.995); }
-            100% { opacity: 0; transform: translateX(46px) scale(.96); }
-        }
-        .adj-del-wrap { display:inline-flex; align-items:center; vertical-align:middle; }
-        .adj-del-btn {
-            display:inline-flex; align-items:center; line-height:1; cursor:pointer; user-select:none;
-            font-size:9px; font-weight:700; letter-spacing:.02em;
-            padding:3px 7px; border-radius:9999px;
-            color:#dc2626; background:transparent; border:1px solid transparent; box-shadow:none;
-            transition: color .25s, background .25s, border-color .25s, box-shadow .3s ease,
-                        transform .25s cubic-bezier(.4,0,.2,1);
-        }
-        /* En reposo sólo se ve el ícono, encendido como una lucecita roja */
-        .adj-del-btn svg { filter: drop-shadow(0 0 3px rgba(239,68,68,.85)); }
-        .adj-del-btn:hover {
-            color:#fff; background:#dc2626; border-color:#ef4444; transform:translateY(-1px);
-            box-shadow: 0 0 14px rgba(239,68,68,.75), 0 0 26px rgba(239,68,68,.35);
-        }
-        .adj-del-btn:hover svg { filter:none; }
-        .dark .adj-del-btn { color:#f87171; }
-        .dark .adj-del-btn svg { filter: drop-shadow(0 0 4px rgba(248,113,113,.95)); }
-        .dark .adj-del-btn:hover {
-            color:#fff; background:#dc2626; border-color:#f87171;
-            box-shadow: 0 0 16px rgba(248,113,113,.85), 0 0 30px rgba(248,113,113,.40);
-        }
-        .adj-del-btn svg { width:11px; height:11px; flex:none; transition:transform .3s cubic-bezier(.34,1.56,.64,1); }
-        .adj-del-btn:hover svg { transform:rotate(-12deg) scale(1.15); }
-        .adj-del-label {
-            max-width:0; opacity:0; overflow:hidden; white-space:nowrap; margin-left:0;
-            transition:max-width .3s cubic-bezier(.4,0,.2,1), opacity .22s ease, margin-left .3s;
-        }
-        .adj-del-btn:hover .adj-del-label { max-width:70px; opacity:1; margin-left:4px; }
-        .adj-del-confirm {
-            display:inline-flex; align-items:center; gap:4px; line-height:1;
-            font-size:9px; font-weight:800; padding:3px 7px; border-radius:9999px;
-            background:linear-gradient(135deg,#dc2626,#b91c1c); color:#fff; white-space:nowrap;
-            animation: adjMorphIn .34s cubic-bezier(.34,1.56,.64,1), adjHalo 1.7s ease-out .34s infinite;
-        }
-        .adj-del-opt {
-            cursor:pointer; padding:1px 5px; border-radius:9999px; background:rgba(255,255,255,.20);
-            transition: background .18s, transform .18s cubic-bezier(.34,1.56,.64,1);
-        }
-        .adj-del-opt:hover { background:rgba(255,255,255,.55); transform:scale(1.12); }
-        .adj-del-back { animation: adjMorphBack .3s cubic-bezier(.4,0,.2,1); }
-        .adj-row-out { animation: adjRowOut .5s cubic-bezier(.55,0,.9,.35) forwards; }
-        `;
-        document.head.appendChild(st);
+    // Botón discreto de edición. Reemplaza al de borrado: el eliminar vive
+    // dentro del modal, para tener un solo control por fila.
+    _btnEditarHtml: function(id) {
+        return `<button onclick="event.stopPropagation(); window.AuxiliarLogic.abrirEdicionAjuste('${id}')"
+                    title="Editar autorización o tarjeta / eliminar este ajuste manual"
+                    class="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded border transition-colors text-indigo-600 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/30 dark:border-indigo-700 dark:hover:bg-indigo-900/60">
+                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    Editar
+                </button>`;
     },
 
-    _btnBorrarInner: function(id) {
-        return `<span class="adj-del-btn" title="Eliminar este ajuste manual"
-                    onclick="event.stopPropagation(); window.AuxiliarLogic._pedirConfirmBorrado(this.parentElement, '${id}')">
-                    <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M4 7h16M9 7V4h6v3"></path></svg>
-                    <span class="adj-del-label">Eliminar</span>
-                </span>`;
+    abrirEdicionAjuste: async function(id) {
+        const fila = (this.currentLimboData || []).find(r => String(r._dbId) === String(id));
+        const raw = fila && (Array.isArray(fila._bancoRaw) ? fila._bancoRaw[0] : fila._bancoRaw);
+        const authAct = raw ? (raw.Numero_Autorizacion || '') : '';
+        const tarjAct = raw ? (raw.Tarjeta_Ultimos4 || '') : '';
+
+        const html = `
+        <div class="space-y-3 text-left whitespace-normal" id="edit-adj-form">
+            <div class="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 rounded p-2">
+                Ajuste <b class="font-mono">${id}</b><br>
+                Sólo se pueden modificar la autorización y los últimos 4 de la tarjeta.
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Autorización</label>
+                    <input id="edit-adj-auth" value="${authAct}" placeholder="000000"
+                        class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-400">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tarjeta: últimos 4</label>
+                    <input id="edit-adj-tarjeta" maxlength="4" value="${tarjAct}" placeholder="4471"
+                        class="w-full p-2 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-400">
+                </div>
+            </div>
+            <div id="edit-adj-error" class="hidden text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2 whitespace-pre-line"></div>
+
+            <button id="edit-adj-save" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold shadow-md transition-colors">
+                Guardar cambios
+            </button>
+            <button id="edit-adj-del" class="w-full text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 py-1.5 rounded-lg transition-colors">
+                Eliminar este ajuste
+            </button>
+        </div>`;
+
+        window.SysUI._createModal('Editar Ajuste Manual', html, [
+            { text: 'Cancelar', value: false, class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors' }
+        ], 'info', 'max-w-lg');
+
+        document.getElementById('edit-adj-save').addEventListener('click', () => this.guardarEdicionAjuste(id));
+        document.getElementById('edit-adj-del').addEventListener('click', () => this.eliminarAjusteManual(id));
+        const f = document.getElementById('edit-adj-auth'); if (f) f.focus();
     },
 
-    _btnBorrarHtml: function(id) {
-        this._inyectarEstilosBorrado();
-        return `<span class="adj-del-wrap">${this._btnBorrarInner(id)}</span>`;
+    guardarEdicionAjuste: async function(id) {
+        const g = (x) => document.getElementById(x);
+        const errBox = g('edit-adj-error');
+        const btn = g('edit-adj-save');
+        const auth = ((g('edit-adj-auth') || {}).value || '').trim();
+        const tarjeta = ((g('edit-adj-tarjeta') || {}).value || '').trim();
+
+        if (btn) { btn.disabled = true; btn.innerHTML = 'Guardando...'; btn.classList.add('opacity-60'); }
+        try {
+            const res = await fetch('api/save_ajuste_m4.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'update', id, autorizacion: auth, tarjeta })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                if (btn) { btn.disabled = false; btn.innerHTML = 'Guardar cambios'; btn.classList.remove('opacity-60'); }
+                if (errBox) { errBox.innerText = data.error || 'No se pudo guardar.'; errBox.classList.remove('hidden'); }
+                return;
+            }
+
+            const form = document.getElementById('edit-adj-form');
+            const overlay = form ? form.closest('.fixed') : null;
+            if (overlay) overlay.remove();
+
+            // Si con el dato nuevo el algoritmo le encuentra pareja, se avisa UNA vez
+            this._avisarSiCruza = String(id);
+            await this.fetchPendientes();
+
+        } catch (e) {
+            if (btn) { btn.disabled = false; btn.innerHTML = 'Guardar cambios'; btn.classList.remove('opacity-60'); }
+            if (errBox) { errBox.innerText = 'Error de conexión: ' + e.message; errBox.classList.remove('hidden'); }
+        }
     },
 
-    // Transformación: el botón se convierte en la pregunta
-    _pedirConfirmBorrado: function(wrap, id) {
-        if (!wrap) return;
-        if (wrap._tBorrar) clearTimeout(wrap._tBorrar);
-        wrap.innerHTML = `<span class="adj-del-confirm">
-                ¿Seguro?
-                <span class="adj-del-opt" onclick="event.stopPropagation(); window.AuxiliarLogic._cancelarBorrado(this.closest('.adj-del-wrap'), '${id}')">No</span>
-                <span class="adj-del-opt" onclick="event.stopPropagation(); window.AuxiliarLogic.eliminarAjusteManual('${id}', this)">Sí</span>
-            </span>`;
-        wrap._tBorrar = setTimeout(() => window.AuxiliarLogic._cancelarBorrado(wrap, id), 3000);
-    },
+    eliminarAjusteManual: async function(idTransaccion) {
+        // Ya no hay botón de dos pasos: la confirmación se pide aquí.
+        const ok = await window.SysUI.confirm(
+            `Se eliminará definitivamente el ajuste <b>${idTransaccion}</b> junto con su detalle bancario, su folio y su respaldo de auditoría.\n\nEsta acción no se puede deshacer. ¿Continuar?`,
+            "Eliminar ajuste manual", "warning"
+        );
+        if (!ok) return;
 
-    _cancelarBorrado: function(wrap, id) {
-        if (!wrap) return;
-        if (wrap._tBorrar) clearTimeout(wrap._tBorrar);
-        wrap.innerHTML = this._btnBorrarInner(id);
-        const b = wrap.querySelector('.adj-del-btn');
-        if (b) b.classList.add('adj-del-back');
-    },
-
-    eliminarAjusteManual: async function(idTransaccion, el) {
-        // La fila se despide antes de que la base confirme; si algo falla, regresa.
-        const fila = el ? (el.closest('tr') || el.closest('[role="row"]') || el.closest('.vg-row')) : null;
-        if (fila) fila.classList.add('adj-row-out');
+        // Cerrar el modal de edición si el borrado se pidió desde ahí
+        const formEdit = document.getElementById('edit-adj-form');
+        const ovEdit = formEdit ? formEdit.closest('.fixed') : null;
+        if (ovEdit) ovEdit.remove();
 
         try {
             const res = await fetch('api/save_ajuste_m4.php', {
@@ -2687,16 +2686,12 @@ window.AuxiliarLogic = {
             });
             const data = await res.json();
             if (!data.success) {
-                if (fila) fila.classList.remove('adj-row-out');   // la fila vuelve a su sitio
                 window.SysUI.alert(data.error || 'No se pudo eliminar el ajuste.', 'Fallo', 'error');
                 return;
             }
-            // Dejamos que la animación de salida termine antes de repintar la tabla
-            await new Promise(r => setTimeout(r, 380));
             this._ajustesRecientes = (this._ajustesRecientes || []).filter(x => x !== String(idTransaccion));
             await this.fetchPendientes();
         } catch (e) {
-            if (fila) fila.classList.remove('adj-row-out');
             window.SysUI.alert('Error de conexión: ' + e.message, 'Fallo', 'error');
         }
     },
@@ -2716,7 +2711,6 @@ window.AuxiliarLogic = {
                         <option value="Contracargo">Contracargo</option>
                         <option value="Devolución">Devolución</option>
                         <option value="Mantenimiento">Mantenimiento</option>
-                        <option value="Datáfono">Datáfono</option>
                     </select>
                 </div>
                 <div>
@@ -2730,9 +2724,9 @@ window.AuxiliarLogic = {
 
             <!-- FILA 2: SUCURSAL (autocompleta afiliado/terminal/CC) -->
             <div>
-                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sucursal *</label>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sucursal <span class="text-slate-400 normal-case font-normal">(opcional)</span></label>
                 <div class="relative">
-                    <input id="adj-sucursal" autocomplete="off" placeholder="Escriba parte del nombre para buscar..."
+                    <input id="adj-sucursal" autocomplete="off" placeholder="Opcional — se puede completar después"
                         class="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-400">
                     <div id="adj-suc-lista" class="hidden absolute z-[20] left-0 right-0 mt-1 max-h-44 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-xl text-xs"></div>
                 </div>
@@ -2850,7 +2844,6 @@ window.AuxiliarLogic = {
         if (!selBanco) return;
         if (tipo === 'Contracargo' || tipo === 'Devolución') selBanco.value = 'DAVIBANK';
         else if (tipo === 'Mantenimiento') selBanco.value = 'BAC';
-        // Datáfono: respeta el banco que ya esté seleccionado
         this._ajusteAutoCategoria(tipo);
         this._ajusteCargarSucursales();
         this._ajustePintarMontos();
@@ -2982,98 +2975,45 @@ window.AuxiliarLogic = {
             : (val ? '<span class="text-amber-600">Elija una sucursal de la lista</span>' : '');
     },
 
-    // Bloque de montos: BAC y Davibank tienen columnas distintas
+    // Bloque de montos: sin cálculo automático. El usuario escribe cada cifra;
+    // el sistema sólo suma para mostrar el total. Cada banco tiene sus campos.
     _ajustePintarMontos: function() {
         const cont = document.getElementById('adj-montos-banco');
         if (!cont) return;
         const banco = (document.getElementById('adj-banco') || {}).value || 'DAVIBANK';
-        const tipo = (document.getElementById('adj-tipo') || {}).value || '';
-        const sinCargos = (tipo === 'Mantenimiento' || tipo === 'Datáfono');
 
         const inp = (id, lbl, color) => `<div>
             <label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">${lbl}</label>
             <input type="number" step="0.01" id="${id}" placeholder="0.00"
                 class="w-full p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 ${color} outline-none"></div>`;
 
-        const hintPrev = document.getElementById('adj-hint-sincargos');
-        if (hintPrev) hintPrev.remove();
-
         if (banco === 'BAC') {
-            cont.innerHTML = inp('adj-com', 'Comisión' + (sinCargos ? '' : ' 1.95%'), 'text-red-600')
-                + inp('adj-ret1', 'Ret. Ventas' + (sinCargos ? '' : ' 5.31%'), 'text-orange-600')
-                + inp('adj-ret2', 'Ret. Renta' + (sinCargos ? '' : ' 1.76%'), 'text-orange-600')
-                + `<div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">ACI${sinCargos ? '' : ' 0.42%'}</label>
-                     <div class="flex items-center gap-1">
-                       <input type="checkbox" id="adj-aci-chk" class="accent-orange-600">
-                       <input type="number" step="0.01" id="adj-aci" placeholder="0.00" class="w-full p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
-                     </div></div>`;
+            cont.innerHTML = inp('adj-com', 'Comisión', 'text-red-600')
+                + inp('adj-ret1', 'Ret. Ventas', 'text-orange-600')
+                + inp('adj-ret2', 'Ret. Renta', 'text-orange-600')
+                + inp('adj-aci', 'ACI', 'text-orange-600');
         } else {
-            cont.innerHTML = `<div><label class="block text-[9px] font-bold text-slate-500 uppercase mb-1">Tasa comisión</label>
-                    <select id="adj-tasa" class="w-full p-1.5 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none">
-                        <option value="0" ${sinCargos ? 'selected' : ''}>0.00%</option>
-                        <option value="0.0195" ${sinCargos ? '' : 'selected'}>1.95%</option>
-                        <option value="0.025">2.50%</option>
-                    </select></div>`
-                + inp('adj-com', 'Comisión', 'text-red-600')
-                + inp('adj-ret1', 'Ret. IVA' + (sinCargos ? '' : ' 5.30%'), 'text-orange-600')
-                + inp('adj-ret2', 'Ret. ISR' + (sinCargos ? '' : ' 1.76%'), 'text-orange-600');
+            cont.innerHTML = inp('adj-com', 'Comisión', 'text-red-600')
+                + inp('adj-ret1', 'Ret. IVA', 'text-orange-600')
+                + inp('adj-ret2', 'Ret. ISR', 'text-orange-600')
+                + `<div class="flex items-end text-[9px] text-slate-400 italic pb-1">Montos manuales</div>`;
         }
 
-        // Datáfono y Mantenimiento no calculan nada, pero los campos siguen EDITABLES
-        if (sinCargos) {
-            cont.insertAdjacentHTML('afterend',
-                `<div id="adj-hint-sincargos" class="text-[9px] text-slate-500 dark:text-slate-400 mt-2 italic">
-                    Este tipo no calcula cargos automáticamente. Puede escribirlos a mano si aplica.
-                 </div>`);
-        }
-
-        // Recalcular el total en vivo ante cualquier edición manual
-        ['adj-com', 'adj-ret1', 'adj-ret2', 'adj-aci', 'adj-tasa', 'adj-aci-chk'].forEach(id => {
+        ['adj-com', 'adj-ret1', 'adj-ret2', 'adj-aci'].forEach(id => {
             const el = document.getElementById(id);
-            if (!el) return;
-            el.addEventListener('input', () => this._ajusteCalcular());
-            el.addEventListener('change', () => this._ajusteCalcular());
+            if (el) el.addEventListener('input', () => this._ajusteTotal());
         });
-        this._ajusteCalcular();
+        this._ajusteTotal();
     },
 
-    // Calculadora inversa: el usuario escribe el monto y el resto se deriva
-    _ajusteCalcular: function() {
+    // Sólo suma lo que haya escrito el usuario y pinta el total. No calcula nada.
+    _ajusteTotal: function() {
         const g = (id) => document.getElementById(id);
         const num = (id) => parseFloat((g(id) || {}).value) || 0;
-        const banco = (g('adj-banco') || {}).value || 'DAVIBANK';
-        const tipo = (g('adj-tipo') || {}).value || '';
-        const neto = num('adj-neto');
-        const sinCargos = (tipo === 'Mantenimiento' || tipo === 'Datáfono');
-        const soloComision = (tipo === 'Contracargo' || tipo === 'Devolución');
-
-        if (sinCargos) {
-            // Sin cálculo automático. EXCEPCIÓN: marcar el ACI o elegir una tasa son
-            // acciones explícitas del usuario, así que esas sí se calculan.
-            if (banco === 'BAC') {
-                const chkM = g('adj-aci-chk');
-                if (chkM && g('adj-aci')) g('adj-aci').value = chkM.checked ? (neto * 0.0042).toFixed(2) : '';
-            } else {
-                const tasaM = parseFloat((g('adj-tasa') || {}).value) || 0;
-                if (tasaM > 0 && g('adj-com')) g('adj-com').value = (neto * tasaM).toFixed(2);
-            }
-        } else if (banco === 'BAC') {
-            if (g('adj-com')) g('adj-com').value = (neto * 0.0195).toFixed(2);
-            if (g('adj-ret1')) g('adj-ret1').value = soloComision ? '0.00' : (neto * 0.0531).toFixed(2);
-            if (g('adj-ret2')) g('adj-ret2').value = soloComision ? '0.00' : (neto * 0.0176).toFixed(2);
-            const chk = g('adj-aci-chk');
-            if (g('adj-aci')) g('adj-aci').value = (chk && chk.checked) ? (neto * 0.0042).toFixed(2) : '0.00';
-        } else {
-            const tasa = parseFloat((g('adj-tasa') || {}).value) || 0;
-            if (g('adj-com')) g('adj-com').value = (neto * tasa).toFixed(2);
-            if (g('adj-ret1')) g('adj-ret1').value = soloComision ? '0.00' : (neto * 0.0530).toFixed(2);
-            if (g('adj-ret2')) g('adj-ret2').value = soloComision ? '0.00' : (neto * 0.0176).toFixed(2);
-        }
-
-        const bruto = neto + num('adj-com') + num('adj-ret1') + num('adj-ret2') + num('adj-aci');
+        const total = num('adj-neto') + num('adj-com') + num('adj-ret1') + num('adj-ret2') + num('adj-aci');
         const disp = g('adj-bruto');
-        if (disp) disp.innerText = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC' }).format(bruto).replace(/\./g, ' ');
-        return bruto;
+        if (disp) disp.innerText = new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC' }).format(total).replace(/\./g, ' ');
+        return total;
     },
 
     guardarAjusteManual: async function() {
@@ -3089,19 +3029,15 @@ window.AuxiliarLogic = {
         const suc = this._ajusteSucSel;
         const neto = num('adj-neto');
 
-        // Todo lo obligatorio alimenta el hash: sin esto el registro no sería único
+        // Sucursal, autorización y tarjeta son OPCIONALES: se completan después.
         const faltan = [];
-        if (!suc) faltan.push('Sucursal (elíjala de la lista)');
         if (!val('adj-fecha')) faltan.push('Fecha del ajuste');
         if (!val('adj-fpago')) faltan.push('Fecha de pago');
-        if (!val('adj-auth')) faltan.push('Autorización');
-        if (!val('adj-tarjeta')) faltan.push('Últimos 4 de tarjeta');
         if (!val('adj-softland')) faltan.push('ID de asiento Softland');
         if (!neto) faltan.push('Monto del ajuste');
         if (faltan.length) return mostrarError('Faltan datos obligatorios:\n• ' + faltan.join('\n• '));
 
-        const bruto = this._ajusteCalcular();
-        const U = (v) => String(v || '').trim().toUpperCase();
+        const bruto = this._ajusteTotal();
 
         // Mismo formato de hash que el Módulo 2 (12 campos separados por |)
         const bancoHash = (banco === 'DAVIBANK') ? 'SCOTIA' : 'BAC';
@@ -3110,15 +3046,14 @@ window.AuxiliarLogic = {
         const payload = {
             banco, tipo,
             fecha: val('adj-fecha'), fechaPago: val('adj-fpago'),
-            sucursal: suc.NombreSucursal, afiliado: suc.Afiliado,
-            terminal: suc.CodigoSucursal, centroCosto: suc.CentroCosto,
+            sucursal: suc ? suc.NombreSucursal : '', afiliado: suc ? suc.Afiliado : '',
+            terminal: suc ? suc.CodigoSucursal : '', centroCosto: suc ? suc.CentroCosto : '',
             autorizacion: val('adj-auth'), tarjeta: val('adj-tarjeta'),
             softland: val('adj-softland'), motivo: val('adj-motivo'),
             nota: val('adj-nota'), idEtiqueta: val('adj-categoria'),
             neto, bruto,
             comision: num('adj-com'), ret1: num('adj-ret1'), ret2: num('adj-ret2'),
-            aci: num('adj-aci'), porcComision: parseFloat(val('adj-tasa')) || 0,
-            hashString
+            aci: num('adj-aci')
         };
 
         if (btn) { btn.disabled = true; btn.classList.add('opacity-60', 'cursor-wait'); btn.innerHTML = 'Guardando...'; }

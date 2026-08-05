@@ -21,7 +21,55 @@ if (!is_array($in)) { echo json_encode(['success' => false, 'error' => 'Payload 
 $usuario = $_SESSION['user']['email'] ?? 'Sistema';
 
 // ============================================================================
-//  ACCIÓN: BORRAR  (solo ajustes manuales creados en el Auxiliar y sin pareja TSD)
+//  ACCIÓN: EDITAR  (sólo Autorización y Tarjeta; el hash NO se recalcula)
+// ============================================================================
+if (($in['action'] ?? '') === 'update') {
+    $idUp    = trim($in['id'] ?? '');
+    $nAuth   = trim($in['autorizacion'] ?? '');
+    $nTarj   = trim($in['tarjeta'] ?? '');
+    if ($idUp === '') { echo json_encode(['success' => false, 'error' => 'Falta el ID del ajuste']); exit; }
+
+    try {
+        $pdo = Database::connect();
+
+        $q = $pdo->prepare("SELECT Banco, IdMatchTSD, ArchivoOrigen FROM Tbl_Transacciones_Maestra WHERE IdTransaccion = ?");
+        $q->execute([$idUp]);
+        $reg = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$reg) { echo json_encode(['success' => false, 'error' => 'El registro no existe']); exit; }
+
+        if (strpos((string)($reg['ArchivoOrigen'] ?? ''), 'AJUSTE-M4') !== 0) {
+            echo json_encode(['success' => false, 'error' => 'Sólo se pueden editar los ajustes manuales creados en el Auxiliar Contable.']); exit;
+        }
+        if (!empty($reg['IdMatchTSD'])) {
+            echo json_encode(['success' => false, 'error' => 'Este ajuste ya fue conciliado con TSD. No se puede modificar.']); exit;
+        }
+
+        $pdo->beginTransaction();
+
+        // Maestra (el HashUnico queda intacto a propósito)
+        $u = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Autorizacion = ?, Tarjeta = ? WHERE IdTransaccion = ?");
+        $u->execute([($nAuth !== '' ? $nAuth : null), ($nTarj !== '' ? $nTarj : null), $idUp]);
+
+        // Detalle del banco correspondiente
+        if (strtoupper($reg['Banco']) === 'BAC') {
+            $ud = $pdo->prepare("UPDATE Tbl_Detalle_BAC SET AUTORIZACION = ?, NUMERO_DE_TARJETA = ? WHERE IdTransaccion = ?");
+        } else {
+            $ud = $pdo->prepare("UPDATE Tbl_Detalle_Scotia SET Numero_Autorizacion = ?, Numero_Tarjeta = ? WHERE IdTransaccion = ?");
+        }
+        $ud->execute([($nAuth !== '' ? $nAuth : null), ($nTarj !== '' ? $nTarj : null), $idUp]);
+
+        $pdo->commit();
+        echo json_encode(['success' => true, 'id' => $idUp]);
+
+    } catch (\Throwable $e) {
+        if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
+        echo json_encode(['success' => false, 'error' => 'Error al editar: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// ============================================================================
+//  ACCIÓN: BORRAR (solo ajustes manuales creados en el Auxiliar y sin pareja TSD)
 //  Se resuelve en este mismo archivo para no multiplicar endpoints.
 // ============================================================================
 if (($in['action'] ?? '') === 'delete') {
@@ -102,15 +150,12 @@ $aci       = isset($in['aci']) ? (float)$in['aci'] : 0;
 $porcCom   = isset($in['porcComision']) ? (float)$in['porcComision'] : 0;
 
 // Obligatorios: TODOS alimentan el hash de contenido
+// Sucursal, afiliado, terminal, autorización y tarjeta son OPCIONALES:
+// se completan más adelante desde el propio Auxiliar.
 $faltan = [];
 if (!in_array($bancoUI, ['BAC', 'DAVIBANK'], true)) $faltan[] = 'Banco';
 if ($tipo === '')      $faltan[] = 'Tipo de ajuste';
 if ($fecha === '')     $faltan[] = 'Fecha';
-if ($sucursal === '')  $faltan[] = 'Sucursal';
-if ($afiliado === '')  $faltan[] = 'Afiliado/MerID';
-if ($terminal === '')  $faltan[] = 'Terminal';
-if ($auth === '')      $faltan[] = 'Autorización';
-if ($tarjeta === '')   $faltan[] = 'Últimos 4 de tarjeta';
 if ($softland === '')  $faltan[] = 'ID de asiento Softland';
 if ($neto == 0)        $faltan[] = 'Monto del ajuste';
 
@@ -123,14 +168,16 @@ $bancoDB   = ($bancoUI === 'DAVIBANK') ? 'DAVIBANK' : 'BAC';
 $fuenteDB  = $bancoDB;
 $justificacion = '[SOFTLAND:' . $softland . '] ' . ($motivo !== '' ? $motivo : $tipo);
 
-if ($hashStr === '') {
-    $u = function ($v) { return strtoupper(trim((string)$v)); };
-    $bancoHash = ($bancoUI === 'DAVIBANK') ? 'SCOTIA' : 'BAC';
-    $hashStr = $bancoHash . '|AJUSTE|' . $fecha . '|' . $u($sucursal) . '|' . $u($afiliado) . '|'
-             . $u($terminal) . '|' . $u($auth) . '|' . $u($tarjeta) . '|' . $u($softland) . '|'
-             . $bruto . '|' . $neto . '|';
-}
-$hashUnico = md5($hashStr);
+// IdTransaccion: lleva fecha, hora, segundo y 5 hex aleatorios
+$idTrans = 'ADJM4-' . date('YmdHis') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+
+// HASH de ajustes manuales. Dos garantías:
+//  - El prefijo 'M4:' hace imposible el choque con los md5 puros de archivos.
+//  - Incluir $idTrans (tiempo + azar) garantiza unicidad aunque el contenido se
+//    repita, porque ahora hay pocos campos y podrían coincidir entre ajustes.
+$hashStr = 'M4|' . $bancoUI . '|' . $tipo . '|' . $fecha . '|' . strtoupper($softland)
+         . '|' . $neto . '|' . strtoupper($auth) . '|' . strtoupper($tarjeta) . '|' . $idTrans;
+$hashUnico = 'M4:' . md5($hashStr);
 
 try {
     $pdo = Database::connect();
@@ -150,7 +197,6 @@ try {
     $idCierre = (int)$pdo->lastInsertId();
 
     // ---------- 2. MAESTRA ----------
-    $idTrans = 'ADJM4-' . date('YmdHis') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
     $idMatch = 'adjm4_' . bin2hex(random_bytes(5));
 
     $stMaestra = $pdo->prepare(
@@ -160,8 +206,8 @@ try {
          VALUES (?, ?, ?, 'AJUSTE', 'CONCILIADO', ?, ?, ?, ?, ?, ?, ?, 'AJUSTE-M4', ?, ?, ?)"
     );
     $stMaestra->execute([
-        $idTrans, $idCierre, $bancoDB, $idMatch, $fecha, $afiliado,
-        $auth, $tarjeta, $bruto, $neto, $hashUnico,
+        $idTrans, $idCierre, $bancoDB, $idMatch, $fecha, ($afiliado !== '' ? $afiliado : null),
+        ($auth !== '' ? $auth : null), ($tarjeta !== '' ? $tarjeta : null), $bruto, $neto, $hashUnico,
         $idEtiq, ($nota !== '' ? $nota : null)
     ]);
 
