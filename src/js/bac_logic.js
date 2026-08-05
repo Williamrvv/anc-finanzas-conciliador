@@ -960,6 +960,8 @@ window.BACLogic = {
 
     // Función para aplicar conciliación manual desde el PopUp
     applyManualMatch: function(selection, reason) {
+        // MODO SÓLO LECTURA: blindaje en la función núcleo, no sólo en el botón
+        if (this._soloLectura) { if (this._avisoSoloLectura) this._avisoSoloLectura(); return; }
         // selection = { det: [ids...], pag: [ids...] }
         console.log("Aplicando Conciliación Manual:", selection, reason);
 

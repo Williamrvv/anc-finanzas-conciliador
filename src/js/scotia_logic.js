@@ -793,6 +793,8 @@ window.ScotiaLogic = {
     },
 
     applyManualScotiaMatch: function(selection, reason) {
+        // MODO SÓLO LECTURA: blindaje en la función núcleo, no sólo en el botón
+        if (this._soloLectura) { if (this._avisoSoloLectura) this._avisoSoloLectura(); return; }
         const groupID = 'sco_man_' + Date.now();
         const matchedRows = [];
 

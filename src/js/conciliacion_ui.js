@@ -488,6 +488,7 @@ window.ConciliacionLogic = {
         const el = document.getElementById('solo-lectura-banner');
         if (el && el.parentNode) el.parentNode.removeChild(el);
         document.body.classList.remove('modo-solo-lectura');
+        document.body.style.paddingBottom = '';
     },
 
     // Aviso único cuando se intenta una acción bloqueada en sólo lectura
@@ -523,15 +524,21 @@ window.ConciliacionLogic = {
                 /* Cinta por ENCIMA del header global, en el flujo normal de la página.
                    Nada de position:fixed: el módulo usa animate-fade-in-up y un ancestro
                    con transform rompe el anclaje al viewport. Así se ve de entrada. */
+                /* Cinta fija abajo. Ahora SÍ funciona position:fixed porque el banner
+                   cuelga directo de <body>: no hay ancestro con transform que rompa el
+                   anclaje al viewport (ese fue el problema al meterlo en el módulo).
+                   Va abajo para no pelear con el <nav> sticky del header. */
+                body.modo-solo-lectura { padding-bottom: 42px !important; }
                 #solo-lectura-banner {
+                    position: fixed; bottom: 0; left: 0; right: 0; z-index: 9998;
                     display: flex; align-items: center; justify-content: center; gap: 8px;
-                    width: 100%; padding: 7px 12px; box-sizing: border-box;
+                    padding: 8px 12px; box-sizing: border-box;
                     background: linear-gradient(90deg,#b45309,#f59e0b,#b45309);
                     color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em;
-                    box-shadow: 0 2px 10px rgba(0,0,0,.22);
+                    box-shadow: 0 -3px 14px rgba(0,0,0,.30);
                     animation: slBannerIn .35s cubic-bezier(.34,1.56,.64,1);
                 }
-                @keyframes slBannerIn { from { opacity:0; max-height:0; } to { opacity:1; max-height:60px; } }`;
+                @keyframes slBannerIn { from { opacity:0; transform:translateY(100%); } to { opacity:1; transform:translateY(0); } }`;
             document.head.appendChild(st);
         }
         document.body.classList.add('modo-solo-lectura');
@@ -581,7 +588,7 @@ window.ConciliacionLogic = {
             el.className = 'fixed bottom-4 right-4 bg-indigo-600 text-white text-[11px] px-3 py-1.5 rounded-full shadow-lg z-[9998] flex items-center gap-2 select-none';
             document.body.appendChild(el);
         }
-        el.innerHTML = `<span class="animate-pulse">◆</span> Continuando cierre de <b>${usuarioInicio}</b>`;
+        el.innerHTML = `<span class="animate-pulse">◆</span> Continuando conciliación de <b>${usuarioInicio}</b>`;
     },
 
     // Estados visuales del botón "Conservar Borrador" + barra JUSTO DEBAJO del botón
