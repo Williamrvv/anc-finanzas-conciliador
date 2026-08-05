@@ -1856,6 +1856,7 @@ window.BACLogic = {
 
                         // 5. Abrir Modal y Autocompletar (Jerarquía Inteligente)
                         document.getElementById('btn-add-adj').onclick = function() {
+                            if (window.ConciliacionLogic && window.ConciliacionLogic._soloLectura) { window.ConciliacionLogic._avisoSoloLectura(); return; }
                             const selVentas = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
                             const selBanco = gBanco.displayData.filter(r => r._selected && !r._isAdjustment);
                             
@@ -1926,6 +1927,7 @@ window.BACLogic = {
 
                         // 6. Guardar Ajuste / Crear Fila
                         document.getElementById('btn-save-adj').onclick = function() {
+                            if (window.ConciliacionLogic && window.ConciliacionLogic._soloLectura) { window.ConciliacionLogic._avisoSoloLectura(); return; }
                             const type = elType.value;
                             const reason = document.getElementById('fm-reason').value;
                             const ftrans = document.getElementById('fm-ftrans').value;
@@ -1982,6 +1984,7 @@ window.BACLogic = {
 
                         // 7. Conciliar Manualmente
                         document.getElementById('btn-manual').onclick = async function() {
+                            if (window.ConciliacionLogic && window.ConciliacionLogic._soloLectura) { window.ConciliacionLogic._avisoSoloLectura(); return; }
                             const selection = updateCalc();
                             
                             if(window.opener && window.opener.ConciliacionLogic) {

@@ -454,7 +454,7 @@ window.ConciliacionLogic = {
         if (this._soloLectura) return; // en sólo lectura no reclamamos presencia
         const beat = async () => {
             // Si el usuario salió del Módulo 2, apagar el latido (libera el candado por vencimiento)
-            if (!this._moduloAbierto()) { this.stopHeartbeat(); return; }
+            if (!this._moduloAbierto()) { this.stopHeartbeat(); this._limpiarSoloLectura(); return; }
             try {
                 const r = await this._borradorApi('beat');
                 this._setOnline(true);
@@ -483,6 +483,20 @@ window.ConciliacionLogic = {
         this._heartbeatInterval = null;
     },
 
+    // Al abandonar el Módulo 2 no debe quedar rastro del modo sólo lectura
+    _limpiarSoloLectura: function() {
+        const el = document.getElementById('solo-lectura-banner');
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+        document.body.classList.remove('modo-solo-lectura');
+    },
+
+    // Aviso único cuando se intenta una acción bloqueada en sólo lectura
+    _avisoSoloLectura: function() {
+        if (window.SysUI) {
+            SysUI.alert("Está en <b>modo sólo lectura</b> porque otro usuario tiene esta conciliación.\n\nNo es posible crear ajustes ni guardar cambios.", "Acción bloqueada", "warning");
+        }
+    },
+
     // MODO SÓLO LECTURA: apaga relojes, bloquea edición y avisa hasta que se recargue
     _activarSoloLectura: function(usuario) {
         this._soloLectura = true;
@@ -506,18 +520,23 @@ window.ConciliacionLogic = {
                     cursor: not-allowed !important;
                     filter: grayscale(1);
                 }
-                /* El banner empuja la página hacia abajo en vez de tapar el menú */
-                body.modo-solo-lectura { padding-top: 34px !important; }
+                /* Cinta por ENCIMA del header global, en el flujo normal de la página.
+                   Nada de position:fixed: el módulo usa animate-fade-in-up y un ancestro
+                   con transform rompe el anclaje al viewport. Así se ve de entrada. */
                 #solo-lectura-banner {
-                    position: fixed; top: 0; left: 0; right: 0; height: 34px; z-index: 9999;
                     display: flex; align-items: center; justify-content: center; gap: 8px;
+                    width: 100%; padding: 7px 12px; box-sizing: border-box;
                     background: linear-gradient(90deg,#b45309,#f59e0b,#b45309);
                     color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .03em;
-                    box-shadow: 0 2px 10px rgba(0,0,0,.25);
-                }`;
+                    box-shadow: 0 2px 10px rgba(0,0,0,.22);
+                    animation: slBannerIn .35s cubic-bezier(.34,1.56,.64,1);
+                }
+                @keyframes slBannerIn { from { opacity:0; max-height:0; } to { opacity:1; max-height:60px; } }`;
             document.head.appendChild(st);
         }
         document.body.classList.add('modo-solo-lectura');
+        document.body.style.paddingTop = '';      // limpieza de versiones anteriores
+        document.body.style.paddingBottom = '';
         ['btn-save-snapshot', 'btn-conservar-borrador', 'btn-add-adj', 'btn-save-adj', 'btn-manual'].forEach(id => {
             const b = document.getElementById(id);
             if (b) b.disabled = true;
@@ -528,7 +547,9 @@ window.ConciliacionLogic = {
         if (!el) {
             el = document.createElement('div');
             el.id = 'solo-lectura-banner';
-            document.body.appendChild(el);   // el estilo vive en la hoja de sólo lectura
+            // Primer elemento de la página: queda arriba del header global y se ve
+            // apenas entra el usuario. Se retira solo al salir del módulo.
+            document.body.insertBefore(el, document.body.firstChild);
         }
         el.innerHTML = `<span>👁</span> MODO SÓLO LECTURA — ${usuario || 'otro usuario'} está trabajando en una conciliación. Recargue para reintentar.`;
     },

@@ -1326,6 +1326,7 @@ window.ScotiaLogic = {
                     const btnAddAdj = document.getElementById('btn-add-adj');
                     if (btnAddAdj) {
                         btnAddAdj.onclick = function() {
+                            if (window.ConciliacionLogic && window.ConciliacionLogic._soloLectura) { window.ConciliacionLogic._avisoSoloLectura(); return; }
                             const selVentas = gVentas.displayData.filter(r => r._selected && !r._isAdjustment);
                             const selBanco = gBanco.displayData.filter(r => r._selected && !r._isAdjustment);
                             
@@ -1383,6 +1384,7 @@ window.ScotiaLogic = {
                     const btnSaveAdj = document.getElementById('btn-save-adj');
                     if (btnSaveAdj) {
                         btnSaveAdj.onclick = function() {
+                            if (window.ConciliacionLogic && window.ConciliacionLogic._soloLectura) { window.ConciliacionLogic._avisoSoloLectura(); return; }
                             const type = elType.value;
                             const ftrans = document.getElementById('fm-ftrans').value;
                             
@@ -1442,6 +1444,7 @@ window.ScotiaLogic = {
                     const btnManual = document.getElementById('btn-manual');
                     if (btnManual) {
                         btnManual.onclick = async function() { // AHORA ES ASÍNCRONA
+                            if (window.ConciliacionLogic && window.ConciliacionLogic._soloLectura) { window.ConciliacionLogic._avisoSoloLectura(); return; }
                             const selection = {
                                 det: gVentas.displayData.filter(r => r._selected).map(r => r._uid),
                                 pag: gBanco.displayData.filter(r => r._selected).map(r => r._uid)
