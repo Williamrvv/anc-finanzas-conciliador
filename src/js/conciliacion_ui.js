@@ -193,6 +193,10 @@ window.ConciliacionLogic = {
         // 1) SIEMPRE traer primero los pendientes/diferidos de BD (son la autoridad)
         await this.loadPendientes();
 
+        // Estado fresco: cualquier rastro de un sólo-lectura anterior se borra antes
+        // de volver a evaluar quién tiene el cierre.
+        this._limpiarSoloLectura();
+
         // 2) ¿Hay un borrador compartido EN CURSO? (metadatos livianos, sin bajar los MB)
         try {
             const meta = await this._borradorApi('meta');
@@ -504,6 +508,10 @@ window.ConciliacionLogic = {
         if (el && el.parentNode) el.parentNode.removeChild(el);
         document.body.classList.remove('modo-solo-lectura');
         document.body.style.paddingBottom = '';
+        // Sin esto el modo quedaba pegado: la clase del body seguía bloqueando
+        // botones aunque el cierre ya estuviera libre.
+        this._soloLectura = false;
+        this._bloqueadoPorOtro = false;
     },
 
     // Aviso único cuando se intenta una acción bloqueada en sólo lectura
