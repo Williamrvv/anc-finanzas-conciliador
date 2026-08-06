@@ -1165,7 +1165,7 @@ window.BACLogic = {
         
         // Detectar si ya está conciliado (Diferencia = 0 o es un grupo manual ya guardado)
         const diffVal = data.diferencia_val !== undefined ? data.diferencia_val : data.diff;
-        const isReadOnly = Math.abs(diffVal) <= window.ConciliacionLogic.TOLERANCIA || data._isManual === true;
+        const isReadOnly = Math.abs(diffVal) <= (window.ConciliacionLogic ? window.ConciliacionLogic.TOLERANCIA : 2000) || data._isManual === true;
         
         if(!win) return alert("Ventana bloqueada.");
 
@@ -1663,7 +1663,10 @@ window.BACLogic = {
                         }
 
                         const btn = document.getElementById('btn-manual');
-                        const isValid = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA && (selV.length > 0 || selB.length > 0);
+                        // OJO: esto corre DENTRO del popup (window.open), así que la lógica
+                        // vive en window.opener. El fallback evita romper si se pierde.
+                        const TOL = (window.opener && window.opener.ConciliacionLogic) ? window.opener.ConciliacionLogic.TOLERANCIA : 2000;
+                        const isValid = Math.abs(diff) <= TOL && (selV.length > 0 || selB.length > 0);
                         
                         if(isValid) {
                             btn.disabled = false;
