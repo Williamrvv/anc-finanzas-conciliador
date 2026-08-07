@@ -1142,7 +1142,7 @@ window.ScotiaLogic = {
         const top = (screen.height - h) / 2;
         const win = window.open("", "_blank", `width=${w},height=${h},top=${top},left=${left}`);
         
-        const isReadOnly = Math.abs(diff) <= (window.ConciliacionLogic ? window.ConciliacionLogic.TOLERANCIA : 2000) || data._isManual === true;
+        const isReadOnly = Math.abs(diff) <= (500) || data._isManual === true; //tolerancia popUp
         
         if(!win) return alert("Ventana bloqueada.");
 
