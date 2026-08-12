@@ -59,8 +59,20 @@ try {
     // El tipo de cambio se fija a DOS decimales en el origen. Antes el promedio
     // ponderado arrastraba muchos decimales y los dólares no cuadraban contra el
     // TC que se muestra en el Excel.
+    $tcCrudoServidor = $tcPromedio;
     $tcPromedio = round($tcPromedio, 2);
     if ($tcPromedio <= 0) $tcPromedio = 1;   // nunca dividir entre cero
+
+    // Traza para auditar de dónde sale el promedio ponderado
+    $diagTC = [
+        'tc_crudo'            => $tcCrudoServidor,
+        'tc_aplicado'         => $tcPromedio,
+        'total_transacciones' => $totalTransacciones,
+        'suma_producto'       => $sumProduct,
+        'fechas'              => array_map(function ($f) {
+            return ['fecha' => $f['FechaTransaccion'], 'cantidad' => (int)$f['Cantidad']];
+        }, $fechasBancos)
+    ];
 
     $data = [];
 
@@ -121,6 +133,7 @@ try {
         echo json_encode([
             'success' => true,
             'tc_promedio' => $tcPromedio,
+            'diag_tc' => $diagTC,
             'maestro' => [
                 'bac_neto_aci' => (float)($bacTot['NetoAci'] ?? 0),
                 'davi_neto' => (float)($daviTot['Neto'] ?? 0),

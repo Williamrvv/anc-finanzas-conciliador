@@ -39,6 +39,16 @@ window.TSDLogic = {
             if (!json.success) throw new Error(json.error);
             if (!json.data || json.data.length === 0) return window.SysUI.alert("No se encontraron registros pendientes en la base de datos para este cargador.", "Sin datos", "warning");
 
+            // Traza del servidor: de dónde salió el promedio ponderado
+            if (json.diag_tc) {
+                console.group('%c[CARGADOR SOFTLAND] Origen del tipo de cambio (servidor)', 'color:#06b6d4;font-weight:bold');
+                console.log('TC crudo (promedio ponderado):', json.diag_tc.tc_crudo);
+                console.log('TC aplicado (2 decimales)    :', json.diag_tc.tc_aplicado);
+                console.log('Transacciones ponderadas     :', json.diag_tc.total_transacciones);
+                console.table(json.diag_tc.fechas || []);
+                console.groupEnd();
+            }
+
             // 4. Invocar Motor Creador de Excel
             this.generateSoftlandExcel(tipo, asientoId, start, json.tc_promedio, json.data);
             
