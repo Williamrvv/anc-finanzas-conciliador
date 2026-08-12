@@ -1260,7 +1260,12 @@ window.AuxiliarLogic = {
         this.manualMatches.forEach(mMatch => {
             const arrT = pendientesTSD.filter(t => mMatch.tsdArr.some(x => x._id === t._id));
             const arrB = bancosDisponibles.filter(b => mMatch.bancoArr.some(x => x._id === b._id));
-            if (arrT.length > 0 || arrB.length > 0) processMatch(arrT, arrB, 'Manual', mMatch.justificacion);
+            // El motivo se anexa al estado para que se lea en la columna ESTADO AUX
+            const etq = mMatch.motivo === 'DEVOLUCION' ? 'Manual (Devolución Datáfono)'
+                      : mMatch.motivo === 'INTERNO'    ? 'Manual (Ajuste Interno Bancos)'
+                      : mMatch.motivo === 'MENOR'      ? 'Manual (Monto Menor)'
+                      :                                  'Manual';
+            if (arrT.length > 0 || arrB.length > 0) processMatch(arrT, arrB, etq, mMatch.justificacion);
             pendientesTSD = pendientesTSD.filter(t => !mMatch.tsdArr.some(x => x._id === t._id));
             bancosDisponibles = bancosDisponibles.filter(b => !mMatch.bancoArr.some(x => x._id === b._id));
         });
@@ -1724,7 +1729,23 @@ window.AuxiliarLogic = {
                     const etiqHtml = etiqNombre ? `<div class="text-[9px] text-slate-400 dark:text-slate-500 font-normal mt-0.5 normal-case tracking-normal">🏷️ ${etiqNombre}</div>` : '';
 
                     let estado = '';
-                    if(val.startsWith('Manual')) estado = `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
+                    if(val.startsWith('Manual')) {
+                        // El motivo viene entre paréntesis: "Manual (Devolución Datáfono)"
+                        const m = val.split('|')[0].match(/\(([^)]+)\)/);
+                        if (m) {
+                            const tipo = m[1];
+                            const ico = tipo.includes('Devolución') ? '↩️'
+                                      : tipo.includes('Interno')    ? '🔄'
+                                      : tipo.includes('Menor')      ? '✂️' : '✅';
+                            const col = tipo.includes('Devolución') ? 'text-orange-600 dark:text-orange-400'
+                                      : tipo.includes('Interno')    ? 'text-cyan-600 dark:text-cyan-400'
+                                      : tipo.includes('Menor')      ? 'text-fuchsia-600 dark:text-fuchsia-400'
+                                      :                               'text-green-700 dark:text-green-400';
+                            estado = `<span class="${col} font-bold">${ico} ${tipo}</span>`;
+                        } else {
+                            estado = `<span class="text-green-700 dark:text-green-400">✅ Aprobado Manual</span>`;
+                        }
+                    }
                     else if(val.includes('Monto Igual')) estado = `<span class="text-amber-600 dark:text-amber-400">⚠️ Sug: Monto Igual</span>`;
                     else if(val.includes('Ajuste Menor')) estado = `<span class="text-purple-600 dark:text-purple-400">✂️ ${val.replace('Sugerencia: ','')}</span>`;
                     else if(val.includes('Ajuste Interno')) estado = `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val.replace('Sugerencia: ','').replace('Ajuste Interno ', 'Ajuste ')}</span>`;
@@ -1892,17 +1913,21 @@ window.AuxiliarLogic = {
             <div id="ws-mini-modal" class="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
                 <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm overflow-hidden transform scale-95 transition-transform duration-300 flex flex-col" id="ws-mini-card">
                     <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                        <h3 class="text-lg font-bold text-amber-600 dark:text-amber-400">⚠️ Ajuste Menor Detectado</h3>
+                        <h3 id="ws-mini-titulo" class="text-lg font-bold text-amber-600 dark:text-amber-400"></h3>
                     </div>
-                    <div class="px-6 py-5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed">
-                        Ha dejado una única transacción menor a ₡10,000.
-                        
-                        ¿Desea guardarla como 'Ajuste Menor' (se marcará como conciliada sola) o prefiere cancelar y dejarla pendiente?
+                    <div id="ws-mini-texto" class="px-6 py-5 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed"></div>
+                    <div id="ws-mini-campos" class="px-6 pb-4 hidden">
+                        <div id="ws-campo-1">
+                            <label id="ws-label-1" class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Asiento de Softland *</label>
+                            <input id="ws-softland" placeholder="AS-2026-04512" class="w-full mb-3 px-3 py-2 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div id="ws-campo-2">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Detalle adicional (opcional)</label>
+                            <input id="ws-detalle" placeholder="Información complementaria" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div id="ws-mini-error" class="hidden mt-2 text-[11px] text-red-600 font-bold"></div>
                     </div>
-                    <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
-                        <button onclick="closeMiniModal()" class="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors">Cancelar</button>
-                        <button onclick="confirmMiniModal()" class="bg-orange-600 hover:bg-orange-700 text-white px-5 py-2 rounded-lg font-bold shadow-sm transition-colors">Confirmar Ajuste</button>
-                    </div>
+                    <div id="ws-mini-botones" class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex flex-wrap justify-end gap-2 border-t border-slate-100 dark:border-slate-700"></div>
                 </div>
             </div>
 
@@ -1926,13 +1951,93 @@ window.AuxiliarLogic = {
                     setTimeout(() => overlay.classList.add('hidden'), 300);
                 }
 
-                async function confirmMiniModal() {
+                // Pinta el modal según el paso: elección de motivo o captura de datos
+                function pintarMini(titulo, texto, botones, mostrarCampos) {
+                    document.getElementById('ws-mini-titulo').innerText = titulo;
+                    document.getElementById('ws-mini-texto').innerText = texto;
+                    document.getElementById('ws-mini-campos').classList.toggle('hidden', !mostrarCampos);
+                    document.getElementById('ws-mini-botones').innerHTML = botones;
+                    const err = document.getElementById('ws-mini-error');
+                    if (err) err.classList.add('hidden');
+                    openMiniModal();
+                }
+
+                const btnGris = 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors';
+                const btnNar  = 'bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+                const btnCya  = 'bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+                const btnFuc  = 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+
+                // PASO 1 — una sola fila bancaria
+                function preguntarUno() {
+                    pintarMini('Diferencia neta muy baja',
+                        'Se ha detectado que la transacción tiene un monto muy bajo. Puede tratarse de un ajuste por monto menor o de una devolución a nivel de datáfono.\\n\\nIndique de cuál se trata.',
+                        '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
+                        '<button onclick="pedirDatos(\\'MENOR\\')" class="' + btnFuc + '">Es un monto menor</button>' +
+                        '<button onclick="pedirDatos(\\'DEVOLUCION\\')" class="' + btnNar + '">Es una devolución por datáfono</button>', false);
+                }
+
+                // PASO 1 — varias filas bancarias
+                function preguntarVarios() {
+                    pintarMini('Diferencia neta muy baja',
+                        'Se ha detectado que la diferencia neta entre las transacciones es muy baja. Podría tratarse de un ajuste interno entre bancos o de una devolución a nivel de datáfono.\\n\\nIndique de cuál se trata.',
+                        '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
+                        '<button onclick="pedirDatos(\\'INTERNO\\')" class="' + btnCya + '">Es un ajuste interno entre bancos</button>' +
+                        '<button onclick="pedirDatos(\\'DEVOLUCION\\')" class="' + btnNar + '">Es una devolución por datáfono</button>', false);
+                }
+
+                // PASO 2 — captura de la justificación según el motivo
+                function pedirDatos(motivo) {
+                    // Se restauran los campos en cada apertura (el modal es reutilizado)
+                    document.getElementById('ws-campo-2').style.display = '';
+                    document.getElementById('ws-softland').value = '';
+                    document.getElementById('ws-detalle').value = '';
+
+                    if (motivo === 'DEVOLUCION') {
+                        document.getElementById('ws-label-1').innerText = 'Asiento de Softland *';
+                        document.getElementById('ws-softland').placeholder = 'AS-2026-04512';
+                        pintarMini('Devolución a nivel de datáfono',
+                            'Justifique la devolución. Esta transacción quedará conciliada sin contraparte de TSD.',
+                            '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
+                            '<button onclick="confirmarMotivo(\\'DEVOLUCION\\')" class="' + btnNar + '">Guardar devolución</button>', true);
+                    } else if (motivo === 'INTERNO') {
+                        document.getElementById('ws-label-1').innerText = 'Motivo *';
+                        document.getElementById('ws-softland').placeholder = 'Motivo del ajuste interno';
+                        pintarMini('Ajuste interno entre bancos',
+                            'Escriba el motivo del ajuste interno. Quedará conciliado sin contraparte de TSD.',
+                            '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
+                            '<button onclick="confirmarMotivo(\\'INTERNO\\')" class="' + btnCya + '">Guardar ajuste interno</button>', true);
+                    } else {
+                        document.getElementById('ws-label-1').innerText = 'Justificación (opcional)';
+                        document.getElementById('ws-softland').placeholder = 'Motivo del ajuste';
+                        document.getElementById('ws-campo-2').style.display = 'none';
+                        pintarMini('Ajuste por monto menor',
+                            'Puede agregar una justificación si lo desea. Este campo es opcional.',
+                            '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
+                            '<button onclick="confirmarMotivo(\\'MENOR\\')" class="' + btnFuc + '">Guardar monto menor</button>', true);
+                    }
+                    setTimeout(() => { const i = document.getElementById('ws-softland'); if (i) i.focus(); }, 80);
+                }
+
+                // PASO 3 — validar y guardar
+                async function confirmarMotivo(motivo) {
+                    const campo1 = (document.getElementById('ws-softland').value || '').trim();
+                    const campo2 = (document.getElementById('ws-detalle').value || '').trim();
+                    const err = document.getElementById('ws-mini-error');
+
+                    if (motivo === 'DEVOLUCION' && !campo1) {
+                        err.innerText = 'El asiento de Softland es obligatorio.'; err.classList.remove('hidden'); return;
+                    }
+                    if (motivo === 'INTERNO' && !campo1) {
+                        err.innerText = 'El motivo es obligatorio.'; err.classList.remove('hidden'); return;
+                    }
+
+                    let justificacion;
+                    if (motivo === 'DEVOLUCION') justificacion = '[SOFTLAND:' + campo1 + ']' + (campo2 ? ' ' + campo2 : '');
+                    else if (motivo === 'INTERNO') justificacion = campo1 + (campo2 ? ' — ' + campo2 : '');
+                    else justificacion = campo1 || 'Aprobación Manual (Ajuste Menor)';
+
                     closeMiniModal();
-                    const justInput = document.getElementById('ws-just');
-                    let justificacion = justInput ? justInput.value.trim() : '';
-                    justificacion = justificacion ? justificacion : 'Aprobación Manual (Ajuste Menor)';
-                    
-                    const proceed = await parentLogic.wsSave(justificacion, true);
+                    const proceed = await parentLogic.wsSave(justificacion, motivo === 'MENOR', motivo);
                     if (proceed !== false) window.close();
                 }
 
@@ -2080,7 +2185,9 @@ window.AuxiliarLogic = {
                     document.getElementById('ws-sug-bancos').innerHTML = availableB.slice(0,50).map(b => buildCard(b, false, false)).join('');
 
                     const footer = document.getElementById('ws-footer');
-                    if (ws.tsd.length > 0 && ws.bancos.length > 0) footer.classList.remove('hidden');
+                    // Antes exigía filas en AMBOS lados, así que con sólo bancos el botón
+                    // de aprobar nunca aparecía. Ahora basta con tener algo en la estación.
+                    if (ws.tsd.length > 0 || ws.bancos.length > 0) footer.classList.remove('hidden');
                     else footer.classList.add('hidden');
                 }
 
@@ -2088,16 +2195,24 @@ window.AuxiliarLogic = {
                     const justInput = document.getElementById('ws-just');
                     let justificacion = justInput ? justInput.value.trim() : '';
                     
-                    let isAjusteMenor = false;
-                    if (parentLogic.ws.tsd.length === 1 && parentLogic.ws.bancos.length === 0 && Math.abs(parseFloat(parentLogic.ws.tsd[0].MontoCRC) || 0) < 10000) {
-                        isAjusteMenor = true;
-                    } else if (parentLogic.ws.bancos.length === 1 && parentLogic.ws.tsd.length === 0 && Math.abs(parseFloat(parentLogic.ws.bancos[0].Monto_Venta_Original) || 0) < 10000) {
-                        isAjusteMenor = true;
+                    const nT = parentLogic.ws.tsd.length;
+                    const nB = parentLogic.ws.bancos.length;
+
+                    // SOLO TSD: se respeta el comportamiento histórico, sin tocar nada
+                    if (nT === 1 && nB === 0 && Math.abs(parseFloat(parentLogic.ws.tsd[0].MontoCRC) || 0) < 10000) {
+                        pedirDatos('MENOR');
+                        return;
                     }
 
-                    if (isAjusteMenor) {
-                        openMiniModal();
-                        return; // Se interrumpe el flujo; el usuario decidirá en el mini modal
+                    // SOLO BANCOS: nunca se aprueba sin declarar un motivo
+                    if (nB >= 1 && nT === 0) {
+                        const neta = parentLogic.ws.bancos
+                            .reduce((a, b) => a + (parseFloat(b.Monto_Venta_Original) || 0), 0);
+                        const diferenciaBaja = Math.abs(neta) < (nB === 1 ? 10000 : 3000);
+
+                        if (diferenciaBaja) { (nB === 1 ? preguntarUno : preguntarVarios)(); }
+                        else { pedirDatos('DEVOLUCION'); }
+                        return;
                     }
 
                     const proceed = await parentLogic.wsSave(justificacion, false);
@@ -2134,7 +2249,7 @@ window.AuxiliarLogic = {
         else this.ws.bancos = this.ws.bancos.filter(b => b && b._id !== id);
     },
 
-    wsSave: async function(justificacion = '', isAjusteMenor = false) {
+    wsSave: async function(justificacion = '', isAjusteMenor = false, motivo = null) {
         const removedTsd = this.ws.originalTsd.filter(t => !this.ws.tsd.some(x => x._id === t._id));
         const removedBancos = this.ws.originalBancos.filter(b => !this.ws.bancos.some(x => x._id === b._id));
 
@@ -2178,19 +2293,28 @@ window.AuxiliarLogic = {
             return !hasTsdCollision && !hasBancoCollision;
         });
 
-        // REGLA DE ORO ACTUALIZADA: Válido si vincula TSD vs Banco, O si vincula múltiples TSD (Ajuste Interno), O múltiples Bancos
-        const validTsdBanco = this.ws.tsd.length > 0 && this.ws.bancos.length > 0;
+        // REGLA DE ORO: TSD vs Banco, o varios TSD entre sí (ajuste interno de TSD).
+        // Los BANCOS SOLOS ya NO se aprueban sin motivo: antes 'validBancoInterno'
+        // dejaba pasar 2+ filas bancarias sin ninguna justificación (bug corregido).
+        const validTsdBanco   = this.ws.tsd.length > 0 && this.ws.bancos.length > 0;
         const validTsdInterno = this.ws.tsd.length > 1 && this.ws.bancos.length === 0;
-        const validBancoInterno = this.ws.bancos.length > 1 && this.ws.tsd.length === 0;
-        
+
+        // Bancos solos: sólo con uno de los tres motivos declarados por el usuario
+        const soloBancos = this.ws.bancos.length >= 1 && this.ws.tsd.length === 0;
+        const motivoOk   = ['MENOR', 'DEVOLUCION', 'INTERNO'].includes(motivo);
+        const validBancoJustificado = soloBancos && motivoOk;
+
         if (isAjusteMenor && !justificacion) {
             justificacion = 'Aprobación Manual (Ajuste Menor)';
         }
 
-        const isValidMatch = validTsdBanco || validTsdInterno || validBancoInterno || isAjusteMenor;
+        const isValidMatch = validTsdBanco || validTsdInterno || validBancoJustificado || isAjusteMenor;
 
         if (isValidMatch) {
-            this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion: justificacion });
+            this.manualMatches.push({
+                tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos],
+                justificacion: justificacion, motivo: motivo
+            });
         }
 
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
@@ -2254,12 +2378,46 @@ window.AuxiliarLogic = {
             const strStatus = String(row.EstadoMatch);
             if (strStatus.startsWith('Manual|')) { justif = strStatus.split('|')[1]; }
 
+            // ¿Este grupo salió de un motivo declarado (banco solo)? Se busca por sus IDs.
+            const idsB = arrB.filter(Boolean).map(b => String(b.IdTransaccion));
+            const mm = (this.manualMatches || []).find(m =>
+                m.motivo && m.bancoArr.length === idsB.length &&
+                m.bancoArr.every(x => idsB.includes(String(x.IdTransaccion || x._id).replace(/^b_/, '')))
+            );
+            const motivo = mm ? mm.motivo : null;
+
+            const uid = () => 'aux_tsd_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 10);
+
+            // Ojo: sólo se desglosa cuando hay filas BANCARIAS. Un ajuste menor de
+            // sólo TSD lleva motivo 'MENOR' y debe seguir el camino normal de abajo.
+            if (idsB.length > 0 && (motivo === 'DEVOLUCION' || motivo === 'INTERNO' || motivo === 'MENOR')) {
+                const sello = motivo === 'DEVOLUCION' ? '[AUX] Devolución Datáfono (Sin TSD)'
+                            : motivo === 'INTERNO'    ? '[AUX] Ajuste Interno Bancos (Sin TSD)'
+                            :                           '[AUX] Ajuste Monto Menor (Sin TSD)';
+                const tipoAud = motivo === 'DEVOLUCION' ? 'DEVOLUCION-DATAFONO'
+                              : motivo === 'INTERNO'    ? 'AJUSTE-INTERNO-BANCOS'
+                              :                           'AJUSTE-MONTO-MENOR';
+
+                // Cada fila bancaria va SOLA, con su propio IdMatchTSD irrepetible
+                arrB.filter(Boolean).forEach(b => {
+                    payloadAprobados.push({
+                        IdMatchTSD: uid(),
+                        TipoCruce: sello,
+                        Justificacion: justif,
+                        TipoAjuste: tipoAud,
+                        TSD: [],
+                        Bancos: [b.IdTransaccion]
+                    });
+                });
+                return;   // este grupo ya quedó desglosado
+            }
+
             payloadAprobados.push({
-                IdMatchTSD: 'aux_tsd_' + Math.random().toString(36).substr(2, 10), // Matrimonio Único (Prefijo Auxiliar)
+                IdMatchTSD: uid(), // Matrimonio Único (Prefijo Auxiliar)
                 TipoCruce: '[AUX] ' + strStatus.split('|')[0], // Sellado de Auditoría M4
                 Justificacion: justif,
-                TSD: arrT.map(t => t.ID_Transaccion), // Extraemos los IDs que hay que actualizar
-                Bancos: arrB.map(b => b.IdTransaccion) 
+                TSD: arrT.filter(Boolean).map(t => t.ID_Transaccion),
+                Bancos: arrB.filter(Boolean).map(b => b.IdTransaccion) 
             });
         });
 

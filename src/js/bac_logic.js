@@ -1015,7 +1015,7 @@ window.BACLogic = {
                 setTimeout(() => tableContainer.classList.remove('ring-4', 'ring-green-400', 'bg-green-50'), 2000);
             }
         }, 500);
-        
+         
     },
 
     // Renderiza la tabla de conciliados manuales con UX mejorada

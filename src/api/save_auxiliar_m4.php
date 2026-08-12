@@ -27,7 +27,7 @@ try {
     // Bancos (Solo le inyectamos el IdMatchTSD a la fila específica enviada)
     $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ? WHERE IdTransaccion = ? AND Banco IN ('BAC', 'SCOTIA', 'Davibank')");
 
-    $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, 'Aprobación Auxiliar (M4)', ?)");
+    $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, ?, ?)");
 
     // 2. Ejecutar la actualización en bloque
     foreach ($aprobados as $match) {
@@ -40,13 +40,19 @@ try {
             $stmtUpdateTSD->execute([$idMatchTSD, $tipoCruce, $idTSD]);
         }
 
-        // Auditoría Manual (Si el usuario justificó, se la pegamos al primer registro de TSD del bloque)
-        if ($justificacion && count($match['TSD']) > 0) {
-            $primerIdTSD = $match['TSD'][0];
+        // Auditoría Manual. Se ancla al primer TSD del bloque; si el bloque NO tiene
+        // TSD (devolución por datáfono, ajuste interno de bancos, monto menor),
+        // se ancla a la fila BANCARIA, que si no la justificación se perdía.
+        $anclaAud = (count($match['TSD']) > 0)
+            ? $match['TSD'][0]
+            : (count($match['Bancos']) > 0 ? $match['Bancos'][0] : null);
+
+        if ($justificacion && $anclaAud !== null) {
+            $tipoAud = !empty($match['TipoAjuste']) ? $match['TipoAjuste'] : 'Aprobación Auxiliar (M4)';
             $stmtCheckAud = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Ajustes_Auditoria WHERE IdTransaccion = ?");
-            $stmtCheckAud->execute([$primerIdTSD]);
+            $stmtCheckAud->execute([$anclaAud]);
             if ($stmtCheckAud->rowCount() == 0) {
-                $stmtInsertAuditoria->execute([$primerIdTSD, $justificacion]);
+                $stmtInsertAuditoria->execute([$anclaAud, $tipoAud, $justificacion]);
             }
         }
 
