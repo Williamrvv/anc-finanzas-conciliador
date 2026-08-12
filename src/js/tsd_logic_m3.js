@@ -257,8 +257,15 @@ window.TSDLogic = {
     generateSoftlandExcel: function(tipo, asientoId, startDate, tcPromedio, data) {
         // El TC se fija a DOS decimales ANTES de cualquier división, para que el
         // valor que se imprime en la columna TC sea exactamente el que se usó.
-        tcPromedio = Math.round((Number(tcPromedio) + Number.EPSILON) * 100) / 100;
+        const tcCrudo = Number(tcPromedio);
+        tcPromedio = Math.round((tcCrudo + Number.EPSILON) * 100) / 100;
         if (!tcPromedio || tcPromedio <= 0) tcPromedio = 1;
+
+        console.group('%c[CARGADOR SOFTLAND] Tipo de cambio', 'color:#f59e0b;font-weight:bold');
+        console.log('TC recibido del servidor :', tcCrudo, '(decimales:', String(tcCrudo).split('.')[1] ? String(tcCrudo).split('.')[1].length : 0, ')');
+        console.log('TC aplicado al cálculo   :', tcPromedio);
+        console.log('¿Venía con más de 2 dec? :', tcCrudo !== tcPromedio ? 'SÍ — se redondeó' : 'no');
+        console.groupEnd();
         // DICCIONARIOS DE CONFIGURACIÓN CONTABLE
         const configs = {
             'davi_5': {
@@ -320,13 +327,26 @@ window.TSDLogic = {
         let sumDebitoColon = 0;
         let sumDebitoDolar = 0;
 
-        // Iteración Previa: Sumar todos los débitos para construir la Fila 1 de Créditos
+        // Iteración Previa: se suman los valores YA REDONDEADOS, exactamente los
+        // mismos que se escriben en cada fila de detalle. Antes se acumulaba el
+        // valor crudo y el total no coincidía con la suma de los detalles.
+        let _diagCrudo = 0;
         data.forEach(row => {
             const debitoCol = parseFloat(row[cfg.columnaDebito]) || 0;
             const debitoDol = debitoCol / tcPromedio; // División para obtener Dólares
-            sumDebitoColon += debitoCol;
-            sumDebitoDolar += debitoDol;
+            sumDebitoColon += num2(debitoCol);
+            sumDebitoDolar += num2(debitoDol);
+            _diagCrudo += debitoDol;
         });
+        sumDebitoDolar = num2(sumDebitoDolar);
+        sumDebitoColon = num2(sumDebitoColon);
+
+        console.group('%c[CARGADOR SOFTLAND] Cuadre de dólares', 'color:#f59e0b;font-weight:bold');
+        console.log('Filas procesadas          :', data.length);
+        console.log('Suma de detalles (correcta):', sumDebitoDolar);
+        console.log('Suma sin redondear (vieja) :', num2(_diagCrudo));
+        console.log('Diferencia que se corrige  :', num2(sumDebitoDolar - _diagCrudo));
+        console.groupEnd();
 
         // Fila 1 (La Cabecera Totalizadora - Única que lleva el TC)
         ws2Data.push([
