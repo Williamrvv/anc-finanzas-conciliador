@@ -400,6 +400,7 @@ window.ConciliacionLogic = {
             return r;
         } catch (e) {
             if (e.name === 'AbortError') return { ok: false, aborted: true }; // lo canceló un guardado manual
+            if (e && e.sesionExpirada) { this._manejarSesionExpirada(); return { ok: false, sesionExpirada: true }; }
             this._setOnline(false); // fallo de red -> modo offline
             throw e;
         } finally {
@@ -464,7 +465,46 @@ window.ConciliacionLogic = {
             body: JSON.stringify(Object.assign({ action, modulo: 'M2' }, payload)),
             signal: opts.signal || undefined
         });
-        return await res.json();
+
+        // El servidor puede responder el HTML del login en vez de JSON cuando la
+        // sesión caducó. Se lee como texto para poder distinguirlo de un fallo de red.
+        const txt = await res.text();
+        const pareceHtml = /^\s*[<]/.test(txt) || txt.indexOf('SESSION_EXPIRED') !== -1;
+
+        if (res.status === 401 || res.status === 403 || pareceHtml) {
+            const err = new Error('SESION_EXPIRADA');
+            err.sesionExpirada = true;
+            throw err;
+        }
+
+        try {
+            return JSON.parse(txt);
+        } catch (e) {
+            const err = new Error('El servidor devolvió una respuesta inesperada.');
+            err.respuestaCruda = txt.slice(0, 200);
+            throw err;
+        }
+    },
+
+    // Sesión caducada: se detienen los relojes y se avisa UNA sola vez.
+    // El trabajo sigue en pantalla; no se pierde nada mientras no se recargue.
+    _manejarSesionExpirada: function() {
+        if (this._sesionExpirada) return;
+        this._sesionExpirada = true;
+
+        if (this._autoSaveInterval) { clearInterval(this._autoSaveInterval); this._autoSaveInterval = null; }
+        this.stopHeartbeat();
+        this._setOnline(true);   // no es un problema de red: se quita ese aviso
+
+        if (window.SysUI) {
+            window.SysUI.alert(
+                "Su sesión expiró por inactividad en el servidor.\n\n" +
+                "<b>Su trabajo sigue en pantalla y no se ha perdido.</b>\n\n" +
+                "Para conservarlo: abra el sistema en otra pestaña, inicie sesión de nuevo, " +
+                "vuelva a esta pestaña y presione <b>Conservar Borrador</b>.",
+                "Sesión expirada", "warning"
+            );
+        }
     },
 
     // Latido de presencia cada 1 min (SOLO mientras el Módulo 2 esté abierto)
@@ -490,7 +530,8 @@ window.ConciliacionLogic = {
                     if (r && r.version != null && this._dbDraftVersion == null) this._dbDraftVersion = r.version;
                 }
             } catch (e) {
-                this._setOnline(false); // sin conexión: seguir trabajando, pero sin guardar
+                if (e && e.sesionExpirada) { this._manejarSesionExpirada(); return; }
+                this._setOnline(false); // sin conexión real: seguir trabajando, pero sin guardar
             }
         };
         beat();
@@ -594,7 +635,9 @@ window.ConciliacionLogic = {
                 el = document.createElement('div');
                 el.id = 'offline-warning';
                 el.className = 'fixed top-4 right-4 bg-red-600 text-white text-xs px-4 py-2.5 rounded-lg shadow-xl z-[9999] flex items-center gap-2 max-w-xs';
-                el.innerHTML = '<span class="animate-pulse text-base leading-none">⚠</span><span>Sin conexión — tu progreso <b>no se está guardando</b>. Podés seguir trabajando; se reanudará al volver la conexión.</span>';
+                el.innerHTML = '<span class="animate-pulse text-base leading-none">⚠</span>' +
+                    '<span>Sin conexión — su progreso <b>no se está guardando</b>. Puede seguir trabajando; se reanudará al volver la conexión.</span>' +
+                    '<span onclick="this.parentElement.remove()" title="Ocultar" class="ml-1 cursor-pointer font-bold opacity-70 hover:opacity-100 select-none">✕</span>';
                 document.body.appendChild(el);
             }
         } else if (el) {
@@ -2353,6 +2396,7 @@ window.ConciliacionFunctions = {
             }
         } catch (e) {
             L._btnReset(btn);
+            if (e && e.sesionExpirada) { L._manejarSesionExpirada(); return; }
             window.SysUI && SysUI.alert("Error al guardar el borrador:\n\n" + e.message, "Error al guardar", "error");
         }
     },
