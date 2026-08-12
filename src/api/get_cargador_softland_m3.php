@@ -56,6 +56,12 @@ try {
         $tcPromedio = $tcRow ? (float)$tcRow['Sell'] : 1;
     }
 
+    // El tipo de cambio se fija a DOS decimales en el origen. Antes el promedio
+    // ponderado arrastraba muchos decimales y los dólares no cuadraban contra el
+    // TC que se muestra en el Excel.
+    $tcPromedio = round($tcPromedio, 2);
+    if ($tcPromedio <= 0) $tcPromedio = 1;   // nunca dividir entre cero
+
     $data = [];
 
     // =======================================================================

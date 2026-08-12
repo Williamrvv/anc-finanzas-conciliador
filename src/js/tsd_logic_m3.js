@@ -255,6 +255,10 @@ window.TSDLogic = {
     },
 
     generateSoftlandExcel: function(tipo, asientoId, startDate, tcPromedio, data) {
+        // El TC se fija a DOS decimales ANTES de cualquier división, para que el
+        // valor que se imprime en la columna TC sea exactamente el que se usó.
+        tcPromedio = Math.round((Number(tcPromedio) + Number.EPSILON) * 100) / 100;
+        if (!tcPromedio || tcPromedio <= 0) tcPromedio = 1;
         // DICCIONARIOS DE CONFIGURACIÓN CONTABLE
         const configs = {
             'davi_5': {
