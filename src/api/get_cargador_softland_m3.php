@@ -49,11 +49,11 @@ try {
             $sumProduct += ($tcDia * (int)$fb['Cantidad']);
             $totalTransacciones += (int)$fb['Cantidad'];
         }
-        if ($totalTransacciones > 0) $tcPromedio = $sumProduct / $totalTransacciones;
+        if ($totalTransacciones > 0) $tcPromedio = round($sumProduct / $totalTransacciones, 2);
     } else {
         $stmtTC->execute([':fecha' => $end]);
         $tcRow = $stmtTC->fetch();
-        $tcPromedio = $tcRow ? (float)$tcRow['Sell'] : 1;
+        $tcPromedio = $tcRow ? round((float)$tcRow['Sell'], 2) : 1;
     }
 
     // El tipo de cambio se fija a DOS decimales en el origen. Antes el promedio
