@@ -144,7 +144,11 @@ try {
     INNER JOIN Tbl_Transacciones_Maestra m ON b.IdTransaccion = m.IdTransaccion
     INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre
     LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
-    WHERE c.ConsolidadoTSD IS NULL
+    WHERE c.IdCierre IN (
+        SELECT TOP 2 IdCierre
+        FROM Tbl_Conciliacion_Cierres
+        ORDER BY IdCierre DESC
+    )
       AND m.IdMatch IS NOT NULL 
       AND m.Origen IN ('DETALLADO', 'AJUSTE')
 
@@ -166,7 +170,11 @@ try {
     INNER JOIN Tbl_Transacciones_Maestra m ON s.IdTransaccion = m.IdTransaccion
     INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre
     LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
-    WHERE c.ConsolidadoTSD IS NULL
+    WHERE c.IdCierre IN (
+        SELECT TOP 2 IdCierre
+        FROM Tbl_Conciliacion_Cierres
+        ORDER BY IdCierre DESC
+    )
       AND m.IdMatch IS NOT NULL 
       AND m.Origen IN ('DETALLADO', 'AJUSTE')
 )
@@ -176,7 +184,7 @@ ORDER BY Folio_Cierre ASC, Banco ASC, TRY_CONVERT(date, Fecha_Pago_Excel, 103) A
     ";
 
     $stmtBancos = $pdoBancos->prepare($sqlBancos);
-    // Ya no se le pasan parámetros de fecha al query de Bancos, se ejecuta libre buscando folios pendientes
+    // Bancos: se ignora el rango del date-picker y se consultan únicamente los últimos dos cierres.
     $stmtBancos->execute();
     $dataBancos = $stmtBancos->fetchAll();
 

@@ -34,7 +34,11 @@ try {
             FROM Tbl_Detalle_BAC b
             INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
-            WHERE c.ConsolidadoTSD IS NULL 
+            WHERE c.IdCierre IN (
+                SELECT TOP 2 IdCierre
+                FROM Tbl_Conciliacion_Cierres
+                ORDER BY IdCierre DESC
+            )
             AND (
                 (b.AUTORIZACION IS NOT NULL AND RTRIM(LTRIM(b.AUTORIZACION)) <> '')
                 OR a.IdTransaccion IS NOT NULL
@@ -61,7 +65,11 @@ try {
             FROM Tbl_Detalle_Scotia s
             INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
-            WHERE c.ConsolidadoTSD IS NULL 
+            WHERE c.IdCierre IN (
+                SELECT TOP 2 IdCierre
+                FROM Tbl_Conciliacion_Cierres
+                ORDER BY IdCierre DESC
+            )
             AND (
                 (s.Numero_Autorizacion IS NOT NULL AND RTRIM(LTRIM(s.Numero_Autorizacion)) <> '' AND s.Numero_Tarjeta IS NOT NULL AND RTRIM(LTRIM(s.Numero_Tarjeta)) <> '')
                 OR a.IdTransaccion IS NOT NULL
