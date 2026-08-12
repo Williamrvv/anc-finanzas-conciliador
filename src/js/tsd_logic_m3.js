@@ -75,9 +75,12 @@ window.TSDLogic = {
         document.body.classList.add('cursor-wait');
 
         try {
-            // 1. CÁLCULO DEL TIPO DE CAMBIO (Promedio de TSD)
+                        // 1. CÁLCULO DEL TIPO DE CAMBIO (Promedio de TSD)
+            // El promedio se redondea a 2 decimales ANTES de utilizarlo
+            // para convertir los montos de colones a dólares.
             const validTCs = this.lastTSD.filter(t => t.TC > 0).map(t => parseFloat(t.TC));
-            const avgTC = validTCs.length > 0 ? validTCs.reduce((a, b) => a + b, 0) / validTCs.length : 1;
+            const avgTCRaw = validTCs.length > 0 ? validTCs.reduce((a, b) => a + b, 0) / validTCs.length : 1;
+            const avgTC = Math.round((avgTCRaw + Number.EPSILON) * 100) / 100;
 
             // 2. ACUMULADORES GLOBALES
             let tBacNeto = 0, tBacAci = 0, tDaviNeto = 0, tTsdCRC = 0;
