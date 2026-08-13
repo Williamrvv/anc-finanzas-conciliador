@@ -2681,7 +2681,7 @@ window.AuxiliarLogic = {
                     <details class="[&::-webkit-details-marker]:hidden cursor-pointer">
                         <summary class="text-sm font-bold text-slate-400 hover:text-teal-600 transition-colors list-none flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                            grep -n "Abono Real" -B 8 -A 12 src/js/auxiliar_logic_m4.js | head -30
+                            Descripción del Extracto
                         </summary>
                         <div class="mt-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-500 dark:text-slate-400 italic border border-slate-100 dark:border-slate-700/50">
                             "${desc || 'Sin descripción en el extracto bancario'}"
@@ -2774,6 +2774,27 @@ window.AuxiliarLogic = {
                 </style>
                 <script>
                     // Motor Interactivo del Modal Forense para ver Evidencias
+                    // OJO: el modal se dibuja en la ventana PRINCIPAL, así que el onclick
+                    // de las tarjetas busca la función ahí, no en el popup. Se define en
+                    // window.opener cuando existe, y en window si no.
+                    (window.opener || window).copiarForense = function (valor, element) {
+                        const exito = () => {
+                            const originalHtml = element.innerHTML;
+                            element.innerHTML = '<span class="text-green-500 dark:text-green-400 flex items-center gap-1">&#9989; Copiado</span>';
+                            setTimeout(function () { element.innerHTML = originalHtml; }, 1500);
+                        };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(valor).then(exito).catch(function (err) { console.error('Error al copiar:', err); });
+                        } else {
+                            // Respaldo: navigator.clipboard sólo existe en HTTPS o localhost
+                            var ta = document.createElement('textarea');
+                            ta.value = valor; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                            document.body.appendChild(ta); ta.select();
+                            try { document.execCommand('copy'); exito(); } catch (e) { console.error('Error al copiar:', e); }
+                            document.body.removeChild(ta);
+                        }
+                    };
+
                     window.showForenseEvidence = function(b64) {
                         const overlay = document.createElement('div');
                         overlay.className = 'fixed inset-0 z-[999999] bg-slate-900/90 backdrop-blur-md flex justify-center items-center p-4 opacity-0 transition-opacity duration-300';
@@ -2795,24 +2816,6 @@ window.AuxiliarLogic = {
                             overlay.classList.remove('opacity-0');
                             overlay.querySelector('div').classList.remove('scale-95');
                         });
-                    };
-                    // Copiado al portapapeles con el mismo feedback visual del Módulo 1
-                    window.copiarForense = function (valor, element) {
-                        const exito = () => {
-                            const originalHtml = element.innerHTML;
-                            element.innerHTML = `<span class="text-green-500 dark:text-green-400 flex items-center gap-1">✅ Copiado</span>`;
-                            setTimeout(() => { element.innerHTML = originalHtml; }, 1500);
-                        };
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(valor).then(exito).catch(err => console.error('Error al copiar:', err));
-                        } else {
-                            // Respaldo: navigator.clipboard sólo existe en HTTPS o localhost
-                            const ta = document.createElement('textarea');
-                            ta.value = valor; ta.style.position = 'fixed'; ta.style.opacity = '0';
-                            document.body.appendChild(ta); ta.select();
-                            try { document.execCommand('copy'); exito(); } catch (e) { console.error('Error al copiar:', e); }
-                            document.body.removeChild(ta);
-                        }
                     };
                 </script>
             `;
