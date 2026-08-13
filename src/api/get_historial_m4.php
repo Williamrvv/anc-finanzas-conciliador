@@ -37,7 +37,7 @@ try {
             LEFT JOIN Tbl_Detalle_TSD t ON m.IdTransaccion = t.IdTransaccion AND m.Banco = 'TSD'
             LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion AND m.Banco = 'BAC'
             LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion AND m.Banco = 'Davibank'
-            WHERE m.IdMatchTSD IS NOT NULL AND m.TipoCruceTSD LIKE '%[AUX]%'
+            WHERE m.IdMatchTSD IS NOT NULL AND m.TipoCruceTSD LIKE '%[[]AUX]%'
         ");
         $fechaUltimo = $qMax->fetchColumn();
         if ($fechaUltimo) { $start = $fechaUltimo; $end = $fechaUltimo; }
@@ -77,7 +77,7 @@ try {
         LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion AND m.Banco = 'Davibank'
         LEFT JOIN Tbl_Diccionario_Afiliados d ON d.Afiliado = m.Afiliado_MerID
         WHERE m.IdMatchTSD IS NOT NULL
-          AND m.TipoCruceTSD LIKE '%[AUX]%'
+          AND m.TipoCruceTSD LIKE '%[[]AUX]%'
           AND c.ConsolidadoTSD IS NOT NULL
     ";
 
