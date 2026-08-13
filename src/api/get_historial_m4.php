@@ -77,8 +77,6 @@ try {
         LEFT JOIN Tbl_Detalle_Scotia s ON m.IdTransaccion = s.IdTransaccion AND m.Banco = 'Davibank'
         LEFT JOIN Tbl_Diccionario_Afiliados d ON d.Afiliado = m.Afiliado_MerID
         WHERE m.IdMatchTSD IS NOT NULL
-          AND m.TipoCruceTSD LIKE '%[[]AUX]%'
-          AND c.ConsolidadoTSD IS NOT NULL
     ";
 
     if ($modoGlobal) {
@@ -101,7 +99,9 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':term' => $termSql]);
     } else {
-        $sql .= " AND COALESCE(t.FechaPago, TRY_CONVERT(date, b.FECHA_PAGO), TRY_CONVERT(date, s.Fecha_Pago)) BETWEEN :start AND :end";
+        $sql .= " AND COALESCE(t.FechaPago,
+                    TRY_CONVERT(date, b.FECHA_PAGO, 23), TRY_CONVERT(date, b.FECHA_PAGO, 103),
+                    TRY_CONVERT(date, s.Fecha_Pago, 23), TRY_CONVERT(date, s.Fecha_Pago, 103)) BETWEEN :start AND :end";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':start' => $start, ':end' => $end]);
     }
