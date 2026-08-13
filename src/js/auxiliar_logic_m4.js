@@ -1882,7 +1882,8 @@ window.AuxiliarLogic = {
                     <div class="h-[40%] overflow-auto p-2 space-y-1.5" id="ws-sel-tsd"></div>
                     <div class="bg-purple-50 dark:bg-purple-900/20 border-y border-purple-200 dark:border-purple-800 p-1.5 shrink-0 relative">
                         <input type="text" id="ws-search-tsd" oninput="renderUI()" placeholder="Buscar en TSD (Contrato, Auth, Monto)..." class="w-full pl-8 pr-2 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 text-xs outline-none">
-                        <span class="absolute left-3 top-2.5 text-purple-400 text-sm">🔍</span>
+                        <span class="absolute left-3 top-2.5 text-emerald-400 text-sm">🔍</span>
+                        <div class="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 pl-1" id="ws-total-tsd">0 disponibles</div>
                     </div>
                     <div class="flex-1 overflow-auto p-2 bg-slate-50/50 dark:bg-slate-900/30" id="ws-sug-tsd"></div>
                 </div>
@@ -1895,8 +1896,9 @@ window.AuxiliarLogic = {
                     </div>
                     <div class="h-[40%] overflow-auto p-2 space-y-1.5" id="ws-sel-bancos"></div>
                     <div class="bg-blue-50 dark:bg-blue-900/20 border-y border-blue-200 dark:border-blue-800 p-1.5 shrink-0 relative">
-                        <input type="text" id="ws-search-banco" oninput="renderUI()" placeholder="Buscar en Banco (Auth, Tarjeta, Monto)..." class="w-full pl-8 pr-2 py-1.5 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 text-xs outline-none">
+                        <input type="text" id="ws-search-banco" oninput="renderUI()" placeholder="Buscar por afiliado, MerID, comercio, autorización, tarjeta o monto..." class="w-full pl-8 pr-2 py-1.5 rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-900 text-xs outline-none">
                         <span class="absolute left-3 top-2.5 text-blue-400 text-sm">🔍</span>
+                        <div class="text-[9px] text-blue-500 dark:text-blue-400 font-bold mt-1 pl-1" id="ws-total-bancos">0 disponibles</div>
                     </div>
                     <div class="flex-1 overflow-auto p-2 bg-slate-50/50 dark:bg-slate-900/30" id="ws-sug-bancos"></div>
                 </div>
@@ -1962,10 +1964,13 @@ window.AuxiliarLogic = {
                     openMiniModal();
                 }
 
-                const btnGris = 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors';
-                const btnNar  = 'bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
-                const btnCya  = 'bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
-                const btnFuc  = 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+                // 'var' y no 'const': la ventana emergente se recicla y el script se
+                // vuelve a escribir en el mismo documento. Con 'const' el navegador
+                // lanza "Identifier has already been declared" (misma razón que parentLogic).
+                var btnGris = 'bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors';
+                var btnNar  = 'bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+                var btnCya  = 'bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+                var btnFuc  = 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
 
                 // PASO 1 — una sola fila bancaria
                 function preguntarUno() {
@@ -2176,13 +2181,26 @@ window.AuxiliarLogic = {
                     if (termT) availableT = availableT.filter(t => clean(t.Contrato).includes(termT) || clean(t.Autorizacion).includes(termT) || clean(t.MontoCRC).includes(termT));
                     else availableT = availableT.sort((a,b) => Math.abs(parseFloat(a.MontoCRC)-gap) - Math.abs(parseFloat(b.MontoCRC)-gap));
 
-                    document.getElementById('ws-sug-tsd').innerHTML = availableT.slice(0,50).map(t => buildCard(t, true, false)).join('');
+                    // Sin recorte: se muestran TODOS los pendientes del auxiliar
+                    document.getElementById('ws-sug-tsd').innerHTML = availableT.map(t => buildCard(t, true, false)).join('');
+                    const cntT = document.getElementById('ws-total-tsd');
+                    if (cntT) cntT.innerText = availableT.length + (termT ? ' encontrados' : ' disponibles');
 
                     const termB = clean(document.getElementById('ws-search-banco')?.value || '');
-                    if (termB) availableB = availableB.filter(b => clean(b.Numero_Autorizacion).includes(termB) || clean(b.Monto_Venta_Original).includes(termB));
+                    if (termB) availableB = availableB.filter(b =>
+                        clean(b.Numero_Autorizacion).includes(termB) ||
+                        clean(b.Monto_Venta_Original).includes(termB) ||
+                        clean(b.Afiliado_MerID).includes(termB) ||
+                        clean(b.Nombre_Sucursal_Comercio).includes(termB) ||
+                        clean(b.Codigo_Sucursal_Terminal).includes(termB) ||
+                        clean(b.Tarjeta_Ultimos4).includes(termB) ||
+                        clean(b.Banco).includes(termB));
                     else availableB = availableB.sort((a,b) => Math.abs(parseFloat(a.Monto_Venta_Original)-gap) - Math.abs(parseFloat(b.Monto_Venta_Original)-gap));
 
-                    document.getElementById('ws-sug-bancos').innerHTML = availableB.slice(0,50).map(b => buildCard(b, false, false)).join('');
+                    // Sin recorte: se muestran TODOS los pendientes del auxiliar
+                    document.getElementById('ws-sug-bancos').innerHTML = availableB.map(b => buildCard(b, false, false)).join('');
+                    const cntB = document.getElementById('ws-total-bancos');
+                    if (cntB) cntB.innerText = availableB.length + (termB ? ' encontrados' : ' disponibles');
 
                     const footer = document.getElementById('ws-footer');
                     // Antes exigía filas en AMBOS lados, así que con sólo bancos el botón
