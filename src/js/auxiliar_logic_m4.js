@@ -2482,6 +2482,32 @@ window.AuxiliarLogic = {
 
             const fmt = (v) => new Intl.NumberFormat('es-CR', {style:'currency', currency:'CRC'}).format(v||0).replace(/\./g, ' ');
 
+            // Bloque desplegable con TODOS los campos que devuelve el endpoint.
+            // Se genera solo: cualquier columna nueva del SELECT aparece sin tocar el JS.
+            let _detId = 0;
+            const bloqueCompleto = (obj, color) => {
+                const omitir = ['EvidenciaB64'];
+                const campos = Object.keys(obj || {})
+                    .filter(k => !omitir.includes(k))
+                    .filter(k => obj[k] !== null && obj[k] !== '' && String(obj[k]).trim() !== '')
+                    .map(k => {
+                        const etiqueta = k.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+                        return `<div class="flex justify-between gap-3 py-1 border-b border-slate-100 dark:border-slate-700/50 last:border-0">
+                                    <span class="text-[10px] uppercase text-slate-400 shrink-0">${etiqueta}</span>
+                                    <span class="text-[11px] font-mono text-slate-700 dark:text-slate-200 text-right break-all">${obj[k]}</span>
+                                </div>`;
+                    }).join('');
+                if (!campos) return '';
+                const id = 'forense-full-' + (++_detId);
+                return `<div class="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700">
+                    <button onclick="const e=document.getElementById('${id}');e.classList.toggle('hidden');this.querySelector('span').innerText=e.classList.contains('hidden')?'▾':'▴';"
+                        class="w-full flex items-center justify-between text-[10px] font-bold uppercase tracking-wider ${color} hover:opacity-80 transition-opacity">
+                        Ver todos los datos <span>▾</span>
+                    </button>
+                    <div id="${id}" class="hidden mt-2 max-h-52 overflow-y-auto pr-1">${campos}</div>
+                </div>`;
+            };
+
             // 1. ORIGEN: TSD (Izquierda)
             const htmlTSD = data.tsd.map(t => {
                 const monto = parseFloat(t.MontoCRC) || parseFloat(t.MontoBruto) || 0;
