@@ -2491,7 +2491,7 @@ window.AuxiliarLogic = {
             const copiable = (etiqueta, valor, clase) => {
                 const v = (valor === null || valor === undefined || valor === '') ? '' : String(valor).trim();
                 if (!v) return `<span class="bg-slate-100 dark:bg-slate-900 text-slate-400 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">${etiqueta}: -</span>`;
-                return `<span onclick="window.copiarForense('${v.replace(/'/g, "\\'")}', this)" title="Clic para copiar"
+                return `<span onclick="window.AuxiliarLogic.copiarForense('${v.replace(/'/g, "\\'")}', this)" title="Clic para copiar"
                     class="${clase || 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300'} px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all select-none flex items-center gap-1 group">
                     ${etiqueta}: <b class="text-slate-800 dark:text-white">${v}</b>${icoCopy}</span>`;
             };
@@ -2773,28 +2773,6 @@ window.AuxiliarLogic = {
                     .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
                 </style>
                 <script>
-                    // Motor Interactivo del Modal Forense para ver Evidencias
-                    // OJO: el modal se dibuja en la ventana PRINCIPAL, así que el onclick
-                    // de las tarjetas busca la función ahí, no en el popup. Se define en
-                    // window.opener cuando existe, y en window si no.
-                    (window.opener || window).copiarForense = function (valor, element) {
-                        const exito = () => {
-                            const originalHtml = element.innerHTML;
-                            element.innerHTML = '<span class="text-green-500 dark:text-green-400 flex items-center gap-1">&#9989; Copiado</span>';
-                            setTimeout(function () { element.innerHTML = originalHtml; }, 1500);
-                        };
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(valor).then(exito).catch(function (err) { console.error('Error al copiar:', err); });
-                        } else {
-                            // Respaldo: navigator.clipboard sólo existe en HTTPS o localhost
-                            var ta = document.createElement('textarea');
-                            ta.value = valor; ta.style.position = 'fixed'; ta.style.opacity = '0';
-                            document.body.appendChild(ta); ta.select();
-                            try { document.execCommand('copy'); exito(); } catch (e) { console.error('Error al copiar:', e); }
-                            document.body.removeChild(ta);
-                        }
-                    };
-
                     window.showForenseEvidence = function(b64) {
                         const overlay = document.createElement('div');
                         overlay.className = 'fixed inset-0 z-[999999] bg-slate-900/90 backdrop-blur-md flex justify-center items-center p-4 opacity-0 transition-opacity duration-300';
@@ -2858,6 +2836,27 @@ window.AuxiliarLogic = {
 
     // Botón discreto de edición. Reemplaza al de borrado: el eliminar vive
     // dentro del modal, para tener un solo control por fila.
+    // Copiado al portapapeles con el mismo feedback visual del Módulo 1.
+    // Es un MÉTODO del objeto (no una global dentro de un template), porque el
+    // Timeline se inyecta en la página principal y sus onclick corren aquí.
+    copiarForense: function(valor, element) {
+        var exito = function() {
+            var originalHtml = element.innerHTML;
+            element.innerHTML = '<span class="text-green-500 dark:text-green-400 flex items-center gap-1">&#9989; Copiado</span>';
+            setTimeout(function() { element.innerHTML = originalHtml; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(valor).then(exito).catch(function(err) { console.error('Error al copiar:', err); });
+        } else {
+            // Respaldo: navigator.clipboard sólo existe en HTTPS o localhost
+            var ta = document.createElement('textarea');
+            ta.value = valor; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); exito(); } catch (e) { console.error('Error al copiar:', e); }
+            document.body.removeChild(ta);
+        }
+    },
+
     _btnEditarHtml: function(id) {
         return `<button onclick="event.stopPropagation(); window.AuxiliarLogic.abrirEdicionAjuste('${id}')"
                     title="Editar autorización o tarjeta / eliminar este ajuste manual"
