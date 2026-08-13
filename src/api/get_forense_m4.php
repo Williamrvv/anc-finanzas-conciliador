@@ -20,7 +20,22 @@ try {
     $stmtD->execute([$id]);
     
     // 3. LADO IZQUIERDO: Pagados (Depósitos asociados a los Detallados anteriores)
-    $stmtP = $pdo->prepare("SELECT m.IdTransaccion, m.Banco, m.IdMatch, m.MontoBruto, pb.Referencia AS BacRef, pb.Fecha AS BacFecha, pb.Descripcion AS BacDesc, pb.Creditos AS BacCred, ps.Numero_Referencia AS ScoRef, ps.Fecha_Movimiento AS ScoFecha, ps.Descripcion AS ScoDesc, ps.Monto AS ScoMonto, ps.Credito_Debito FROM Tbl_Transacciones_Maestra m LEFT JOIN Tbl_Pagado_BAC pb ON m.IdTransaccion = pb.IdTransaccion LEFT JOIN Tbl_Pagado_Scotia ps ON m.IdTransaccion = ps.IdTransaccion WHERE m.Origen = 'PAGADO' AND m.IdMatch IN (SELECT IdMatch FROM Tbl_Transacciones_Maestra WHERE IdMatchTSD = ? AND IdMatch IS NOT NULL)");
+    // El IdMatch agrupa TODO el lote del afiliado en M2 (muchas ventas contra
+    // muchos depósitos), así que estos depósitos son del GRUPO, no de esta
+    // transacción. Se marca cuál coincide con el neto para no inducir a error.
+    $stmtP = $pdo->prepare("
+        SELECT m.IdTransaccion, m.Banco, m.IdMatch, m.MontoBruto,
+               pb.Referencia AS BacRef, pb.Fecha AS BacFecha, pb.Descripcion AS BacDesc, pb.Creditos AS BacCred,
+               ps.Numero_Referencia AS ScoRef, ps.Fecha_Movimiento AS ScoFecha, ps.Descripcion AS ScoDesc,
+               ps.Monto AS ScoMonto, ps.Credito_Debito,
+               (SELECT COUNT(*) FROM Tbl_Transacciones_Maestra mv
+                 WHERE mv.IdMatch = m.IdMatch AND mv.Origen <> 'PAGADO' AND mv.Banco <> 'TSD') AS VentasDelGrupo
+        FROM Tbl_Transacciones_Maestra m
+        LEFT JOIN Tbl_Pagado_BAC    pb ON m.IdTransaccion = pb.IdTransaccion
+        LEFT JOIN Tbl_Pagado_Scotia ps ON m.IdTransaccion = ps.IdTransaccion
+        WHERE m.Origen = 'PAGADO'
+          AND m.IdMatch IN (SELECT IdMatch FROM Tbl_Transacciones_Maestra WHERE IdMatchTSD = ? AND IdMatch IS NOT NULL)
+    ");
     $stmtP->execute([$id]);
 
     echo json_encode([

@@ -32,7 +32,9 @@ try {
     $fechaUltimo = null;
     if (isset($_GET['ultimo'])) {
         $qMax = $pdo->query("
-            SELECT MAX(COALESCE(t.FechaPago, TRY_CONVERT(date, b.FECHA_PAGO), TRY_CONVERT(date, s.Fecha_Pago)))
+            SELECT MAX(COALESCE(t.FechaPago,
+                                TRY_CONVERT(date, b.FECHA_PAGO, 23), TRY_CONVERT(date, b.FECHA_PAGO, 103),
+                                TRY_CONVERT(date, s.Fecha_Pago, 23), TRY_CONVERT(date, s.Fecha_Pago, 103)))
             FROM Tbl_Transacciones_Maestra m
             LEFT JOIN Tbl_Detalle_TSD t ON m.IdTransaccion = t.IdTransaccion AND m.Banco = 'TSD'
             LEFT JOIN Tbl_Detalle_BAC b ON m.IdTransaccion = b.IdTransaccion AND m.Banco = 'BAC'
@@ -67,7 +69,9 @@ try {
             ISNULL(s.Monto_Retencion_ISR,0) AS RetISRDavi,
             COALESCE(b.MONTONETO, s.Monto_Neto) AS MontoNetoBanco,
             c.Folio, CAST(c.ConsolidadoTSD AS DATE) AS FechaFolio,
-            COALESCE(t.FechaPago, TRY_CONVERT(date, b.FECHA_PAGO), TRY_CONVERT(date, s.Fecha_Pago)) AS FechaPagoReal,
+            COALESCE(t.FechaPago,
+                     TRY_CONVERT(date, b.FECHA_PAGO, 23), TRY_CONVERT(date, b.FECHA_PAGO, 103),
+                     TRY_CONVERT(date, s.Fecha_Pago, 23), TRY_CONVERT(date, s.Fecha_Pago, 103)) AS FechaPagoReal,
             a.Justificacion, a.EvidenciaB64
         FROM Tbl_Transacciones_Maestra m
         LEFT JOIN Tbl_Conciliacion_Cierres c ON m.IdCierre = c.IdCierre
@@ -99,9 +103,20 @@ try {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':term' => $termSql]);
     } else {
-        $sql .= " AND COALESCE(t.FechaPago,
-                    TRY_CONVERT(date, b.FECHA_PAGO, 23), TRY_CONVERT(date, b.FECHA_PAGO, 103),
-                    TRY_CONVERT(date, s.Fecha_Pago, 23), TRY_CONVERT(date, s.Fecha_Pago, 103)) BETWEEN :start AND :end";
+        // El rango se evalúa sobre el GRUPO, no sobre la fila. TSD y banco tienen
+        // fechas de pago distintas: filtrando fila por fila entraba sólo un lado y
+        // el cruce se veía como "Solo TSD" aunque su banco existiera.
+        $sql .= " AND m.IdMatchTSD IN (
+                    SELECT m2.IdMatchTSD
+                    FROM Tbl_Transacciones_Maestra m2
+                    LEFT JOIN Tbl_Detalle_TSD    t2 ON t2.IdTransaccion = m2.IdTransaccion AND m2.Banco = 'TSD'
+                    LEFT JOIN Tbl_Detalle_BAC    b2 ON b2.IdTransaccion = m2.IdTransaccion AND m2.Banco = 'BAC'
+                    LEFT JOIN Tbl_Detalle_Scotia s2 ON s2.IdTransaccion = m2.IdTransaccion AND m2.Banco = 'Davibank'
+                    WHERE m2.IdMatchTSD IS NOT NULL
+                      AND COALESCE(t2.FechaPago,
+                            TRY_CONVERT(date, b2.FECHA_PAGO, 23), TRY_CONVERT(date, b2.FECHA_PAGO, 103),
+                            TRY_CONVERT(date, s2.Fecha_Pago, 23), TRY_CONVERT(date, s2.Fecha_Pago, 103)) BETWEEN :start AND :end
+                  )";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':start' => $start, ':end' => $end]);
     }
