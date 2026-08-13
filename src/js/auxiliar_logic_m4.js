@@ -2701,107 +2701,132 @@ window.AuxiliarLogic = {
                     <span class="text-sm text-slate-500">Es posible que sea una transacción de ajuste manual, o el depósito aún no se ha reflejado.</span>
                 </div>`;
 
-            // CREAR E INYECTAR MODAL
+            // ============================================================
+            // RESUMEN DEL FLUJO: totales y cantidad de registros por etapa
+            // ============================================================
+            const num = (v) => parseFloat(v) || 0;
+            const totTSD = data.tsd.reduce((a, t) => a + num(t.MontoCRC || t.MontoBruto), 0);
+            const totBrutoBanco = data.detallado.reduce((a, d) => a + num(d.Banco === 'BAC' ? d.BacMonto : d.ScoMonto), 0);
+            const totNetoBanco  = data.detallado.reduce((a, d) => a + num(d.Banco === 'BAC' ? d.BacNeto  : d.ScoNeto),  0);
+            const totDeposito   = data.pagado.reduce((a, p) => a + num(p.Banco === 'BAC' ? p.BacCred : p.ScoMonto), 0);
+            const difConcilia   = totTSD - totNetoBanco;
+
+            const etapa = (n, titulo, monto, sub, registros, color) => `
+                <div class="flex-1 min-w-[220px] bg-white dark:bg-slate-800 rounded-2xl p-5 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="w-7 h-7 rounded-full ${color} text-white text-sm font-black flex items-center justify-center shrink-0">${n}</span>
+                        <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">${titulo}</span>
+                    </div>
+                    <div class="text-3xl font-black text-slate-800 dark:text-white font-mono tracking-tight">${fmt(monto)}</div>
+                    <div class="text-sm text-slate-500 dark:text-slate-400 mt-1">${sub}</div>
+                    <div class="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-900 px-3 py-1.5 rounded-lg">
+                        ${registros} ${registros === 1 ? 'registro' : 'registros'}
+                    </div>
+                </div>`;
+
+            const flecha = `<div class="hidden xl:flex items-center text-slate-300 dark:text-slate-600 shrink-0">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
+                </div>`;
+
+            const cintaFlujo = `
+                <div class="flex flex-wrap xl:flex-nowrap items-stretch gap-4 mb-6">
+                    ${etapa(1, 'Origen Interno (TSD)', totTSD, 'Monto facturado en el core', data.tsd.length, 'bg-purple-500')}
+                    ${flecha}
+                    ${etapa(2, 'Procesamiento Banco', totNetoBanco, 'Neto a depositar · bruto ' + fmt(totBrutoBanco), data.detallado.length, 'bg-blue-500')}
+                    ${flecha}
+                    ${etapa(3, 'Aterrizaje en Cuenta', totDeposito, 'Abonos reales del extracto', data.pagado.length, 'bg-emerald-500')}
+                    <div class="flex-1 min-w-[220px] rounded-2xl p-5 ring-1 shadow-sm ${Math.abs(difConcilia) < 2000 ? 'bg-emerald-50 dark:bg-emerald-900/20 ring-emerald-300 dark:ring-emerald-700' : 'bg-red-50 dark:bg-red-900/20 ring-red-300 dark:ring-red-700'}">
+                        <div class="text-sm font-bold uppercase tracking-wide mb-3 ${Math.abs(difConcilia) < 2000 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}">
+                            ${Math.abs(difConcilia) < 2000 ? '✓ Diferencia' : '⚠ Diferencia'}
+                        </div>
+                        <div class="text-3xl font-black font-mono tracking-tight ${Math.abs(difConcilia) < 2000 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}">${fmt(difConcilia)}</div>
+                        <div class="text-sm mt-1 ${Math.abs(difConcilia) < 2000 ? 'text-emerald-600 dark:text-emerald-500' : 'text-red-600 dark:text-red-500'}">TSD contra neto bancario</div>
+                    </div>
+                </div>`;
+
+            // ============================================================
+            // SECCIONES: si hay 1 registro se muestra directo; si hay varios,
+            // se agrupa en un acordeón abierto por defecto.
+            // ============================================================
+            let _secId = 0;
+            const seccion = (titulo, tarjetas, cantidad, colorTexto, colorBarra) => {
+                if (cantidad === 0) return `
+                    <div class="mb-6">
+                        <h3 class="text-base font-black ${colorTexto} uppercase tracking-wide mb-3">${titulo}</h3>
+                        <div class="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center ring-1 ring-dashed ring-slate-300 dark:ring-slate-600">
+                            <span class="text-base font-bold text-slate-400">Sin registros en esta etapa</span>
+                        </div>
+                    </div>`;
+
+                const cuerpo = `<div class="grid grid-cols-1 ${cantidad > 1 ? 'xl:grid-cols-2' : ''} gap-4">${tarjetas}</div>`;
+
+                if (cantidad === 1) return `
+                    <div class="mb-6">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="w-1.5 h-6 rounded-full ${colorBarra}"></span>
+                            <h3 class="text-base font-black ${colorTexto} uppercase tracking-wide">${titulo}</h3>
+                        </div>
+                        ${cuerpo}
+                    </div>`;
+
+                const id = 'forense-sec-' + (++_secId);
+                return `
+                    <div class="mb-6">
+                        <button onclick="const e=document.getElementById('${id}');e.classList.toggle('hidden');this.querySelector('.chev').innerText=e.classList.contains('hidden')?'▾':'▴';"
+                            class="w-full flex items-center gap-2 mb-3 group">
+                            <span class="w-1.5 h-6 rounded-full ${colorBarra}"></span>
+                            <h3 class="text-base font-black ${colorTexto} uppercase tracking-wide">${titulo}</h3>
+                            <span class="text-sm font-bold text-slate-500 bg-slate-200 dark:bg-slate-700 px-2.5 py-0.5 rounded-full">${cantidad}</span>
+                            <span class="chev ml-auto text-lg ${colorTexto} group-hover:opacity-70">▴</span>
+                        </button>
+                        <div id="${id}">${cuerpo}</div>
+                    </div>`;
+            };
+
+            // ============================================================
+            // MODAL
+            // ============================================================
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[99999] flex justify-center items-center p-4 lg:p-8 animate-fade-in-up';
+            modal.className = 'fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[99999] flex justify-center items-center p-3 lg:p-6 animate-fade-in-up';
             modal.innerHTML = `
-                <div class="bg-slate-50 dark:bg-slate-900 w-full max-w-6xl h-[90vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10">
-                    
-                    <!-- HEADER MODERNO -->
+                <div class="bg-slate-100 dark:bg-slate-900 w-full max-w-[1700px] h-[93vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden ring-1 ring-white/10">
+
+                    <!-- CABECERA -->
                     <div class="bg-white dark:bg-slate-800 px-8 py-5 flex justify-between items-center shrink-0 z-10 shadow-sm">
                         <div class="flex items-center gap-4">
-                            <div class="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                            <div class="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
                             </div>
                             <div>
-                                <h2 class="text-xl font-black text-slate-800 dark:text-white tracking-tight">Timeline de Transacción</h2>
+                                <h2 class="text-2xl font-black text-slate-800 dark:text-white tracking-tight">Trazabilidad de la Transacción</h2>
                                 <div class="flex items-center gap-2 mt-1">
-                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-2.5 py-1 rounded-lg text-xs font-mono font-bold">Folio: ${row.Folio}</span>
-                                    <span class="text-slate-400 text-xs font-medium">📅 ${row.FechaFolio}</span>
+                                    <span class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-1 rounded-lg text-sm font-mono font-bold">Folio: ${row.Folio}</span>
+                                    <span class="text-slate-500 text-sm font-medium">${row.FechaFolio}</span>
                                 </div>
                             </div>
                         </div>
-                        <button class="text-slate-400 hover:text-slate-700 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 w-9 h-9 rounded-full flex items-center justify-center transition-colors" onclick="this.closest('.fixed').remove()">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </button>
+                        <button onclick="this.closest('.fixed').remove()" class="w-11 h-11 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/40 transition-colors flex items-center justify-center text-xl font-bold shrink-0">✕</button>
                     </div>
 
-                    <!-- TIMELINE INDICATOR -->
-                    <div class="px-8 py-3 bg-slate-100 dark:bg-slate-800/50 flex justify-between items-center text-xs font-black tracking-widest uppercase text-slate-400 shrink-0">
-                        <div class="flex-1 text-center text-purple-600 dark:text-purple-400">1. Origen Interno (TSD)</div>
-                        <div class="text-slate-300 dark:text-slate-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></div>
-                        <div class="flex-1 text-center text-blue-600 dark:text-blue-400">2. Procesamiento Adquirente (Banco)</div>
-                        <div class="text-slate-300 dark:text-slate-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></div>
-                        <div class="flex-1 text-center text-teal-600 dark:text-teal-400">3. Aterrizaje en Cuenta (Depósito)</div>
+                    <!-- CUERPO -->
+                    <div class="flex-1 overflow-y-auto px-8 py-6">
+                        ${cintaFlujo}
+                        ${seccion('1 · Origen Interno (TSD)', htmlTSD, data.tsd.length, 'text-purple-600 dark:text-purple-400', 'bg-purple-500')}
+                        ${seccion('2 · Procesamiento Adquirente (Banco)', htmlDetallado, data.detallado.length, 'text-blue-600 dark:text-blue-400', 'bg-blue-500')}
+                        ${seccion('3 · Aterrizaje en Cuenta (Depósitos)', htmlPagado, data.pagado.length, 'text-emerald-600 dark:text-emerald-400', 'bg-emerald-500')}
                     </div>
 
-                    <!-- 3 COLUMNAS -->
-                    <div class="flex-1 flex overflow-hidden p-6 gap-6 relative">
-                        <!-- Conectores de fondo -->
-                        <div class="absolute top-1/2 left-[33%] w-6 border-t-2 border-dashed border-slate-300 dark:border-slate-600 -translate-y-1/2 z-0"></div>
-                        <div class="absolute top-1/2 left-[66%] w-6 border-t-2 border-dashed border-slate-300 dark:border-slate-600 -translate-y-1/2 z-0"></div>
-
-                        <!-- COLUMNA 1: TSD -->
-                        <div class="flex-1 flex flex-col overflow-hidden z-10">
-                            <div class="flex-1 overflow-y-auto space-y-4 pr-3 custom-scrollbar">${htmlTSD}</div>
-                        </div>
-
-                        <!-- COLUMNA 2: Detallado -->
-                        <div class="flex-1 flex flex-col overflow-hidden z-10">
-                            <div class="flex-1 overflow-y-auto space-y-4 pr-3 custom-scrollbar">${htmlDetallado}</div>
-                        </div>
-
-                        <!-- COLUMNA 3: Pagado -->
-                        <div class="flex-1 flex flex-col overflow-hidden z-10">
-                            <div class="flex-1 overflow-y-auto space-y-4 pr-3 custom-scrollbar">${htmlPagado}</div>
-                        </div>
-                    </div>
-                    
-                    <!-- FOOTER AUDITORÍA -->
-                    <div class="bg-white dark:bg-slate-800 px-8 py-4 shrink-0 flex items-center justify-between border-t border-slate-200 dark:border-slate-700">
+                    <!-- PIE -->
+                    <div class="bg-white dark:bg-slate-800 px-8 py-4 flex flex-wrap justify-between items-center gap-3 shrink-0 border-t border-slate-200 dark:border-slate-700">
                         <div class="flex items-center gap-3">
-                            <span class="flex items-center justify-center w-7 h-7 rounded-full bg-green-100 text-green-600 text-base">✓</span>
-                            <span class="text-sm font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Resolución: <span class="text-slate-900 dark:text-white">${row.TipoCruce.tipo}</span></span>
+                            <span class="w-9 h-9 rounded-full bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 flex items-center justify-center font-bold">✓</span>
+                            <span class="text-base font-black text-slate-700 dark:text-slate-200 uppercase tracking-wide">Resolución: ${row.TipoCruce.tipo || 'Manual'}</span>
                         </div>
-                        <div class="text-sm text-slate-500 italic max-w-xl truncate" title="${row.TipoCruce.justificacion}">
-                            ${row.TipoCruce.justificacion ? `"${row.TipoCruce.justificacion}"` : 'Sin justificación registrada'}
+                        <div class="text-sm text-slate-500 italic max-w-2xl truncate" title="${row.TipoCruce.justificacion || ''}">
+                            ${row.TipoCruce.justificacion ? '"' + row.TipoCruce.justificacion + '"' : 'Sin justificación registrada'}
                         </div>
                     </div>
                 </div>
-
-                <style>
-                    /* Custom scrollbar para las columnas */
-                    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-                    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                    .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 6px; }
-                    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
-                    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
-                    .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
-                </style>
-                <script>
-                    window.showForenseEvidence = function(b64) {
-                        const overlay = document.createElement('div');
-                        overlay.className = 'fixed inset-0 z-[999999] bg-slate-900/90 backdrop-blur-md flex justify-center items-center p-4 opacity-0 transition-opacity duration-300';
-                        overlay.innerHTML = \`
-                            <div class="bg-white dark:bg-slate-800 p-2 rounded-xl shadow-2xl relative max-w-5xl w-full flex flex-col transform scale-95 transition-transform duration-300">
-                                <div class="flex justify-between items-center p-3 mb-2 border-b border-slate-200 dark:border-slate-700">
-                                    <h3 class="font-bold text-slate-800 dark:text-white flex items-center gap-2"><span class="text-blue-500">🖼️</span> Evidencia del Ajuste Manual</h3>
-                                    <button onclick="this.closest('.fixed').remove()" class="text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg p-1.5 transition-colors">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                                    </button>
-                                </div>
-                                <div class="overflow-auto flex justify-center items-center bg-slate-100 dark:bg-slate-900 rounded-lg p-2" style="max-height: 80vh;">
-                                    <img src="\${b64}" class="max-w-full h-auto object-contain rounded">
-                                </div>
-                            </div>
-                        \`;
-                        document.body.appendChild(overlay);
-                        requestAnimationFrame(() => {
-                            overlay.classList.remove('opacity-0');
-                            overlay.querySelector('div').classList.remove('scale-95');
-                        });
-                    };
-                </script>
             `;
             
             document.body.appendChild(modal);
