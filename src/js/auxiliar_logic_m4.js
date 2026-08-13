@@ -2642,11 +2642,17 @@ window.AuxiliarLogic = {
                             </div>
                         </div>
                         ${d.EvidenciaB64 ? `
-                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-center">
-                            <button onclick="window.showForenseEvidence(this.getAttribute('data-img'))" data-img="${d.EvidenciaB64}" class="w-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-3 py-2 rounded-lg text-xs font-bold border border-blue-200 dark:border-blue-800 flex items-center justify-center gap-2 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> 
-                                Ver Evidencia Visual del Ajuste
-                            </button>
+                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700">
+                            <p class="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                Evidencia del Ajuste
+                            </p>
+                            <div class="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white">
+                                <img src="${d.EvidenciaB64.startsWith('data:') ? d.EvidenciaB64 : 'data:image/png;base64,' + d.EvidenciaB64}"
+                                     alt="Evidencia del ajuste"
+                                     class="w-full h-auto block"
+                                     style="image-rendering:-webkit-optimize-contrast;">
+                            </div>
                         </div>` : ''}
                     </div>
                 </div>`;
