@@ -12,7 +12,15 @@ try {
     $pdo = Database::connect();
     
     // 1. LADO DERECHO: TSD
-    $stmtT = $pdo->prepare("SELECT m.FechaTransaccion, m.MontoBruto, t.* FROM Tbl_Transacciones_Maestra m LEFT JOIN Tbl_Detalle_TSD t ON m.IdTransaccion = t.IdTransaccion WHERE m.IdMatchTSD = ? AND m.Banco = 'TSD'");
+    $stmtT = $pdo->prepare("
+        SELECT m.FechaTransaccion, m.MontoBruto, m.MontoNeto, m.Estado, m.IdCierre AS FolioMaestra,
+               m.Autorizacion AS AuthMaestra, m.Tarjeta AS TarjetaMaestra, m.DiasAntiguedad,
+               m.ColorEtiqueta, m.NotaUsuario, m.TipoCruceTSD, m.HashUnico, m.ArchivoOrigen,
+               t.*
+        FROM Tbl_Transacciones_Maestra m
+        LEFT JOIN Tbl_Detalle_TSD t ON m.IdTransaccion = t.IdTransaccion
+        WHERE m.IdMatchTSD = ? AND m.Banco = 'TSD'
+    ");
     $stmtT->execute([$id]);
     
     // 2. CENTRO: Detallados (Bancos)

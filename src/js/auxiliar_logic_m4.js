@@ -2088,7 +2088,7 @@ window.AuxiliarLogic = {
                             <div><b>Sucursal:</b> \${t.Sucursal || '-'} (\${t.SucursalCod || '-'})</div>
                             <div class="col-span-2 truncate" title="\${t.RecibidoPor}"><b>Agente:</b> \${t.RecibidoPor || '-'}</div>
                             <div class="col-span-2 border-t border-slate-200 dark:border-slate-700 mt-1 pt-1">
-                                <b class="text-green-600 dark:text-green-400">Monto Origen USD:</b> $\${t.MontoUSD || 0} <span class="text-slate-400 ml-2">(T.C. Aplicado: ₡\${t.TC || 1})</span>
+                                <b class="text-green-600 dark:text-green-400">Monto Origen USD:</b> $\${t.MontoUSD || 0} <span class="text-slate-400 ml-2">(T.C. Aplicado: ₡\${t.TipoCambio || 1})</span>
                             </div>
                         </div>\`;
                     } else {
@@ -2500,8 +2500,8 @@ window.AuxiliarLogic = {
             const cop = (valor, clase) => {
                 const v = (valor === null || valor === undefined || valor === '') ? '' : String(valor).trim();
                 if (!v) return '<span class="text-slate-400">-</span>';
-                return `<span onclick="window.copiarForense('${v.replace(/'/g, "\\'")}', this)" title="Clic para copiar"
-                    class="${clase || 'font-mono'} cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors inline-flex items-center gap-1 group">
+                return `<span onclick="window.AuxiliarLogic.copiarForense('${v.replace(/'/g, "\\'")}', this)" title="Clic para copiar"
+                    class="${clase || 'font-mono'} cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors inline-flex items-center gap-1 group"> 
                     ${v}${icoCopy}</span>`;
             };
 
@@ -2538,7 +2538,7 @@ window.AuxiliarLogic = {
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <p class="text-xs font-bold text-purple-500 uppercase tracking-wider mb-1">Contrato TSD</p>
-                            <h4 class="font-black text-slate-800 dark:text-white text-lg cursor-pointer hover:text-purple-600 dark:hover:text-purple-400 transition-colors inline-flex items-center gap-1.5 group" onclick="window.copiarForense('${(t.Contrato||'').replace(/'/g, "\\'")}', this)" title="Clic para copiar el contrato">${t.Contrato || 'S/D'}${icoCopy}</h4>
+                            <h4 class="font-black text-slate-800 dark:text-white text-lg cursor-pointer hover:text-purple-600 dark:hover:text-purple-400 transition-colors inline-flex items-center gap-1.5 group" onclick="window.AuxiliarLogic.copiarForense('${(t.Contrato||'').replace(/'/g, "\\'")}', this)" title="Clic para copiar el contrato">${t.Contrato || 'S/D'}${icoCopy}</h4>
                         </div>
                         <div class="text-right">
                             <span class="font-black text-2xl ${monto < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">${fmt(monto)}</span>
