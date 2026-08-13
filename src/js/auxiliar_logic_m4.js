@@ -2484,6 +2484,27 @@ window.AuxiliarLogic = {
 
             // Bloque desplegable con TODOS los campos que devuelve el endpoint.
             // Se genera solo: cualquier columna nueva del SELECT aparece sin tocar el JS.
+            // Ícono de copiar (mismo del Módulo 1: aparece al pasar el cursor)
+            const icoCopy = '<svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>';
+
+            // CHIP copiable (para las cabeceras con etiqueta)
+            const copiable = (etiqueta, valor, clase) => {
+                const v = (valor === null || valor === undefined || valor === '') ? '' : String(valor).trim();
+                if (!v) return `<span class="bg-slate-100 dark:bg-slate-900 text-slate-400 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">${etiqueta}: -</span>`;
+                return `<span onclick="window.copiarForense('${v.replace(/'/g, "\\'")}', this)" title="Clic para copiar"
+                    class="${clase || 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300'} px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all select-none flex items-center gap-1 group">
+                    ${etiqueta}: <b class="text-slate-800 dark:text-white">${v}</b>${icoCopy}</span>`;
+            };
+
+            // VALOR copiable (para las filas del desglose, sin fondo)
+            const cop = (valor, clase) => {
+                const v = (valor === null || valor === undefined || valor === '') ? '' : String(valor).trim();
+                if (!v) return '<span class="text-slate-400">-</span>';
+                return `<span onclick="window.copiarForense('${v.replace(/'/g, "\\'")}', this)" title="Clic para copiar"
+                    class="${clase || 'font-mono'} cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors inline-flex items-center gap-1 group">
+                    ${v}${icoCopy}</span>`;
+            };
+
             let _detId = 0;
             const bloqueCompleto = (obj, color) => {
                 const omitir = ['EvidenciaB64'];
@@ -2517,7 +2538,7 @@ window.AuxiliarLogic = {
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <p class="text-xs font-bold text-purple-500 uppercase tracking-wider mb-1">Contrato TSD</p>
-                            <h4 class="font-black text-slate-800 dark:text-white text-lg">${t.Contrato || 'S/D'}</h4>
+                            <h4 class="font-black text-slate-800 dark:text-white text-lg cursor-pointer hover:text-purple-600 dark:hover:text-purple-400 transition-colors inline-flex items-center gap-1.5 group" onclick="window.copiarForense('${(t.Contrato||'').replace(/'/g, "\\'")}', this)" title="Clic para copiar el contrato">${t.Contrato || 'S/D'}${icoCopy}</h4>
                         </div>
                         <div class="text-right">
                             <span class="font-black text-2xl ${monto < 0 ? 'text-red-500':'text-slate-800 dark:text-white'}">${fmt(monto)}</span>
@@ -2532,10 +2553,19 @@ window.AuxiliarLogic = {
 
                     <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-400 space-y-3 border border-slate-100 dark:border-slate-700/50">
                         <p class="text-xs font-bold text-slate-500 uppercase mb-2">Detalles Operativos</p>
-                        <div class="flex justify-between"><span class="font-medium">Recibo/Detalle:</span> <span class="font-bold text-orange-600 truncate max-w-[150px]" title="${t.Recibo_Detalle}">${t.Recibo_Detalle || 'S/D'}</span></div>
-                        <div class="flex justify-between"><span class="font-medium">Fecha Transacción:</span> <span class="font-mono">${t.FechaPago || t.FechaTransaccion || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Recibo/Detalle:</span> ${cop(t.Recibo_Detalle, 'font-bold text-orange-600')}</div>
+                        <div class="flex justify-between"><span class="font-medium">Fecha Pago:</span> ${cop(t.FechaPago)}</div>
+                        <div class="flex justify-between"><span class="font-medium">Fecha Transacción:</span> ${cop(t.FechaTransaccion)}</div>
+                        <div class="flex justify-between"><span class="font-medium">Autorización:</span> ${cop(t.Autorizacion)}</div>
+                        <div class="flex justify-between"><span class="font-medium">Tarjeta:</span> ${cop(t.Tarjeta_Ultimos4)}</div>
                         <div class="flex justify-between"><span class="font-medium">Agente:</span> <span class="truncate max-w-[150px]" title="${t.RecibidoPor}">${t.RecibidoPor || '-'}</span></div>
                         <div class="flex justify-between"><span class="font-medium">Sucursal:</span> <span>${t.SucursalNombre || '-'} (${t.SucursalCod || '-'})</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Tipo Tarjeta:</span> <span class="font-bold">${t.TipoTarjeta || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">ICD:</span> <span class="font-mono">${t.ICD || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Centro de Costo:</span> <span class="font-mono font-bold text-purple-600 dark:text-purple-400">${t.CentroCosto || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Monto CRC:</span> <span class="font-mono">${fmt(t.MontoCRC)}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Folio Cierre:</span> <span class="font-mono text-[11px]">${t.IdCierre || '-'}</span></div>
+                        <div class="flex justify-between"><span class="font-medium">Id Transacción:</span> <span class="font-mono text-[10px] break-all">${t.IdTransaccion || '-'}</span></div>
                         <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between">
                             <span class="font-bold text-blue-600 dark:text-blue-400">Monto Origen USD:</span>
                             <span class="font-mono font-bold text-base">$${t.MontoUSD || 0} <span class="text-xs font-normal text-slate-400">(TC: ₡${t.TipoCambio || 1})</span></span>
@@ -2568,8 +2598,10 @@ window.AuxiliarLogic = {
                     <p class="text-sm text-slate-600 dark:text-slate-300 mb-4 truncate" title="${isBac ? d.NOMBRECOMERCIO : d.Nombre}">🏢 ${isBac ? d.NOMBRECOMERCIO : d.Nombre || '-'}</p>
                     
                     <div class="flex flex-wrap gap-2 mb-4">
-                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">Auth: <b class="text-slate-800 dark:text-white">${d.Autorizacion||'-'}</b></span>
-                        <span class="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-md text-sm font-mono border border-slate-200 dark:border-slate-700">Tarj: ****${d.Tarjeta ? d.Tarjeta.slice(-4) : 'S/D'}</span>
+                        ${copiable('Auth', d.Autorizacion)}
+                        ${copiable('Tarj', d.Tarjeta ? d.Tarjeta.slice(-4) : '')}
+                        ${copiable(isBac ? 'Afiliado' : 'MerID', isBac ? d.NUMERO_AFILIADO : d.MerID)}
+                        ${copiable('Terminal', isBac ? d.BacTerm : d.ScoTerm)}
                     </div>
 
                     <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-400 space-y-3 border border-slate-100 dark:border-slate-700/50">
@@ -2582,9 +2614,32 @@ window.AuxiliarLogic = {
                             <span class="font-bold text-green-600 dark:text-green-500">Monto Neto a Depositar:</span>
                             <span class="font-mono font-black text-lg text-green-600 dark:text-green-500">${fmt(neto)}</span>
                         </div>
-                        <div class="pt-3 mt-3 flex justify-between text-xs text-slate-400">
-                            <span>Afiliado: ${isBac ? d.NUMERO_AFILIADO : d.MerID}</span>
-                            <span>Terminal: ${isBac ? d.BacTerm : d.ScoTerm}</span>
+                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                            <p class="text-xs font-bold text-slate-500 uppercase">Fechas del Banco</p>
+                            ${isBac ? `
+                            <div class="flex justify-between"><span class="font-medium">Fecha Transacción:</span> ${copiable('', d.BacFechaTrx, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">Cierre Datáfono:</span> ${copiable('', d.BacFechaCierreDat, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">Fecha de Pago:</span> ${copiable('', d.BacFechaPago, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">N° Liquidación:</span> ${copiable('', d.BacLiquidacion, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">Tipo Tarjeta:</span> <span class="font-bold">${d.BacTipoTarjeta || '-'}</span></div>
+                            <div class="flex justify-between"><span class="font-medium">ACI:</span> <span class="font-mono text-red-500">${fmt(d.AJUSTE_COMISION_INTERNACIONAL)}</span></div>
+                            <div class="flex justify-between"><span class="font-medium">Centro de Costo:</span> <span class="font-mono font-bold text-blue-600 dark:text-blue-400">${d.BacCentroCosto || '-'}</span></div>
+                            ` : `
+                            <div class="flex justify-between"><span class="font-medium">Fecha de Pago:</span> ${copiable('', d.ScoFechaPago, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">Fecha Lote/Ajuste:</span> ${copiable('', d.ScoFechaLote, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">N° Lote/Ajuste:</span> ${copiable('', d.ScoNumLote, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">N° Pago (PCA):</span> ${copiable('', d.ScoNumPago, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
+                            <div class="flex justify-between"><span class="font-medium">Moneda:</span> <span class="font-bold">${d.ScoMoneda || '-'}</span></div>
+                            <div class="flex justify-between"><span class="font-medium">Transacción:</span> <span>${d.ScoTransaccion || '-'}</span></div>
+                            <div class="flex justify-between"><span class="font-medium">Estatus:</span> <span>${d.ScoEstatus || '-'}</span></div>
+                            <div class="flex justify-between"><span class="font-medium">% Comisión:</span> <span class="font-mono">${d.ScoPorcCom || 0}</span></div>
+                            <div class="flex justify-between"><span class="font-medium">Centro de Costo:</span> <span class="font-mono font-bold text-blue-600 dark:text-blue-400">${d.ScoCentroCosto || '-'}</span></div>
+                            ${d.ScoMontoDolar ? `<div class="flex justify-between bg-violet-50 dark:bg-violet-900/20 -mx-2 px-2 py-1 rounded"><span class="font-bold text-violet-700 dark:text-violet-300">🔗 Link de pago (USD):</span> <span class="font-mono font-bold text-violet-700 dark:text-violet-300">$${d.ScoMontoDolar}</span></div>` : ''}
+                            `}
+                            <div class="flex justify-between pt-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-400">
+                                <span>Folio: ${d.IdCierre || '-'}</span>
+                                <span>Días: ${d.DiasAntiguedad ?? '-'}</span>
+                            </div>
                         </div>
                         ${d.EvidenciaB64 ? `
                         <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-center">
@@ -2626,7 +2681,7 @@ window.AuxiliarLogic = {
                     <details class="[&::-webkit-details-marker]:hidden cursor-pointer">
                         <summary class="text-sm font-bold text-slate-400 hover:text-teal-600 transition-colors list-none flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                            Descripción del Extracto
+                            grep -n "Abono Real" -B 8 -A 12 src/js/auxiliar_logic_m4.js | head -30
                         </summary>
                         <div class="mt-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-500 dark:text-slate-400 italic border border-slate-100 dark:border-slate-700/50">
                             "${desc || 'Sin descripción en el extracto bancario'}"
@@ -2740,6 +2795,24 @@ window.AuxiliarLogic = {
                             overlay.classList.remove('opacity-0');
                             overlay.querySelector('div').classList.remove('scale-95');
                         });
+                    };
+                    // Copiado al portapapeles con el mismo feedback visual del Módulo 1
+                    window.copiarForense = function (valor, element) {
+                        const exito = () => {
+                            const originalHtml = element.innerHTML;
+                            element.innerHTML = `<span class="text-green-500 dark:text-green-400 flex items-center gap-1">✅ Copiado</span>`;
+                            setTimeout(() => { element.innerHTML = originalHtml; }, 1500);
+                        };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(valor).then(exito).catch(err => console.error('Error al copiar:', err));
+                        } else {
+                            // Respaldo: navigator.clipboard sólo existe en HTTPS o localhost
+                            const ta = document.createElement('textarea');
+                            ta.value = valor; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                            document.body.appendChild(ta); ta.select();
+                            try { document.execCommand('copy'); exito(); } catch (e) { console.error('Error al copiar:', e); }
+                            document.body.removeChild(ta);
+                        }
                     };
                 </script>
             `;
