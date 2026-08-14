@@ -2484,6 +2484,27 @@ window.AuxiliarLogic = {
 
             // Bloque desplegable con TODOS los campos que devuelve el endpoint.
             // Se genera solo: cualquier columna nueva del SELECT aparece sin tocar el JS.
+            // Hoja de datos: rejilla de columnas con línea guía punteada.
+            // Sin esto, en una tarjeta de 1600px la etiqueta y el valor quedan en
+            // extremos opuestos y el ojo pierde el renglón.
+            if (!document.getElementById('forense-hoja-css')) {
+                const stH = document.createElement('style');
+                stH.id = 'forense-hoja-css';
+                stH.textContent = `
+                .hoja-datos { display:grid; grid-template-columns:1fr; column-gap:2.5rem; }
+                @media (min-width:1024px){ .hoja-datos{ grid-template-columns:repeat(2,1fr); } }
+                @media (min-width:1500px){ .hoja-datos{ grid-template-columns:repeat(3,1fr); } }
+                .hoja-datos > div {
+                    display:flex; align-items:baseline; gap:.5rem;
+                    padding:.45rem 0; border-bottom:1px dotted rgba(100,116,139,.28);
+                }
+                .hoja-datos > div > span:first-child { flex:none; }
+                .hoja-datos > div > *:last-child { margin-left:auto; text-align:right; }
+                .dark .hoja-datos > div { border-bottom-color:rgba(148,163,184,.22); }
+                `;
+                document.head.appendChild(stH);
+            }
+
             // Ícono de copiar (mismo del Módulo 1: aparece al pasar el cursor)
             const icoCopy = '<svg class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>';
 
@@ -2553,6 +2574,7 @@ window.AuxiliarLogic = {
 
                     <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-400 space-y-3 border border-slate-100 dark:border-slate-700/50">
                         <p class="text-xs font-bold text-slate-500 uppercase mb-2">Detalles Operativos</p>
+                        <div class="hoja-datos">
                         <div class="flex justify-between"><span class="font-medium">Recibo/Detalle:</span> ${cop(t.Recibo_Detalle, 'font-bold text-orange-600')}</div>
                         <div class="flex justify-between"><span class="font-medium">Fecha Pago:</span> ${cop(t.FechaPago)}</div>
                         <div class="flex justify-between"><span class="font-medium">Fecha Transacción:</span> ${cop(t.FechaTransaccion)}</div>
@@ -2606,6 +2628,7 @@ window.AuxiliarLogic = {
 
                     <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-400 space-y-3 border border-slate-100 dark:border-slate-700/50">
                         <p class="text-xs font-bold text-slate-500 uppercase mb-2">Desglose Financiero</p>
+                        <div class="hoja-datos">
                         <div class="flex justify-between"><span class="font-medium">Monto Bruto:</span> <span class="font-mono font-bold text-slate-800 dark:text-slate-200">${fmt(monto)}</span></div>
                         <div class="flex justify-between"><span class="font-medium">Comisión Banco:</span> <span class="font-mono text-red-500">${fmt(com)}</span></div>
                         <div class="flex justify-between"><span class="font-medium">Retención Ventas/IVA:</span> <span class="font-mono text-red-500">${fmt(rVenta)}</span></div>
