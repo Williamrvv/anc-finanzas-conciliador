@@ -2633,12 +2633,14 @@ window.AuxiliarLogic = {
                         <div class="flex justify-between"><span class="font-medium">Comisión Banco:</span> <span class="font-mono text-red-500">${fmt(com)}</span></div>
                         <div class="flex justify-between"><span class="font-medium">Retención Ventas/IVA:</span> <span class="font-mono text-red-500">${fmt(rVenta)}</span></div>
                         <div class="flex justify-between"><span class="font-medium">Retención Renta/ISR:</span> <span class="font-mono text-red-500">${fmt(rRenta)}</span></div>
+                        </div>
                         <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
                             <span class="font-bold text-green-600 dark:text-green-500">Monto Neto a Depositar:</span>
                             <span class="font-mono font-black text-lg text-green-600 dark:text-green-500">${fmt(neto)}</span>
                         </div>
-                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
-                            <p class="text-xs font-bold text-slate-500 uppercase">Fechas del Banco</p>
+                        <div class="pt-3 mt-3 border-t border-slate-200 dark:border-slate-700">
+                            <p class="text-xs font-bold text-slate-500 uppercase mb-2">Fechas del Banco</p>
+                            <div class="hoja-datos">
                             ${isBac ? `
                             <div class="flex justify-between"><span class="font-medium">Fecha Transacción:</span> ${copiable('', d.BacFechaTrx, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
                             <div class="flex justify-between"><span class="font-medium">Cierre Datáfono:</span> ${copiable('', d.BacFechaCierreDat, 'bg-transparent border-0 !px-0 !py-0 text-xs')}</div>
@@ -2659,7 +2661,8 @@ window.AuxiliarLogic = {
                             <div class="flex justify-between"><span class="font-medium">Centro de Costo:</span> <span class="font-mono font-bold text-blue-600 dark:text-blue-400">${d.ScoCentroCosto || '-'}</span></div>
                             ${d.ScoMontoDolar ? `<div class="flex justify-between bg-violet-50 dark:bg-violet-900/20 -mx-2 px-2 py-1 rounded"><span class="font-bold text-violet-700 dark:text-violet-300">🔗 Link de pago (USD):</span> <span class="font-mono font-bold text-violet-700 dark:text-violet-300">$${d.ScoMontoDolar}</span></div>` : ''}
                             `}
-                            <div class="flex justify-between pt-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-400">
+                            </div>
+                            <div class="flex justify-between pt-2 mt-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-400">
                                 <span>Folio: ${d.IdCierre || '-'}</span>
                                 <span>Días: ${d.DiasAntiguedad ?? '-'}</span>
                             </div>
@@ -2735,7 +2738,8 @@ window.AuxiliarLogic = {
             const difConcilia   = totTSD - totNetoBanco;
 
             const etapa = (n, titulo, monto, sub, registros, color) => `
-                <div class="flex-1 min-w-[220px] bg-white dark:bg-slate-800 rounded-2xl p-5 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm">
+                <div onclick="window.AuxiliarLogic.irAEtapa(${n})" title="Clic para ver el detalle de esta etapa"
+                     class="flex-1 min-w-[220px] bg-white dark:bg-slate-800 rounded-2xl p-5 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm cursor-pointer hover:ring-2 hover:ring-blue-400 hover:-translate-y-0.5 transition-all">
                     <div class="flex items-center gap-2 mb-3">
                         <span class="w-7 h-7 rounded-full ${color} text-white text-sm font-black flex items-center justify-center shrink-0">${n}</span>
                         <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">${titulo}</span>
@@ -2834,9 +2838,9 @@ window.AuxiliarLogic = {
                     <!-- CUERPO -->
                     <div class="flex-1 overflow-y-auto px-8 py-6">
                         ${cintaFlujo}
-                        ${seccion('1 · Origen Interno (TSD)', htmlTSD, data.tsd.length, 'text-purple-600 dark:text-purple-400', 'bg-purple-500')}
-                        ${seccion('2 · Procesamiento Adquirente (Banco)', htmlDetallado, data.detallado.length, 'text-blue-600 dark:text-blue-400', 'bg-blue-500')}
-                        ${seccion('3 · Aterrizaje en Cuenta (Depósitos)', htmlPagado, data.pagado.length, 'text-emerald-600 dark:text-emerald-400', 'bg-emerald-500')}
+                        <div id="forense-etapa-1" class="scroll-mt-4">${seccion('1 · Origen Interno (TSD)', htmlTSD, data.tsd.length, 'text-purple-600 dark:text-purple-400', 'bg-purple-500')}</div>
+                        <div id="forense-etapa-2" class="scroll-mt-4">${seccion('2 · Procesamiento Adquirente (Banco)', htmlDetallado, data.detallado.length, 'text-blue-600 dark:text-blue-400', 'bg-blue-500')}</div>
+                        <div id="forense-etapa-3" class="scroll-mt-4">${seccion('3 · Aterrizaje en Cuenta (Depósitos)', htmlPagado, data.pagado.length, 'text-emerald-600 dark:text-emerald-400', 'bg-emerald-500')}</div>
                     </div>
 
                     <!-- PIE -->
