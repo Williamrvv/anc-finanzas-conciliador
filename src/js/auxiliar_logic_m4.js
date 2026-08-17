@@ -2897,6 +2897,18 @@ window.AuxiliarLogic = {
     // Copiado al portapapeles con el mismo feedback visual del Módulo 1.
     // Es un MÉTODO del objeto (no una global dentro de un template), porque el
     // Timeline se inyecta en la página principal y sus onclick corren aquí.
+    // Baja suavemente a la etapa elegida desde la cinta de resumen del Timeline
+    irAEtapa: function(n) {
+        const destino = document.getElementById('forense-etapa-' + n);
+        if (!destino) return;
+        destino.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Realce breve para que el ojo encuentre dónde aterrizó
+        destino.style.transition = 'box-shadow .3s';
+        destino.style.boxShadow = '0 0 0 3px rgba(59,130,246,.45)';
+        destino.style.borderRadius = '1rem';
+        setTimeout(function() { destino.style.boxShadow = ''; }, 1400);
+    },
+
     copiarForense: function(valor, element) {
         var exito = function() {
             var originalHtml = element.innerHTML;
