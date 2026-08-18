@@ -58,27 +58,11 @@ try {
     $stmtD->execute([$id]);
     
     // 3. LADO IZQUIERDO: Depósitos.
-    //    BAC cruza UNO A UNO por número de liquidación, así que su IdMatch ya
-    //    apunta al depósito exacto. DAVIBANK agrupa por comercio (MerID), por lo
-    //    que el IdMatch abarca todo el lote del afiliado. Para acotarlo se usa
-    //    además la FECHA DE PAGO del detalle contra la fecha del movimiento.
-    $stmtFecha = $pdo->prepare("
-        SELECT TOP 1 COALESCE(
-                 TRY_CONVERT(date, b.FECHA_PAGO, 23), TRY_CONVERT(date, b.FECHA_PAGO, 103),
-                 TRY_CONVERT(date, s.Fecha_Pago, 23), TRY_CONVERT(date, s.Fecha_Pago, 103)
-               ) AS FechaPagoRef
-        FROM Tbl_Transacciones_Maestra m
-        LEFT JOIN Tbl_Detalle_BAC    b ON b.IdTransaccion = m.IdTransaccion
-        LEFT JOIN Tbl_Detalle_Scotia s ON s.IdTransaccion = m.IdTransaccion
-        WHERE m.IdMatchTSD = ? AND m.Banco <> 'TSD'
-          AND COALESCE(
-                 TRY_CONVERT(date, b.FECHA_PAGO, 23), TRY_CONVERT(date, b.FECHA_PAGO, 103),
-                 TRY_CONVERT(date, s.Fecha_Pago, 23), TRY_CONVERT(date, s.Fecha_Pago, 103)
-               ) IS NOT NULL
-    ");
-    $stmtFecha->execute([$id]);
-    $fechaPagoRef = $stmtFecha->fetchColumn();   // puede venir null
-
+    //    La maestra manda: el grupo lo define IdMatch. Dentro del grupo, el
+    //    depósito exacto se identifica por el número que viene EN LA DESCRIPCIÓN:
+    //      · Davibank -> "PCA 3897104 COMERCIO 91940101"  => contra Numero_Pago
+    //      · BAC      -> "AFI23341409 LIQ61850948827"     => contra NUMERO_LIQUIDACION
+    //    Nada se deduce por fecha ni por monto.
     $stmtP = $pdo->prepare("
         SELECT m.IdTransaccion, m.Banco, m.IdMatch, m.MontoBruto,
                pb.Referencia AS BacRef, pb.Fecha AS BacFecha, pb.Descripcion AS BacDesc, pb.Creditos AS BacCred,
@@ -94,21 +78,62 @@ try {
         WHERE m.Origen = 'PAGADO'
           AND m.IdMatch IN (SELECT IdMatch FROM Tbl_Transacciones_Maestra WHERE IdMatchTSD = :idm AND IdMatch IS NOT NULL)
           AND (
-                :fref IS NULL                      -- sin fecha de referencia: no se acota
-                OR m.Banco <> 'Davibank'           -- BAC ya viene uno a uno
-                OR COALESCE(
-                     TRY_CONVERT(date, ps.Fecha_Movimiento, 23),
-                     TRY_CONVERT(date, ps.Fecha_Movimiento, 103)
-                   ) = :fref2
+                -- DAVIBANK: número de PCA de la descripción contra Numero_Pago
+                ( ps.Descripcion IS NOT NULL AND CHARINDEX('PCA', ps.Descripcion) > 0
+                  AND LTRIM(RTRIM(SUBSTRING(
+                        ps.Descripcion,
+                        CHARINDEX('PCA', ps.Descripcion) + 4,
+                        ISNULL(NULLIF(CHARINDEX(' ', ps.Descripcion + ' ', CHARINDEX('PCA', ps.Descripcion) + 4), 0), LEN(ps.Descripcion) + 1)
+                            - (CHARINDEX('PCA', ps.Descripcion) + 4)
+                      ))) IN (
+                        SELECT LTRIM(RTRIM(s2.Numero_Pago))
+                        FROM Tbl_Transacciones_Maestra m2
+                        INNER JOIN Tbl_Detalle_Scotia s2 ON s2.IdTransaccion = m2.IdTransaccion
+                        WHERE m2.IdMatchTSD = :idm2 AND s2.Numero_Pago IS NOT NULL
+                      )
+                )
+                OR
+                -- BAC: número de liquidación de la descripción contra NUMERO_LIQUIDACION
+                ( pb.Descripcion IS NOT NULL AND CHARINDEX('LIQ', pb.Descripcion) > 0
+                  AND LTRIM(RTRIM(SUBSTRING(pb.Descripcion, CHARINDEX('LIQ', pb.Descripcion) + 3, 50))) IN (
+                        SELECT LTRIM(RTRIM(b2.NUMERO_LIQUIDACION))
+                        FROM Tbl_Transacciones_Maestra m2
+                        INNER JOIN Tbl_Detalle_BAC b2 ON b2.IdTransaccion = m2.IdTransaccion
+                        WHERE m2.IdMatchTSD = :idm3 AND b2.NUMERO_LIQUIDACION IS NOT NULL
+                      )
+                )
               )
     ");
-    $stmtP->execute([':idm' => $id, ':fref' => $fechaPagoRef, ':fref2' => $fechaPagoRef]);
+    $stmtP->execute([':idm' => $id, ':idm2' => $id, ':idm3' => $id]);
+
+    // Respaldo: si el texto de la descripción no tuviera el formato esperado, se
+    // devuelven todos los depósitos del grupo antes que dejar la etapa vacía.
+    $filasP = $stmtP->fetchAll(PDO::FETCH_ASSOC);
+    if (count($filasP) === 0) {
+        $stmtPAll = $pdo->prepare("
+            SELECT m.IdTransaccion, m.Banco, m.IdMatch, m.MontoBruto,
+                   pb.Referencia AS BacRef, pb.Fecha AS BacFecha, pb.Descripcion AS BacDesc, pb.Creditos AS BacCred,
+                   pb.Codigo AS BacCodigo, pb.Debitos AS BacDebitos, pb.Balance AS BacBalance, pb.IdCierre AS BacIdCierre,
+                   ps.Numero_Referencia AS ScoRef, ps.Fecha_Movimiento AS ScoFecha, ps.Descripcion AS ScoDesc,
+                   ps.Monto AS ScoMonto, ps.Credito_Debito, ps.Saldo AS ScoSaldo,
+                   ps.IdCierre AS ScoIdCierre, ps.Monto_Dolar AS ScoMontoDolarPag,
+                   (SELECT COUNT(*) FROM Tbl_Transacciones_Maestra mv
+                     WHERE mv.IdMatch = m.IdMatch AND mv.Origen <> 'PAGADO' AND mv.Banco <> 'TSD') AS VentasDelGrupo
+            FROM Tbl_Transacciones_Maestra m
+            LEFT JOIN Tbl_Pagado_BAC    pb ON m.IdTransaccion = pb.IdTransaccion
+            LEFT JOIN Tbl_Pagado_Scotia ps ON m.IdTransaccion = ps.IdTransaccion
+            WHERE m.Origen = 'PAGADO'
+              AND m.IdMatch IN (SELECT IdMatch FROM Tbl_Transacciones_Maestra WHERE IdMatchTSD = :idm AND IdMatch IS NOT NULL)
+        ");
+        $stmtPAll->execute([':idm' => $id]);
+        $filasP = $stmtPAll->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     echo json_encode([
         'success' => true, 
         'tsd' => $stmtT->fetchAll(PDO::FETCH_ASSOC), 
         'detallado' => $stmtD->fetchAll(PDO::FETCH_ASSOC), 
-        'pagado' => $stmtP->fetchAll(PDO::FETCH_ASSOC)
+        'pagado' => $filasP
     ]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

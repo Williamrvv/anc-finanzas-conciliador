@@ -18,7 +18,16 @@ $camposGlobales = [
     'tarjeta'     => "COALESCE(t2.Tarjeta_Ultimos4, b2.NUMERO_DE_TARJETA, s2.Numero_Tarjeta, m2.Tarjeta)",
     'cliente'     => "t2.Cliente",
     'banco'       => "m2.Banco",
-    'liquidacion' => "COALESCE(CAST(b2.NUMERO_LIQUIDACION AS VARCHAR(50)), CAST(s2.Numero_Pago AS VARCHAR(50)))"
+    // Busca el número de referencia bancaria en AMBAS puntas y en los dos bancos:
+    //   · en el DETALLADO: NUMERO_LIQUIDACION (BAC) y Numero_Pago (Davibank)
+    //   · en el PAGADO: incrustado en la descripción, "AFI... LIQ618509488" o
+    //     "PCA 3897104 COMERCIO 919401". Por eso se compara con LIKE contra el texto.
+    'liquidacion' => "CONCAT(
+            ISNULL(CAST(b2.NUMERO_LIQUIDACION AS VARCHAR(50)), ''), ' ',
+            ISNULL(CAST(s2.Numero_Pago AS VARCHAR(50)), ''), ' ',
+            ISNULL(CAST(pb2.Descripcion AS VARCHAR(255)), ''), ' ',
+            ISNULL(CAST(ps2.Descripcion AS VARCHAR(255)), '')
+        )"
 ];
 $modoGlobal = $field !== null && isset($camposGlobales[$field]) && $term !== '';
 if ($modoGlobal && mb_strlen($term) < 3) {
@@ -94,7 +103,8 @@ try {
             LEFT JOIN Tbl_Detalle_BAC b2 ON m2.IdTransaccion = b2.IdTransaccion AND m2.Banco = 'BAC'
             LEFT JOIN Tbl_Detalle_Scotia s2 ON m2.IdTransaccion = s2.IdTransaccion AND m2.Banco = 'Davibank'
             WHERE m2.IdMatchTSD IS NOT NULL
-              AND {$camposGlobales[$field]} LIKE :term
+                LEFT JOIN Tbl_Pagado_BAC    pb2 ON pb2.IdTransaccion = m2.IdTransaccion
+                LEFT JOIN Tbl_Pagado_Scotia ps2 ON ps2.IdTransaccion = m2.IdTransaccion
             GROUP BY m2.IdMatchTSD
             ORDER BY MAX(m2.FechaRegistro) DESC
           )";

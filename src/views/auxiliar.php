@@ -126,7 +126,7 @@
                     <option value="tarjeta">Tarjeta</option>
                     <option value="cliente">Cliente</option>
                     <option value="banco">Banco</option>
-                    <option value="liquidacion">Liquidación</option>
+                    <option value="liquidacion">Liquidación / PCA</option>
                 </select>
                 <div class="relative">
                     <input type="text" id="search-m4-historial" placeholder="Buscar en todo el historial..." class="pl-8 pr-4 py-1.5 text-xs bg-transparent outline-none w-64 text-slate-700 dark:text-white">
