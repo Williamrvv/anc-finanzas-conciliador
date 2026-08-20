@@ -2371,6 +2371,60 @@ window.AuxiliarLogic = {
     // --------------------------------------------------------
     // MOTOR DE GUARDADO A BASE DE DATOS (M4)
     // --------------------------------------------------------
+    pedirFechaConciliacion: async function() {
+        const ahora = new Date();
+        const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+
+        const html = `
+        <div class="space-y-3 text-left whitespace-normal" id="fc-m4-form">
+            <p class="text-sm text-slate-600 dark:text-slate-300">
+                Indique la <b>fecha contable</b> con la que se registrará esta conciliación.
+            </p>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha de conciliación *</label>
+                <input type="date" id="fc-m4-fecha" value="${hoy}" max="${hoy}"
+                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                Se sugiere el día en curso. Puede fecharse hacia atrás si el movimiento
+                corresponde a días anteriores, pero no hacia adelante.
+            </p>
+            <div id="fc-m4-error" class="hidden text-[11px] text-red-600 font-bold"></div>
+            <button id="fc-m4-ok" class="w-full bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                Confirmar y guardar
+            </button>
+        </div>`;
+
+        return new Promise((resolve) => {
+            window.SysUI._createModal('Fecha de la conciliación', html, [
+                { text: 'Cancelar', value: false, class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors' }
+            ], 'info', 'max-w-md').then(() => resolve(null));
+
+            const btn = document.getElementById('fc-m4-ok');
+            if (btn) btn.addEventListener('click', function () {
+                const val = (document.getElementById('fc-m4-fecha') || {}).value || '';
+                const err = document.getElementById('fc-m4-error');
+
+                if (!val) {
+                    err.innerText = 'Debe indicar una fecha.';
+                    err.classList.remove('hidden');
+                    return;
+                }
+
+                if (val > hoy) {
+                    err.innerText = 'No se permite una fecha futura.';
+                    err.classList.remove('hidden');
+                    return;
+                }
+
+                const form = document.getElementById('fc-m4-form');
+                const overlay = form ? form.closest('.fixed') : null;
+                if (overlay) overlay.remove();
+                resolve(val);
+            });
+        });
+    },
+
     saveAprobaciones: async function() {
         if (!this.currentSugData || this.currentSugData.length === 0) {
             return window.SysUI.alert("No hay ajustes manuales en la tabla superior para aprobar.\n\nHaga doble clic en una sugerencia de la tabla inferior para auditarla y aprobarla primero.", "Tabla Vacía", "warning");
@@ -2385,6 +2439,9 @@ window.AuxiliarLogic = {
         );
 
         if (!confirmado) return;
+
+        const fechaConciliacion = await this.pedirFechaConciliacion();
+        if (!fechaConciliacion) return;
 
         // Construcción del Payload (Solo los aprobados)
         const payloadAprobados = [];
@@ -2451,7 +2508,7 @@ window.AuxiliarLogic = {
             const res = await fetch('api/save_auxiliar_m4.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aprobados: payloadAprobados })
+                body: JSON.stringify({ aprobados: payloadAprobados, fechaConciliacion: fechaConciliacion })
             });
             const data = await res.json();
 

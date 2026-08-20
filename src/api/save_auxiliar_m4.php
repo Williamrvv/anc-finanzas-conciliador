@@ -16,16 +16,28 @@ if (!$input || !isset($input['aprobados'])) {
 
 $aprobados = $input['aprobados'];
 
+$fechaConcil = trim($input['fechaConciliacion'] ?? '');
+
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaConcil)) {
+    echo json_encode(['success' => false, 'error' => 'Fecha de conciliación inválida']); exit;
+}
+
+[$anio, $mes, $dia] = array_map('intval', explode('-', $fechaConcil));
+
+if (!checkdate($mes, $dia, $anio) || $fechaConcil > date('Y-m-d')) {
+    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación no es válida o está en el futuro']); exit;
+}
+
 try {
     $pdo = Database::connect();
     $pdo->beginTransaction(); // Iniciamos el Escudo Transaccional
 
     // 1. Preparamos las consultas de UPDATE (El dato ya existe, solo sellamos el Match)
     // TSD a CONCILIADO
-    $stmtUpdateTSD = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = 'CONCILIADO', IdMatchTSD = ?, TipoCruceTSD = ? WHERE IdTransaccion = ? AND Banco = 'TSD'");
-    
+    $stmtUpdateTSD = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = 'CONCILIADO', IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = GETDATE() WHERE IdTransaccion = ? AND Banco = 'TSD'");
+
     // Bancos (Solo le inyectamos el IdMatchTSD a la fila específica enviada)
-    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ? WHERE IdTransaccion = ? AND Banco IN ('BAC', 'SCOTIA', 'Davibank')");
+    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = GETDATE() WHERE IdTransaccion = ? AND Banco IN ('BAC', 'SCOTIA', 'Davibank')");
 
     $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, ?, ?)");
 
@@ -37,7 +49,7 @@ try {
 
         // Actualizamos los registros de TSD
         foreach ($match['TSD'] as $idTSD) {
-            $stmtUpdateTSD->execute([$idMatchTSD, $tipoCruce, $idTSD]);
+            $stmtUpdateTSD->execute([$idMatchTSD, $tipoCruce, $fechaConcil, $idTSD]);
         }
 
         // Auditoría Manual. Se ancla al primer TSD del bloque; si el bloque NO tiene
@@ -58,7 +70,7 @@ try {
 
         // Actualizamos estrictamente los registros Bancarios enviados desde la pantalla
         foreach ($match['Bancos'] as $idBanco) {
-            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $idBanco]);
+            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $fechaConcil, $idBanco]);
         }
     }
 
