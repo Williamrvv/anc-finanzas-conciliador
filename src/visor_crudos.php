@@ -4,6 +4,17 @@ if (!isset($_SESSION['user'])) { die("Acceso denegado."); }
 $start = $_GET['start'] ?? '';
 $end = $_GET['end'] ?? '';
 $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de datos
+
+$historicoDefault = date('Y-m-d');
+
+if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
+    $fechaBase = DateTime::createFromFormat('!Y-m-d', $end);
+
+    if ($fechaBase && $fechaBase->format('Y-m-d') === $end) {
+        $fechaBase->modify('+1 day');
+        $historicoDefault = $fechaBase->format('Y-m-d');
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es" class="h-screen overflow-hidden">
@@ -45,6 +56,7 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
             <input type="hidden" id="search-bac">
             <input type="hidden" id="search-scotia">
             <input type="hidden" id="search-tsd">
+            <input type="hidden" id="search-historico">
 
             <div class="relative">
                 <!-- Se cambia oninput por syncSearch -->
@@ -53,8 +65,14 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
                 <svg class="w-4 h-4 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             </div>
             
-            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+            <div id="historico-controls" class="hidden items-center gap-2">
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">Estado al:</span>
+                <input type="date" id="historico-fecha" value="<?php echo $historicoDefault; ?>" onchange="loadHistorico(this.value)"
+                    class="px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white">
+                <span id="historico-resumen" class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap"></span>
+            </div>
 
+            <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
             <!-- Pestañas con Spinners Integrados -->
             <div class="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-inner">
                 <button onclick="switchTab('bac')" id="tab-bac" class="px-5 py-1.5 text-sm font-bold rounded-md bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 transition-all flex items-center gap-2">
@@ -65,6 +83,9 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
                 </button>
                 <button onclick="switchTab('tsd')" id="tab-tsd" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
                     <?php echo $ctx === 'm4' ? 'TSD (Base Datos)' : 'Sist. TSD'; ?> <svg id="spin-tsd" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                </button>
+                <button onclick="switchTab('historico')" id="tab-historico" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
+                    Histórico Auxiliar <svg id="spin-historico" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </button>
             </div>
         </div>
@@ -98,13 +119,15 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
                     <span class="text-slate-500 font-bold">Extrayendo contratos de TSD (Puede tomar unos minutos)...</span>
                 </div>
             </div>
+
+            <div id="grid-historico" class="w-full h-full bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden hidden relative"></div>
         </div>
     </main>
 
     <script src="js/vanilla_grid.js"></script>
     <script>
-        let rawData = { bac: null, scotia: null, tsd: null };
-        let grids = { bac: null, scotia: null, tsd: null };
+        let rawData = { bac: null, scotia: null, tsd: null, historico: null };
+        let grids = { bac: null, scotia: null, tsd: null, historico: null };
         let currentActiveTab = 'bac'; // Empezamos en BAC porque es el primero en cargar
 
         function autoGenerateColumns(data) {
@@ -183,6 +206,47 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
             }
         }
 
+        async function loadHistorico(fecha) {
+            if (!fecha) return;
+
+            const spinner = document.getElementById('spin-historico');
+            if (spinner) spinner.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`api/get_historico_auxiliar_m4.php?fecha=${encodeURIComponent(fecha)}`);
+                const json = await res.json();
+
+                if (!json.success) throw new Error(json.error);
+
+                rawData.historico = json.data;
+
+                const monto = new Intl.NumberFormat('es-CR', {
+                    style: 'currency',
+                    currency: 'CRC',
+                    maximumFractionDigits: 0
+                }).format(json.summary.montoPendiente || 0);
+
+                const resumen = document.getElementById('historico-resumen');
+                if (resumen) {
+                    resumen.textContent = `${json.summary.pendientes} pendientes · ${json.summary.conciliados} conciliados · ${monto}`;
+                }
+
+                const gridDiv = document.getElementById('grid-historico');
+                if (gridDiv) gridDiv.innerHTML = '';
+
+                grids.historico = null;
+
+                if (currentActiveTab === 'historico') {
+                    renderGrid('historico');
+                }
+
+            } catch (e) {
+                alert('Error en HISTÓRICO AUXILIAR: ' + e.message);
+            } finally {
+                if (spinner) spinner.classList.add('hidden');
+            }
+        }
+
         async function startSequentialLoading() {
             // 1. CARGA BAC (Rápido)
             await fetchSource('bac');
@@ -217,12 +281,29 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
 
         function switchTab(tab) {
             currentActiveTab = tab;
-            
+
+            const historicoControls = document.getElementById('historico-controls');
+
+            if (historicoControls) {
+                if (tab === 'historico') {
+                    historicoControls.classList.remove('hidden');
+                    historicoControls.classList.add('flex');
+
+                    if (rawData.historico === null) {
+                        const fecha = document.getElementById('historico-fecha').value;
+                        loadHistorico(fecha);
+                    }
+                } else {
+                    historicoControls.classList.add('hidden');
+                    historicoControls.classList.remove('flex');
+                }
+            }
+
             // 1. Limpiar el buscador visual global
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 
-            ['bac', 'scotia', 'tsd'].forEach(t => {
+            ['bac', 'scotia', 'tsd', 'historico'].forEach(t => {
                 const btn = document.getElementById(`tab-${t}`);
                 const gridDiv = document.getElementById(`grid-${t}`);
                 
