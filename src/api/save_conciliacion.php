@@ -66,11 +66,22 @@ try {
     }
 
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
-    $stmtUpdate = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatch = ?, IdCierre = ISNULL(IdCierre, ?), Tarjeta = ISNULL(Tarjeta, ?) WHERE IdTransaccion = ?");
+    $stmtUpdate = $pdo->prepare("
+    UPDATE Tbl_Transacciones_Maestra
+        SET Estado = ?,
+            IdMatch = ?,
+            IdCierre = ISNULL(IdCierre, ?),
+            Tarjeta = ISNULL(Tarjeta, ?),
+            FechaIngresoAuxiliar = CASE
+                WHEN FechaIngresoAuxiliar IS NULL AND ? = 1 THEN GETDATE()
+                ELSE FechaIngresoAuxiliar
+            END
+        WHERE IdTransaccion = ?
+    ");
     
-    $stmtInsert = $pdo->prepare("INSERT INTO Tbl_Transacciones_Maestra 
-        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmtInsert = $pdo->prepare("INSERT INTO Tbl_Transacciones_Maestra
+        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, FechaIngresoAuxiliar)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN GETDATE() ELSE NULL END)");
 
     $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, IdCierre, NUMERO_AFILIADO, NOMBRECOMERCIO, FECHA_TRANSACCION, FECHA_CIERRE_DATAFONO, FECHA_PAGO, NUMERO_DE_TARJETA, AUTORIZACION, TERMINAL, MONTO_VENTA, COMISION, RETENCION_VENTAS, RETENCION_RENTA, MONTONETO, NUMERO_LIQUIDACION, NUMERO_CUENTA, TIPO_CAMBIO, AJUSTE_COMISION_INTERNACIONAL, TIPO_TARJETA, CentroCosto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
@@ -94,9 +105,25 @@ try {
         $bruto = floatval($t['MontoBruto'] ?? 0);
         $neto  = floatval($t['MontoNeto'] ?? 0);
 
-        // CASO 1: SALDOS HISTÓRICOS (Ya existen en la BD)
+        // Una transacción bancaria entra al auxiliar cuando ya tiene match bancario
+        // y corresponde a una venta/ajuste que deberá cruzarse posteriormente con TSD.
+        $idMatchActual = $t['IdMatch'] ?? null;
+        $entraAuxiliar = (
+            in_array(($t['Origen'] ?? ''), ['DETALLADO', 'AJUSTE'], true)
+            && $idMatchActual !== null
+            && $idMatchActual !== ''
+        ) ? 1 : 0;
+
+        // CASO 1: SALDOS HISTÓRICOS
         if (!empty($t['IsFromDB'])) {
-            $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idTrans]);
+            $stmtUpdate->execute([
+                $t['Estado'] ?? 'PENDIENTE',
+                $t['IdMatch'] ?? null,
+                $idCierre,
+                $t['Tarjeta'] ?? null,
+                $entraAuxiliar,
+                $idTrans
+            ]);
             $filasAfectadas++;
             $auditIds[] = $idTrans; // Las auditamos por Llave Primaria
             continue; 
@@ -115,7 +142,14 @@ try {
             // (superposición de fechas o recarga accidental), NO explotamos el servidor.
             // Simplemente actualizamos su estado (Ej. de Pendiente a Conciliado), 
             // omitimos volver a insertar sus detalles, y continuamos con el resto.
-            $stmtUpdate->execute([$t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null, $idCierre, $t['Tarjeta'] ?? null, $idExistente]);
+            $stmtUpdate->execute([
+                $t['Estado'] ?? 'PENDIENTE',
+                $t['IdMatch'] ?? null,
+                $idCierre,
+                $t['Tarjeta'] ?? null,
+                $entraAuxiliar,
+                $idExistente
+            ]);
         } else {
             // Traducción para la Base de Datos
             $bancoParaBD = (($t['Banco'] ?? '') === 'SCOTIA') ? 'DAVIBANK' : ($t['Banco'] ?? 'DESC');
@@ -145,7 +179,7 @@ try {
             
             $stmtInsert->execute([
                 $idTrans, $idCierre, $bancoParaBD, $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null,
-                $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico
+                $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico, $entraAuxiliar
             ]);
 
             if (($t['Banco'] ?? '') === 'BAC' && ($t['Origen'] ?? '') !== 'PAGADO') {

@@ -121,12 +121,40 @@ try {
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
     
     $stmtInsertMaestra = $pdo->prepare("
-        INSERT INTO Tbl_Transacciones_Maestra 
-        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatchTSD, TipoCruceTSD, FechaTransaccion, Afiliado_MerID, Autorizacion, MontoBruto, MontoNeto, HashUnico, Tarjeta) 
-        VALUES (?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO Tbl_Transacciones_Maestra
+        (
+            IdTransaccion, IdCierre, Banco, Origen, Estado,
+            IdMatchTSD, TipoCruceTSD, FechaTransaccion,
+            Afiliado_MerID, Autorizacion, MontoBruto, MontoNeto,
+            HashUnico, Tarjeta,
+            FechaIngresoAuxiliar, FechaConciliacion, FechaRealConciliacion
+        )
+        VALUES (
+            ?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            CASE WHEN ? = 'PENDIENTE' THEN GETDATE() ELSE NULL END,
+            ?, ?
+        )
     ");
     
-    $stmtUpdateMaestra = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = ? WHERE HashUnico = ?");
+    $stmtUpdateMaestra = $pdo->prepare("
+        UPDATE Tbl_Transacciones_Maestra
+        SET Estado = ?,
+            IdMatchTSD = ?,
+            TipoCruceTSD = ?,
+            FechaIngresoAuxiliar = CASE
+                WHEN ? = 'PENDIENTE' AND FechaIngresoAuxiliar IS NULL THEN GETDATE()
+                ELSE FechaIngresoAuxiliar
+            END,
+            FechaConciliacion = CASE
+                WHEN ? = 'CONCILIADO' THEN ?
+                ELSE FechaConciliacion
+            END,
+            FechaRealConciliacion = CASE
+                WHEN ? = 'CONCILIADO' THEN ?
+                ELSE FechaRealConciliacion
+            END
+        WHERE HashUnico = ?
+    ");
 
     // NOTA: Añadida la columna CentroCosto para inyectar lo que calculó la API del Módulo 3
     $stmtInsertDetalle = $pdo->prepare("
@@ -138,7 +166,7 @@ try {
     // ==============================================================
     // 6. FUNCIÓN HELPER: Procesar fila TSD
     // ==============================================================
-    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC, $normCod) {
+    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC, $normCod, $fechaConcil, $fechaRealConcil) {
         $idTransaccion = trim($t['ID_Transaccion'] ?? 'SD');
         $contrato = trim($t['Contrato'] ?? '');
         $auth = trim($t['Autorizacion'] ?? '');
@@ -152,11 +180,35 @@ try {
 
         $stmtCheck->execute([$hashUnico]);
         if ($stmtCheck->rowCount() > 0) {
-            $stmtUpdateMaestra->execute([$estado, $idMatchTSD, $tipoCruce, $fechaConcil, $fechaRealConcil, $hashUnico]);
+            $stmtUpdateMaestra->execute([
+                $estado,
+                $idMatchTSD,
+                $tipoCruce,
+                $estado,
+                $estado,
+                $fechaConcil,
+                $estado,
+                $fechaRealConcil,
+                $hashUnico
+            ]);
         } else {
             $stmtInsertMaestra->execute([
-                $idTransaccion, $nuevoIdCierreTSD, $estado, $idMatchTSD, $tipoCruce, $fecha, $contrato, $auth, $montoCRC, $montoCRC, $hashUnico, $tarjeta
-            ]);
+                $idTr       ansaccion,
+                $nuevoIdCierreTSD,
+                $estado,
+                $idMatchTSD,
+                $tipoCruce,
+                $fecha,
+                $contrato,
+                $auth,
+                $montoCRC,
+                $montoCRC,
+                $hashUnico,
+                $tarjeta,
+                $estado,
+                $estado === 'CONCILIADO' ? $fechaConcil : null,
+                $estado === 'CONCILIADO' ? $fechaRealConcil : null
+            ]); 
             
             $montoUSD = isset($t['MontoUSD']) ? (float)$t['MontoUSD'] : 0;
             $tc = isset($t['TC']) ? (float)$t['TC'] : 1;
