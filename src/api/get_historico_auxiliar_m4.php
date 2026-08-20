@@ -35,7 +35,7 @@ try {
             TM.Banco,
             TM.Origen,
             CASE
-                WHEN TM.FechaRealConciliacion >= ? AND TM.FechaRealConciliacion < ?
+                WHEN TM.FechaConciliacion = CAST(? AS date)
                     THEN 'CONCILIADO ESE DÍA'
                 ELSE 'PENDIENTE AL CIERRE'
             END AS EstadoHistorico,
@@ -63,30 +63,24 @@ try {
         LEFT JOIN Tbl_Detalle_Scotia DS
             ON DS.IdTransaccion = TM.IdTransaccion
         WHERE
-            (
-                TM.FechaIngresoAuxiliar IS NOT NULL
-                AND TM.FechaIngresoAuxiliar < ?
-                AND (
-                    TM.FechaRealConciliacion IS NULL
-                    OR TM.FechaRealConciliacion >= ?
-                )
+        (
+            TM.FechaIngresoAuxiliar IS NOT NULL
+            AND TM.FechaIngresoAuxiliar < ?
+            AND (
+                TM.FechaConciliacion IS NULL
+                OR TM.FechaConciliacion >= CAST(? AS date)
             )
-            OR
-            (
-                TM.FechaRealConciliacion >= ?
-                AND TM.FechaRealConciliacion < ?
-            )
-        ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
-    ");
+        )
+        OR TM.FechaConciliacion = CAST(? AS date)
+            ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
+        ");
 
     $stmt->execute([
-        $inicio,
-        $fin,
+        $fecha,
         $fecha,
         $fin,
-        $fin,
-        $inicio,
-        $fin
+        $fecha,
+        $fecha
     ]);
 
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
