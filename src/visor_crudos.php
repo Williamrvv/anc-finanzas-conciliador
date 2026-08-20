@@ -292,7 +292,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         Cliente: esTSD ? (row.ClienteTSD || '-') : (row.Sucursal || '-'),
                         NotaUsuario: row.NotaUsuario || '',
                         Autorizacion: esTSD ? (row.Autorizacion || '-') : '-',
-                        MontoTSD: montoTSD,
+                        MontoTSD: {
+                            valor: montoTSD,
+                            recibo: esTSD ? (row.ReciboDetalleTSD || '') : '',
+                            valueOf: function() { return this.valor; },
+                            toString: function() { return this.valor.toString(); }
+                        },
                         EstadoMatch: 'Pendiente',
                         Banco_Nombre: esTSD ? '-' : (row.Banco || '-'),
                         Banco_Auth: esTSD ? '-' : (row.Autorizacion || '-'),
@@ -345,7 +350,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     ),
                     NotaUsuario: historicoValoresUnicos(grupo, row => row.NotaUsuario, ''),
                     Autorizacion: historicoValoresUnicos(tsdRows, row => row.Autorizacion, '-'),
-                    MontoTSD: montoTSD,
+                    MontoTSD: {
+                        valor: montoTSD,
+                        recibo: historicoValoresUnicos(tsdRows, row => row.ReciboDetalleTSD, ''),
+                        valueOf: function() { return this.valor; },
+                        toString: function() { return this.valor.toString(); }
+                    },
                     EstadoMatch: tipoCruce,
                     Banco_Nombre: historicoValoresUnicos(bancoRows, row => row.Banco, '-'),
                     Banco_Auth: historicoValoresUnicos(bancoRows, row => row.Autorizacion, '-'),
@@ -397,13 +407,21 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "Monto TSD",
+                    title: "Monto TSD / Detalle",
                     field: "MontoTSD",
-                    width: 130,
+                    width: 150,
                     hozAlign: "right",
-                    formatter: "money",
                     bottomCalc: "sum",
-                    cssClass: "font-bold"
+                    formatter: (cell) => {
+                        const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                        const valor = val && typeof val === 'object' && 'valor' in val ? val.valor : val;
+                        const recibo = val && typeof val === 'object' && 'recibo' in val ? val.recibo : '';
+                        const recHtml = recibo
+                            ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>`
+                            : '';
+
+                        return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
+                    }
                 },
                 {
                     title: "ESTADO AUX",
@@ -444,13 +462,6 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         const value = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                         return `<span class="font-medium text-slate-500 dark:text-slate-400">${fmtMoney(value)}</span>`;
                     }
-                },
-                {
-                    title: "Antigüedad",
-                    field: "Antiguedad",
-                    width: 100,
-                    hozAlign: "center",
-                    cssClass: "font-mono font-bold"
                 }
             ];
         }
