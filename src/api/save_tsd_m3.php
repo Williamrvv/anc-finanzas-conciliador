@@ -22,6 +22,14 @@ if (!$input) {
 }
 
 $folios = $input['folios'] ?? [];
+
+// Fecha CONTABLE elegida por el usuario. Si no viene o es inválida, se usa hoy;
+// nunca se admite una fecha futura.
+$fechaConcil = trim($input['fechaConciliacion'] ?? '');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaConcil) || $fechaConcil > date('Y-m-d')) {
+    $fechaConcil = date('Y-m-d');
+}
+$fechaRealConcil = date('Y-m-d H:i:s');
 $matches = $input['matches'] ?? [];
 $pendientes = $input['pendientes'] ?? [];
   
@@ -118,7 +126,7 @@ try {
         VALUES (?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     
-    $stmtUpdateMaestra = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatchTSD = ?, TipoCruceTSD = ? WHERE HashUnico = ?");
+    $stmtUpdateMaestra = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET Estado = ?, IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = ? WHERE HashUnico = ?");
 
     // NOTA: Añadida la columna CentroCosto para inyectar lo que calculó la API del Módulo 3
     $stmtInsertDetalle = $pdo->prepare("
@@ -144,7 +152,7 @@ try {
 
         $stmtCheck->execute([$hashUnico]);
         if ($stmtCheck->rowCount() > 0) {
-            $stmtUpdateMaestra->execute([$estado, $idMatchTSD, $tipoCruce, $hashUnico]);
+            $stmtUpdateMaestra->execute([$estado, $idMatchTSD, $tipoCruce, $fechaConcil, $fechaRealConcil, $hashUnico]);
         } else {
             $stmtInsertMaestra->execute([
                 $idTransaccion, $nuevoIdCierreTSD, $estado, $idMatchTSD, $tipoCruce, $fecha, $contrato, $auth, $montoCRC, $montoCRC, $hashUnico, $tarjeta
@@ -166,7 +174,7 @@ try {
     // ==============================================================
     // 7. PROCESAR MATCHES Y PENDIENTES
     // ==============================================================
-    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ? WHERE IdTransaccion = ?");
+    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = ? WHERE IdTransaccion = ?");
     $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, 'Cruce Manual TSD', ?)");
 
     foreach ($matches as $match) {
@@ -188,7 +196,7 @@ try {
         }
 
         foreach ($match['Bancos'] as $bancoIdTrans) {
-            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $bancoIdTrans]);
+            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $fechaConcil, $fechaRealConcil, $bancoIdTrans]);
         }
     }
 

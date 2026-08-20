@@ -267,6 +267,53 @@ window.TSDLogic = {
         }
     },
 
+    // Modal de fecha contable de conciliación. Sugiere el día en curso y limita
+    // el máximo a hoy: una conciliación con fecha futura no tiene sentido contable.
+    pedirFechaConciliacion: async function() {
+        const hoy = new Date().toISOString().slice(0, 10);
+
+        const html = `
+        <div class="space-y-3 text-left whitespace-normal" id="fc-form">
+            <p class="text-sm text-slate-600 dark:text-slate-300">
+                Indique la <b>fecha contable</b> con la que se registrará esta conciliación.
+            </p>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha de conciliación *</label>
+                <input type="date" id="fc-fecha" value="${hoy}" max="${hoy}"
+                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                Se sugiere el día en curso. Puede fecharse hacia atrás si el movimiento
+                corresponde a días anteriores, pero no hacia adelante.
+            </p>
+            <div id="fc-error" class="hidden text-[11px] text-red-600 font-bold"></div>
+            <button id="fc-ok" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                Confirmar y guardar
+            </button>
+        </div>`;
+
+        return new Promise((resolve) => {
+            window.SysUI._createModal('Fecha de la conciliación', html, [
+                { text: 'Cancelar', value: false, class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors' }
+            ], 'info', 'max-w-md').then(() => resolve(null));   // cerró sin confirmar
+
+            const btn = document.getElementById('fc-ok');
+            if (btn) btn.addEventListener('click', function () {
+                const val = (document.getElementById('fc-fecha') || {}).value || '';
+                const err = document.getElementById('fc-error');
+                if (!val) { err.innerText = 'Debe indicar una fecha.'; err.classList.remove('hidden'); return; }
+                if (val > hoy) { err.innerText = 'No se permite una fecha futura.'; err.classList.remove('hidden'); return; }
+
+                const form = document.getElementById('fc-form');
+                const overlay = form ? form.closest('.fixed') : null;
+                if (overlay) overlay.remove();
+                resolve(val);
+            });
+
+            setTimeout(function () { const f = document.getElementById('fc-fecha'); if (f) f.focus(); }, 80);
+        });
+    },
+
     generateSoftlandExcel: function(tipo, asientoId, startDate, tcPromedio, data) {
         // El TC se fija a DOS decimales ANTES de cualquier división, para que el
         // valor que se imprime en la columna TC sea exactamente el que se usó.
@@ -1807,6 +1854,11 @@ window.TSDLogic = {
 
         if (!confirmado) return;
 
+        // Fecha CONTABLE de la conciliación: se pregunta al final, cuando el
+        // usuario ya confirmó todo lo demás. Sugiere hoy y no admite futuro.
+        const fechaConciliacion = await this.pedirFechaConciliacion();
+        if (!fechaConciliacion) return;   // canceló
+
         // --- 1. BLOQUE A: Extraer Folios a Sellar ---
         // Buscamos todos los IdCierre (Folios) únicos de los bancos que están en la memoria RAM
         const foliosSet = new Set();
@@ -1919,7 +1971,7 @@ window.TSDLogic = {
             const res = await fetch('api/save_tsd_m3.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending })
+                body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending, fechaConciliacion: fechaConciliacion })
             });
             let data = await res.json();
 
@@ -1943,7 +1995,7 @@ window.TSDLogic = {
                 const res2 = await fetch('api/save_tsd_m3.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending, confirmarSinCC: true })
+                    body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending, fechaConciliacion: fechaConciliacion, confirmarSinCC: true })
                 });
                 data = await res2.json();
             }
