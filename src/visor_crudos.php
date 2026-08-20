@@ -120,14 +120,55 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 </div>
             </div>
 
-            <div id="grid-historico" class="w-full h-full bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden hidden relative"></div>
+            <div id="grid-historico" class="w-full h-full hidden relative">
+                <div class="w-full h-full flex flex-col gap-3">
+
+                    <section class="flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-amber-200 dark:border-amber-900 overflow-hidden">
+                        <div class="px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-900 flex items-center justify-between shrink-0">
+                            <div>
+                                <h3 class="text-sm font-black text-amber-800 dark:text-amber-300">Pendientes al cierre</h3>
+                                <p class="text-[10px] text-slate-500 dark:text-slate-400">Transacciones que permanecían abiertas al finalizar el día seleccionado.</p>
+                            </div>
+                            <span id="historico-count-pendientes" class="px-2.5 py-1 text-xs font-black rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">0</span>
+                        </div>
+                        <div id="grid-historico-pendientes" class="w-full flex-1 min-h-0"></div>
+                    </section>
+
+                    <section class="flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-900 overflow-hidden">
+                        <div class="px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-900 flex items-center justify-between shrink-0">
+                            <div>
+                                <h3 class="text-sm font-black text-emerald-800 dark:text-emerald-300">Conciliados ese día</h3>
+                                <p class="text-[10px] text-slate-500 dark:text-slate-400">Cruces registrados contablemente en la fecha seleccionada.</p>
+                            </div>
+                            <span id="historico-count-conciliados" class="px-2.5 py-1 text-xs font-black rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">0</span>
+                        </div>
+                        <div id="grid-historico-conciliados" class="w-full flex-1 min-h-0"></div>
+                    </section>
+
+                </div>
+            </div>
         </div>
     </main>
 
     <script src="js/vanilla_grid.js"></script>
     <script>
-        let rawData = { bac: null, scotia: null, tsd: null, historico: null };
-        let grids = { bac: null, scotia: null, tsd: null, historico: null };
+        let rawData = {
+            bac: null,
+            scotia: null,
+            tsd: null,
+            historico: null,
+            historicoPendientes: [],
+            historicoConciliados: []
+        };
+
+        let grids = {
+            bac: null,
+            scotia: null,
+            tsd: null,
+            historico: null,
+            historicoPendientes: null,
+            historicoConciliados: null
+        };
         let currentActiveTab = 'bac'; // Empezamos en BAC porque es el primero en cargar
 
         function autoGenerateColumns(data) {
@@ -206,6 +247,250 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             }
         }
 
+        function historicoSumarMontos(rows) {
+            return rows
+                .map(row => parseFloat(row.MontoBruto) || 0)
+                .sort((a, b) => Math.abs(b) - Math.abs(a))
+                .reduce((acc, val) => acc + val, 0);
+        }
+
+        function historicoDiferencia(montoTSD, montoBanco) {
+            const absT = Math.abs(montoTSD);
+            const absB = Math.abs(montoBanco);
+            const gap = Math.abs(absT - absB);
+
+            if (absT >= absB) {
+                return montoTSD < 0 ? -gap : gap;
+            }
+
+            return montoBanco < 0 ? -gap : gap;
+        }
+
+        function historicoValoresUnicos(rows, getter, fallback = '-') {
+            const values = rows
+                .map(getter)
+                .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
+                .map(value => String(value).trim());
+
+            const unique = [...new Set(values)];
+
+            return unique.length ? unique.join(', ') : fallback;
+        }
+
+        function construirHistoricoPendientes(data) {
+            return data
+                .filter(row => row.EstadoHistorico === 'PENDIENTE AL CIERRE')
+                .map(row => {
+                    const esTSD = String(row.Banco || '').toUpperCase() === 'TSD';
+
+                    const montoTSD = esTSD ? (parseFloat(row.MontoBruto) || 0) : 0;
+                    const montoBanco = esTSD ? 0 : (parseFloat(row.MontoBruto) || 0);
+
+                    return {
+                        _rowClass: 'bg-amber-50/30 dark:bg-amber-900/10',
+                        Contrato: esTSD ? (row.ContratoTSD || row.Afiliado_MerID || '-') : 'Solo Banco',
+                        Cliente: esTSD ? (row.ClienteTSD || '-') : (row.Sucursal || '-'),
+                        NotaUsuario: row.NotaUsuario || '',
+                        Autorizacion: esTSD ? (row.Autorizacion || '-') : '-',
+                        MontoTSD: montoTSD,
+                        EstadoMatch: 'Pendiente',
+                        Banco_Nombre: esTSD ? '-' : (row.Banco || '-'),
+                        Banco_Auth: esTSD ? '-' : (row.Autorizacion || '-'),
+                        Banco_Monto: montoBanco,
+                        Diferencia: historicoDiferencia(montoTSD, montoBanco),
+                        Antiguedad: row.DiasAntiguedadAlCorte !== null ? row.DiasAntiguedadAlCorte : '-'
+                    };
+                });
+        }
+
+        function construirHistoricoConciliados(data) {
+            const rows = data.filter(row => row.EstadoHistorico === 'CONCILIADO ESE DÍA');
+            const grupos = {};
+
+            rows.forEach(row => {
+                const key = row.IdMatchTSD || `sin_match_${row.IdTransaccion}`;
+
+                if (!grupos[key]) grupos[key] = [];
+                grupos[key].push(row);
+            });
+
+            return Object.values(grupos).map(grupo => {
+                const tsdRows = grupo.filter(row => String(row.Banco || '').toUpperCase() === 'TSD');
+                const bancoRows = grupo.filter(row => String(row.Banco || '').toUpperCase() !== 'TSD');
+
+                const montoTSD = historicoSumarMontos(tsdRows);
+                const montoBanco = historicoSumarMontos(bancoRows);
+
+                const antiguedades = grupo
+                    .map(row => parseInt(row.DiasAntiguedadAlCorte, 10))
+                    .filter(value => !Number.isNaN(value));
+
+                const tipoCruce = historicoValoresUnicos(
+                    grupo,
+                    row => row.TipoCruceTSD ? String(row.TipoCruceTSD).replace('[AUX] ', '') : null,
+                    'Conciliado'
+                );
+
+                return {
+                    _rowClass: 'bg-emerald-50/30 dark:bg-emerald-900/10',
+                    Contrato: historicoValoresUnicos(
+                        tsdRows,
+                        row => row.ContratoTSD || row.Afiliado_MerID,
+                        'Solo Banco'
+                    ),
+                    Cliente: historicoValoresUnicos(
+                        tsdRows.length ? tsdRows : bancoRows,
+                        row => tsdRows.length ? row.ClienteTSD : row.Sucursal,
+                        '-'
+                    ),
+                    NotaUsuario: historicoValoresUnicos(grupo, row => row.NotaUsuario, ''),
+                    Autorizacion: historicoValoresUnicos(tsdRows, row => row.Autorizacion, '-'),
+                    MontoTSD: montoTSD,
+                    EstadoMatch: tipoCruce,
+                    Banco_Nombre: historicoValoresUnicos(bancoRows, row => row.Banco, '-'),
+                    Banco_Auth: historicoValoresUnicos(bancoRows, row => row.Autorizacion, '-'),
+                    Banco_Monto: montoBanco,
+                    Diferencia: historicoDiferencia(montoTSD, montoBanco),
+                    Antiguedad: antiguedades.length ? Math.max(...antiguedades) : '-'
+                };
+            });
+        }
+
+        function historicoColumns() {
+            const fmtMoney = value => new Intl.NumberFormat('es-CR', {
+                style: 'currency',
+                currency: 'CRC'
+            }).format(parseFloat(value) || 0).replace(/\./g, ' ');
+
+            return [
+                {
+                    title: "Contrato",
+                    field: "Contrato",
+                    width: 120,
+                    cssClass: "font-mono font-bold"
+                },
+                {
+                    title: "Cliente / Notas",
+                    field: "Cliente",
+                    width: 190,
+                    cssClass: "text-[10px]",
+                    formatter: (cell) => {
+                        const row = (typeof cell === 'object' && cell)
+                            ? (cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell))
+                            : cell;
+
+                        const value = (typeof cell === 'object' && cell.getValue ? cell.getValue() : cell) || '-';
+                        const nota = row && row.NotaUsuario ? row.NotaUsuario : '';
+
+                        const notaHtml = nota
+                            ? `<div class="mt-1 text-[9px] font-bold italic leading-tight text-slate-600 dark:text-slate-300 bg-white/60 dark:bg-black/20 p-1 rounded border border-slate-200 dark:border-slate-600 break-words whitespace-normal max-w-full">💬 ${nota}</div>`
+                            : '';
+
+                        return `<div><span class="truncate" title="${value}">${value}</span>${notaHtml}</div>`;
+                    }
+                },
+                {
+                    title: "Auth TSD",
+                    field: "Autorizacion",
+                    width: 90,
+                    cssClass: "font-mono",
+                    hozAlign: "center"
+                },
+                {
+                    title: "Monto TSD",
+                    field: "MontoTSD",
+                    width: 130,
+                    hozAlign: "right",
+                    formatter: "money",
+                    bottomCalc: "sum",
+                    cssClass: "font-bold"
+                },
+                {
+                    title: "ESTADO AUX",
+                    field: "EstadoMatch",
+                    width: 160,
+                    hozAlign: "center",
+                    cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold"
+                },
+                {
+                    title: "Banco",
+                    field: "Banco_Nombre",
+                    width: 100,
+                    hozAlign: "center",
+                    cssClass: "text-blue-600 font-bold"
+                },
+                {
+                    title: "Auth Banco",
+                    field: "Banco_Auth",
+                    width: 100,
+                    cssClass: "font-mono",
+                    hozAlign: "center"
+                },
+                {
+                    title: "Monto",
+                    field: "Banco_Monto",
+                    width: 130,
+                    hozAlign: "right",
+                    formatter: "money",
+                    bottomCalc: "sum",
+                    cssClass: "font-bold"
+                },
+                {
+                    title: "Dif",
+                    field: "Diferencia",
+                    width: 120,
+                    hozAlign: "right",
+                    formatter: (cell) => {
+                        const value = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                        return `<span class="font-medium text-slate-500 dark:text-slate-400">${fmtMoney(value)}</span>`;
+                    }
+                },
+                {
+                    title: "Antigüedad",
+                    field: "Antiguedad",
+                    width: 100,
+                    hozAlign: "center",
+                    cssClass: "font-mono font-bold"
+                }
+            ];
+        }
+
+        function renderHistoricoGrids() {
+            const pendientes = rawData.historicoPendientes || [];
+            const conciliados = rawData.historicoConciliados || [];
+            const columns = historicoColumns();
+
+            if (grids.historicoPendientes) {
+                grids.historicoPendientes.updateData(pendientes);
+            } else {
+                grids.historicoPendientes = new VanillaGrid(
+                    '#grid-historico-pendientes',
+                    pendientes,
+                    columns,
+                    {
+                        threshold: 0,
+                        resize: false,
+                        searchInputId: 'search-historico'
+                    }
+                );
+            }
+
+            if (grids.historicoConciliados) {
+                grids.historicoConciliados.updateData(conciliados);
+            } else {
+                grids.historicoConciliados = new VanillaGrid(
+                    '#grid-historico-conciliados',
+                    conciliados,
+                    historicoColumns(),
+                    {
+                        threshold: 0,
+                        resize: false,
+                        searchInputId: 'search-historico'
+                    }
+                );
+            }
+        }
+
         async function loadHistorico(fecha) {
             if (!fecha) return;
 
@@ -219,6 +504,19 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 if (!json.success) throw new Error(json.error);
 
                 rawData.historico = json.data;
+                rawData.historicoPendientes = construirHistoricoPendientes(json.data);
+                rawData.historicoConciliados = construirHistoricoConciliados(json.data);
+
+                const countPendientes = document.getElementById('historico-count-pendientes');
+                const countConciliados = document.getElementById('historico-count-conciliados');
+
+                if (countPendientes) {
+                    countPendientes.textContent = rawData.historicoPendientes.length;
+                }
+
+                if (countConciliados) {
+                    countConciliados.textContent = rawData.historicoConciliados.length;
+                }
 
                 const monto = new Intl.NumberFormat('es-CR', {
                     style: 'currency',
@@ -227,17 +525,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 }).format(json.summary.montoPendiente || 0);
 
                 const resumen = document.getElementById('historico-resumen');
+
                 if (resumen) {
-                    resumen.textContent = `${json.summary.pendientes} pendientes · ${json.summary.conciliados} conciliados · ${monto}`;
+                    resumen.textContent = `${rawData.historicoPendientes.length} pendientes · ${rawData.historicoConciliados.length} conciliaciones · ${monto}`;
                 }
 
-                const gridDiv = document.getElementById('grid-historico');
-                if (gridDiv) gridDiv.innerHTML = '';
-
-                grids.historico = null;
-
                 if (currentActiveTab === 'historico') {
-                    renderGrid('historico');
+                    renderHistoricoGrids();
                 }
 
             } catch (e) {
@@ -265,6 +559,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         function renderGrid(tab) {
+            if (tab === 'historico') {
+                if (rawData.historico !== null) {
+                    renderHistoricoGrids();
+                }
+                return;
+            }
+
             if (rawData[tab] && !grids[tab]) {
                 const waitScreen = document.getElementById(`wait-${tab}`);
                 if(waitScreen) waitScreen.style.display = 'none';
@@ -303,7 +604,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 
-            ['bac', 'scotia', 'tsd', 'historico'].forEach(t => {
+            ['bac', 'scotia', 'tsd', 'historico'].forEach(t => {    
                 const btn = document.getElementById(`tab-${t}`);
                 const gridDiv = document.getElementById(`grid-${t}`);
                 

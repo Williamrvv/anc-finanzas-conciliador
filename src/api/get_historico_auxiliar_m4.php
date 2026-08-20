@@ -48,8 +48,12 @@ try {
             TM.Afiliado_MerID,
             TM.Autorizacion,
             TM.Tarjeta,
+            DT.Contrato AS ContratoTSD,
+            DT.Cliente AS ClienteTSD,
+            DT.Recibo_Detalle AS ReciboDetalleTSD,
             COALESCE(DT.CentroCosto, DB.CentroCosto, DS.CentroCosto) AS CentroCosto,
             COALESCE(DT.SucursalNombre, DB.NOMBRECOMERCIO, DS.Nombre) AS Sucursal,
+            TM.NotaUsuario,
             TM.MontoBruto,
             TM.MontoNeto,
             TM.IdMatch,
@@ -65,7 +69,7 @@ try {
         WHERE
         (
             TM.FechaIngresoAuxiliar IS NOT NULL
-            AND TM.FechaIngresoAuxiliar < ?
+            AND TM.FechaIngresoAuxiliar < DATEADD(DAY, 1, CAST(? AS date))
             AND (
                 TM.FechaConciliacion IS NULL
                 OR TM.FechaConciliacion >= CAST(? AS date)
@@ -78,7 +82,7 @@ try {
     $stmt->execute([
         $fecha,
         $fecha,
-        $fin,
+        $fecha,
         $fecha,
         $fecha
     ]);
