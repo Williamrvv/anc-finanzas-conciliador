@@ -209,7 +209,10 @@ try {
     $stMaestra->execute([
         $idTrans, $idCierre, $bancoDB, $idMatch, $fecha, ($afiliado !== '' ? $afiliado : null),
         ($auth !== '' ? $auth : null), ($tarjeta !== '' ? $tarjeta : null), $bruto, $neto, $hashUnico,
-        $idEtiq, ($nota !== '' ? $nota : null)
+        $idEtiq, ($nota !== '' ? $nota : null),
+        // La fecha del ajuste manda: así el histórico lo encuentra en SU día y no
+        // en el día en que alguien lo digitó.
+        $fecha . ' ' . date('H:i:s')
     ]);
 
     // ---------- 3. DETALLE POR BANCO ----------
