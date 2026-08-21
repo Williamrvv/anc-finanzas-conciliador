@@ -14,6 +14,11 @@ if (!isset($_SESSION['user'])) {
 
 require_once '../db.php';
 
+// Ningún aviso de PHP debe imprimirse: contamina el JSON y el frontend falla
+// con "Unexpected token '<'", que no dice nada sobre la causa real.
+ini_set('display_errors', 0);
+ini_set('html_errors', 0);
+
 $inputJSON = file_get_contents('php://input');
 $data = json_decode($inputJSON, true);
 
@@ -68,7 +73,7 @@ try {
     // FECHA DE REGISTRO elegida por el usuario. Se usa mientras dura la carga
     // de datos históricos: indica a qué fecha corresponde el dato, no cuándo se
     // subió. Si no viene o es inválida se usa hoy; nunca se admite futuro.
-    $fechaRegistro = trim($input['fechaRegistro'] ?? '');
+    $fechaRegistro = trim($data['fechaRegistro'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaRegistro) || $fechaRegistro > date('Y-m-d')) {
         $fechaRegistro = date('Y-m-d H:i:s');
     } else {
