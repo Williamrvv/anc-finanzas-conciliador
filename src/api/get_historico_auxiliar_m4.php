@@ -41,7 +41,7 @@ try {
             END AS EstadoHistorico,
             TM.Estado AS EstadoActual,
             CONVERT(varchar(10), TM.FechaTransaccion, 23) AS FechaTransaccion,
-            CONVERT(varchar(19), TM.FechaIngresoAuxiliar, 120) AS FechaIngresoAuxiliar,
+            CONVERT(varchar(19), TM.FechaRegistro, 120) AS FechaRegistro,
             CONVERT(varchar(10), TM.FechaConciliacion, 23) AS FechaConciliacion,
             CONVERT(varchar(19), TM.FechaRealConciliacion, 120) AS FechaRealConciliacion,
             DATEDIFF(DAY, TM.FechaTransaccion, CAST(? AS date)) AS DiasAntiguedadAlCorte,
@@ -68,8 +68,7 @@ try {
             ON DS.IdTransaccion = TM.IdTransaccion
         WHERE
         (
-            TM.FechaIngresoAuxiliar IS NOT NULL
-            AND TM.FechaIngresoAuxiliar < DATEADD(DAY, 1, CAST(? AS date))
+            TM.FechaRegistro < DATEADD(DAY, 1, CAST(? AS date))
             AND (
                 TM.FechaConciliacion IS NULL
                 OR TM.FechaConciliacion >= CAST(? AS date)

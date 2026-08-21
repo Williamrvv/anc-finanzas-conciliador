@@ -458,6 +458,54 @@ window.ConciliacionLogic = {
     _online: true,
     _heartbeatInterval: null,
 
+    // Modal de fecha de registro para la carga de datos históricos.
+    // Sugiere hoy y no admite futuro. Cuando la carga esté al día, basta con
+    // eliminar la llamada en saveToDatabase y este método.
+    pedirFechaRegistro: async function() {
+        const hoy = new Date().toISOString().slice(0, 10);
+
+        const html = `
+        <div class="space-y-3 text-left whitespace-normal" id="fr-form">
+            <p class="text-sm text-slate-600 dark:text-slate-300">
+                Indique la <b>fecha de registro</b> que corresponde a estos datos.
+            </p>
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha de registro *</label>
+                <input type="date" id="fr-fecha" value="${hoy}" max="${hoy}"
+                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                Se sugiere el día en curso. Si está cargando información de días
+                anteriores, indique la fecha a la que corresponde.
+            </p>
+            <div id="fr-error" class="hidden text-[11px] text-red-600 font-bold"></div>
+            <button id="fr-ok" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                Continuar y guardar
+            </button>
+        </div>`;
+
+        return new Promise((resolve) => {
+            window.SysUI._createModal('Fecha de registro', html, [
+                { text: 'Cancelar', value: false, class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors' }
+            ], 'info', 'max-w-md').then(() => resolve(null));
+
+            const btn = document.getElementById('fr-ok');
+            if (btn) btn.addEventListener('click', function () {
+                const val = (document.getElementById('fr-fecha') || {}).value || '';
+                const err = document.getElementById('fr-error');
+                if (!val) { err.innerText = 'Debe indicar una fecha.'; err.classList.remove('hidden'); return; }
+                if (val > hoy) { err.innerText = 'No se permite una fecha futura.'; err.classList.remove('hidden'); return; }
+
+                const form = document.getElementById('fr-form');
+                const overlay = form ? form.closest('.fixed') : null;
+                if (overlay) overlay.remove();
+                resolve(val);
+            });
+
+            setTimeout(function () { const f = document.getElementById('fr-fecha'); if (f) f.focus(); }, 80);
+        });
+    },
+
     _borradorApi: async function(action, payload = {}, opts = {}) {
         const res = await fetch('api/heartbeat_borrador.php', {
             method: 'POST',
@@ -556,6 +604,24 @@ window.ConciliacionLogic = {
     },
 
     // Aviso único cuando se intenta una acción bloqueada en sólo lectura
+    // Copia el número de afiliado al portapapeles desde el aviso guiado
+    copiarAfiliado: function(valor, element) {
+        const exito = function () {
+            const prev = element.innerHTML;
+            element.innerHTML = '&#9989; Copiado';
+            setTimeout(function () { element.innerHTML = prev; }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(valor).then(exito).catch(function (e) { console.error(e); });
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = valor; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); exito(); } catch (e) { console.error(e); }
+            document.body.removeChild(ta);
+        }
+    },
+
     _avisoSoloLectura: function() {
         if (window.SysUI) {
             SysUI.alert("Está en <b>modo sólo lectura</b> porque otro usuario tiene esta conciliación.\n\nNo es posible crear ajustes ni guardar cambios.", "Acción bloqueada", "warning");
@@ -2002,10 +2068,16 @@ window.ConciliacionLogic = {
             return window.SysUI.alert("Debe seleccionar al menos un banco para guardar.", "Aviso", "warning");
         }
 
+        // Fecha de registro: se pregunta mientras dura la carga de datos históricos,
+        // porque el dato puede corresponder a una fecha anterior a la de subida.
+        const fechaRegistro = await this.pedirFechaRegistro();
+        if (!fechaRegistro) { this.startAutoSave(); return; }   // canceló
+
         // 5. ENSAMBLAR PAYLOAD FINAL
         let finalPayload = {
             transacciones: [],
-            total_conciliado: 0
+            total_conciliado: 0,
+            fechaRegistro: fechaRegistro
         };
 
         if (saveBac) {
@@ -2158,11 +2230,35 @@ window.ConciliacionLogic = {
             loader.classList.add('opacity-0');
             setTimeout(() => loader.classList.add('hidden'), 300);
             
-            const msgError = `Se ha producido un error crítico que ha interrumpido el guardado. La Base de Datos ha revertido los cambios por seguridad (ROLLBACK).\n\n` + 
-                             `<b>Detalle Técnico:</b>\n<span class="font-mono text-[10px] text-red-500">${error.message}</span>\n\n` +
-                             `Por favor, intente nuevamente o contacte al departamento de soporte:\n<a href="mailto:soporte@grupoanc.com" class="text-blue-500 underline font-bold">soporte@grupoanc.com</a>`;
-                             
-            window.SysUI.alert(msgError, "Error Crítico del Servidor", "error");
+            // Caso guiado: un afiliado sin centro de costo NO es un error de sistema,
+            // es un dato que falta y que el propio usuario puede registrar.
+            const mAfi = String(error.message || '').match(/AFILIADO_SIN_CC:(\S+)/);
+            if (mAfi) {
+                const afiliado = mAfi[1].replace(/['"]/g, '');
+                window.SysUI.alert(
+                    `El datáfono <b>${afiliado}</b> todavía no está vinculado a un centro de costo, ` +
+                    `y sin ese dato la conciliación no se puede registrar.\n\n` +
+                    `<b>Cómo resolverlo</b>\n` +
+                    `1. Abra <b>Afiliados y Centros de Costo</b>, arriba a la derecha, junto a "Guardar Conciliación".\n` +
+                    `2. Agregue el afiliado y asígnele su centro de costo y sucursal.\n` +
+                    `3. luego intente de nuevo el guardado.\n\n` +
+                    `<b>Número de afiliado</b> (clic para copiar):\n` +
+                    `<span onclick="window.ConciliacionLogic.copiarAfiliado('${afiliado}', this)" ` +
+                    `class="inline-block mt-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 ` +
+                    `border border-slate-300 dark:border-slate-600 font-mono font-bold text-base ` +
+                    `cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all select-none">${afiliado} 📋</span>\n\n` +
+                    `<i>Su trabajo no se perdió: sigue en pantalla tal como estaba.</i>`,
+                    "Falta vincular el afiliado", "warning"
+                );
+                this.startAutoSave();
+                return;
+            }
+
+            const msgError = `No se pudo completar el guardado. La base de datos revirtió los cambios, así que no quedó nada a medias.\n\n` +
+                             `<b>Detalle:</b>\n<span class="font-mono text-[10px] text-red-500">${error.message}</span>\n\n` +
+                             `<i>Su trabajo sigue en pantalla. Puede intentar guardar nuevamente.</i>`;
+
+            window.SysUI.alert(msgError, "No se pudo guardar", "error");
             this.startAutoSave(); 
         }
     },

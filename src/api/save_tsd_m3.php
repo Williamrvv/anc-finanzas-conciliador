@@ -127,7 +127,7 @@ try {
             IdMatchTSD, TipoCruceTSD, FechaTransaccion,
             Afiliado_MerID, Autorizacion, MontoBruto, MontoNeto,
             HashUnico, Tarjeta,
-            FechaIngresoAuxiliar, FechaConciliacion, FechaRealConciliacion
+            FechaConciliacion, FechaRealConciliacion
         )
         VALUES (
             ?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,

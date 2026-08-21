@@ -65,23 +65,29 @@ try {
         $cierresIds[$banco] = $pdo->lastInsertId(); // JS necesita que la llave siga siendo SCOTIA
     }
 
+    // FECHA DE REGISTRO elegida por el usuario. Se usa mientras dura la carga
+    // de datos históricos: indica a qué fecha corresponde el dato, no cuándo se
+    // subió. Si no viene o es inválida se usa hoy; nunca se admite futuro.
+    $fechaRegistro = trim($input['fechaRegistro'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaRegistro) || $fechaRegistro > date('Y-m-d')) {
+        $fechaRegistro = date('Y-m-d H:i:s');
+    } else {
+        $fechaRegistro .= ' ' . date('H:i:s');   // conserva la hora real de carga
+    }
+
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
     $stmtUpdate = $pdo->prepare("
     UPDATE Tbl_Transacciones_Maestra
         SET Estado = ?,
             IdMatch = ?,
             IdCierre = ISNULL(IdCierre, ?),
-            Tarjeta = ISNULL(Tarjeta, ?),
-            FechaIngresoAuxiliar = CASE
-                WHEN FechaIngresoAuxiliar IS NULL AND ? = 1 THEN GETDATE()
-                ELSE FechaIngresoAuxiliar
-            END
+            Tarjeta = ISNULL(Tarjeta, ?)
         WHERE IdTransaccion = ?
-    ");
+    "
     
     $stmtInsert = $pdo->prepare("INSERT INTO Tbl_Transacciones_Maestra
-        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, FechaIngresoAuxiliar)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN GETDATE() ELSE NULL END)");
+        (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, FechaRegistro)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     $stmtBAC = $pdo->prepare("INSERT INTO Tbl_Detalle_BAC (IdTransaccion, IdCierre, NUMERO_AFILIADO, NOMBRECOMERCIO, FECHA_TRANSACCION, FECHA_CIERRE_DATAFONO, FECHA_PAGO, NUMERO_DE_TARJETA, AUTORIZACION, TERMINAL, MONTO_VENTA, COMISION, RETENCION_VENTAS, RETENCION_RENTA, MONTONETO, NUMERO_LIQUIDACION, NUMERO_CUENTA, TIPO_CAMBIO, AJUSTE_COMISION_INTERNACIONAL, TIPO_TARJETA, CentroCosto) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
@@ -105,15 +111,6 @@ try {
         $bruto = floatval($t['MontoBruto'] ?? 0);
         $neto  = floatval($t['MontoNeto'] ?? 0);
 
-        // Una transacción bancaria entra al auxiliar cuando ya tiene match bancario
-        // y corresponde a una venta/ajuste que deberá cruzarse posteriormente con TSD.
-        $idMatchActual = $t['IdMatch'] ?? null;
-        $entraAuxiliar = (
-            in_array(($t['Origen'] ?? ''), ['DETALLADO', 'AJUSTE'], true)
-            && $idMatchActual !== null
-            && $idMatchActual !== ''
-        ) ? 1 : 0;
-
         // CASO 1: SALDOS HISTÓRICOS
         if (!empty($t['IsFromDB'])) {
             $stmtUpdate->execute([
@@ -121,7 +118,6 @@ try {
                 $t['IdMatch'] ?? null,
                 $idCierre,
                 $t['Tarjeta'] ?? null,
-                $entraAuxiliar,
                 $idTrans
             ]);
             $filasAfectadas++;
@@ -147,7 +143,6 @@ try {
                 $t['IdMatch'] ?? null,
                 $idCierre,
                 $t['Tarjeta'] ?? null,
-                $entraAuxiliar,
                 $idExistente
             ]);
         } else {
@@ -172,14 +167,16 @@ try {
                 $centroCostoValidado = $mapaCentroCosto[$afiliadoUpper] ?? null;
 
                 if (empty($centroCostoValidado)) {
-                    throw new \Exception("ALERTA DICCIONARIO: El Datáfono (Afiliado/MerID) '{$afiliado}' no está registrado en el Diccionario de Centros de Costo de IRI.\n\nPor favor, vincule este Afiliado en la Base de Datos antes de guardar la conciliación o el ajuste manual.");
+                    // Marcador AFILIADO_SIN_CC: el frontend lo reconoce y muestra un
+                    // aviso guiado en vez del error genérico de servidor.
+                    throw new \Exception("AFILIADO_SIN_CC:{$afiliado}");
                 }
             }
             // =========================================================================
             
             $stmtInsert->execute([
                 $idTrans, $idCierre, $bancoParaBD, $t['Origen'] ?? 'DESC', $t['Estado'] ?? 'PENDIENTE', $t['IdMatch'] ?? null,
-                $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico, $entraAuxiliar
+                $fecha, $t['Afiliado_MerID'] ?? null, $t['Autorizacion'] ?? null, $t['Tarjeta'] ?? null, $bruto, $neto, $t['ArchivoOrigen'] ?? 'Local', $hashUnico, $fechaRegistro
             ]);
 
             if (($t['Banco'] ?? '') === 'BAC' && ($t['Origen'] ?? '') !== 'PAGADO') {
