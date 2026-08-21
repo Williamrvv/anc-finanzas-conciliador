@@ -61,20 +61,28 @@ try {
             TM.TipoCruceTSD
         FROM Tbl_Transacciones_Maestra TM
         LEFT JOIN Tbl_Detalle_TSD DT
-            ON DT.IdTransaccion = TM.IdTransaccion
+            ON DT.IdTransaccion = TM.IdTransaccion AND TM.Banco = 'TSD'
         LEFT JOIN Tbl_Detalle_BAC DB
-            ON DB.IdTransaccion = TM.IdTransaccion
+            ON DB.IdTransaccion = TM.IdTransaccion AND TM.Banco = 'BAC'
         LEFT JOIN Tbl_Detalle_Scotia DS
-            ON DS.IdTransaccion = TM.IdTransaccion
+            ON DS.IdTransaccion = TM.IdTransaccion AND TM.Banco = 'Davibank'
         WHERE
+        -- Sólo lo que pertenece al auxiliar: los PAGADO nunca se cruzan con TSD.
+        TM.Origen IN ('DETALLADO', 'AJUSTE')
+        AND
         (
-            TM.FechaRegistro < DATEADD(DAY, 1, CAST(? AS date))
-            AND (
-                TM.FechaConciliacion IS NULL
-                OR TM.FechaConciliacion >= CAST(? AS date)
+            -- PENDIENTE AL CIERRE: ya existía a esa fecha y todavía no se había
+            -- conciliado contablemente (o se concilió después).
+            (
+                TM.FechaRegistro < DATEADD(DAY, 1, CAST(? AS date))
+                AND (
+                    TM.FechaConciliacion IS NULL
+                    OR TM.FechaConciliacion > CAST(? AS date)
+                )
             )
+            -- CONCILIADO ESE DÍA
+            OR TM.FechaConciliacion = CAST(? AS date)
         )
-        OR TM.FechaConciliacion = CAST(? AS date)
             ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
         ");
 

@@ -83,7 +83,7 @@ try {
             IdCierre = ISNULL(IdCierre, ?),
             Tarjeta = ISNULL(Tarjeta, ?)
         WHERE IdTransaccion = ?
-    "
+    ");
     
     $stmtInsert = $pdo->prepare("INSERT INTO Tbl_Transacciones_Maestra
         (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID, Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, FechaRegistro)

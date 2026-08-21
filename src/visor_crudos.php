@@ -480,7 +480,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     columns,
                     {
                         threshold: 0,
-                        resize: false,
+                        // Sin 'resize: false' el grid muestra la barra de arrastre
+                        // inferior y se puede estirar, igual que en el auxiliar.
                         searchInputId: 'search-historico'
                     }
                 );
@@ -495,7 +496,6 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     historicoColumns(),
                     {
                         threshold: 0,
-                        resize: false,
                         searchInputId: 'search-historico'
                     }
                 );
@@ -584,7 +584,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 requestAnimationFrame(() => {
                     grids[tab] = new VanillaGrid(`#grid-${tab}`, rawData[tab], autoGenerateColumns(rawData[tab]), { 
                         threshold: 0,
-                        resize: false, // Desactiva la barra de arrastre inferior nativa de VanillaGrid
+                        // Barra de arrastre inferior activa, igual que en el auxiliar
                         searchInputId: `search-${tab}` // Cada grid escucha a su propio input oculto
                     });
                 });
