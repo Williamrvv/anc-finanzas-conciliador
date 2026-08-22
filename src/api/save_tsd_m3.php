@@ -132,7 +132,7 @@ try {
         VALUES (
             ?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             CASE WHEN ? = 'PENDIENTE' THEN GETDATE() ELSE NULL END,
-            ?, ?
+            ?, ?|
         )
     ");
     
@@ -141,10 +141,6 @@ try {
         SET Estado = ?,
             IdMatchTSD = ?,
             TipoCruceTSD = ?,
-            FechaIngresoAuxiliar = CASE
-                WHEN ? = 'PENDIENTE' AND FechaIngresoAuxiliar IS NULL THEN GETDATE()
-                ELSE FechaIngresoAuxiliar
-            END,
             FechaConciliacion = CASE
                 WHEN ? = 'CONCILIADO' THEN ?
                 ELSE FechaConciliacion
@@ -184,7 +180,6 @@ try {
                 $estado,
                 $idMatchTSD,
                 $tipoCruce,
-                $estado,
                 $estado,
                 $fechaConcil,
                 $estado,

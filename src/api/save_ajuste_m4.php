@@ -203,8 +203,8 @@ try {
         "INSERT INTO Tbl_Transacciones_Maestra
          (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID,
           Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, ColorEtiqueta, NotaUsuario,
-          FechaIngresoAuxiliar)
-         VALUES (?, ?, ?, 'AJUSTE', 'CONCILIADO', ?, ?, ?, ?, ?, ?, ?, 'AJUSTE-M4', ?, ?, ?, GETDATE())"
+          FechaRegistro)
+         VALUES (?, ?, ?, 'AJUSTE', 'CONCILIADO', ?, ?, ?, ?, ?, ?, ?, 'AJUSTE-M4', ?, ?, ?, ?)"
     );
     $stMaestra->execute([
         $idTrans, $idCierre, $bancoDB, $idMatch, $fecha, ($afiliado !== '' ? $afiliado : null),
