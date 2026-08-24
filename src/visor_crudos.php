@@ -120,10 +120,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 </div>
             </div>
 
-            <div id="grid-historico" class="w-full h-full hidden relative">
-                <div class="w-full h-full flex flex-col gap-3">
+            <div id="grid-historico" class="w-full hidden relative overflow-y-auto">
+                <div class="w-full flex flex-col gap-3 pb-4">
 
-                    <section class="flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-amber-200 dark:border-amber-900 overflow-hidden">
+                    <section class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-amber-200 dark:border-amber-900">
                         <div class="px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-900 flex items-center justify-between shrink-0">
                             <div>
                                 <h3 class="text-sm font-black text-amber-800 dark:text-amber-300">Pendientes al cierre</h3>
@@ -131,10 +131,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                             </div>
                             <span id="historico-count-pendientes" class="px-2.5 py-1 text-xs font-black rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">0</span>
                         </div>
-                        <div id="grid-historico-pendientes" class="w-full flex-1 min-h-0"></div>
+                        <div id="grid-historico-pendientes" class="w-full" style="height: 60vh;"></div>
                     </section>
 
-                    <section class="flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-900 overflow-hidden">
+                    <section class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-900">
                         <div class="px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-900 flex items-center justify-between shrink-0">
                             <div>
                                 <h3 class="text-sm font-black text-emerald-800 dark:text-emerald-300">Conciliados ese día</h3>
@@ -142,7 +142,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                             </div>
                             <span id="historico-count-conciliados" class="px-2.5 py-1 text-xs font-black rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">0</span>
                         </div>
-                        <div id="grid-historico-conciliados" class="w-full flex-1 min-h-0"></div>
+                        <div id="grid-historico-conciliados" class="w-full" style="height: 26vh;"></div>
                     </section>
 
                 </div>
@@ -412,6 +412,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     width: 150,
                     hozAlign: "right",
                     bottomCalc: "sum",
+                    bottomCalcFormatter: "money",
                     formatter: (cell) => {
                         const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                         const valor = val && typeof val === 'object' && 'valor' in val ? val.valor : val;
@@ -490,6 +491,11 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             if (grids.historicoConciliados) {
                 grids.historicoConciliados.updateData(conciliados);
             } else {
+                // La altura elegida por el usuario debe sobrevivir al cambio de fecha:
+                // VanillaGrid se reconstruye en cada carga y perdería el ajuste.
+                const altoPend = document.getElementById('grid-historico-pendientes');
+                if (altoPend && altoPend.dataset.altoUsuario) altoPend.style.height = altoPend.dataset.altoUsuario;
+
                 grids.historicoConciliados = new VanillaGrid(
                     '#grid-historico-conciliados',
                     conciliados,
@@ -500,6 +506,15 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     }
                 );
             }
+                            // Recuerda el alto que deja el usuario al arrastrar la barra inferior
+                ['grid-historico-pendientes', 'grid-historico-conciliados'].forEach(function (id) {
+                    const el = document.getElementById(id);
+                    if (!el || el._obsAlto) return;
+                    el._obsAlto = new ResizeObserver(function () {
+                        if (el.style.height) el.dataset.altoUsuario = el.style.height;
+                    });
+                    el._obsAlto.observe(el);
+                });
         }
 
         async function loadHistorico(fecha) {
