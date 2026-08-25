@@ -9,8 +9,7 @@ header('Content-Type: text/html; charset=utf-8');
 //  Cuando ya nadie use la IP, basta con borrar este bloque completo.
 // ============================================================================
 $hostActual   = $_SERVER['HTTP_HOST'] ?? '';
-// $ipAntigua    = '186.177.78.196:8443';
-$ipAntigua    = '172.16.31.42:4435';
+$ipAntigua    = '186.177.78.196:8443';
 $dominioNuevo = 'https://iri.ancwebapps.com';
 
 if ($hostActual === $ipAntigua && !isset($_GET['sin_aviso'])) {
@@ -80,13 +79,13 @@ if ($hostActual === $ipAntigua && !isset($_GET['sin_aviso'])) {
 
         <script>
             var destino = <?php echo json_encode($destino); ?>;
-            var restante = 15;
+            var restante = 20;
             var el = document.getElementById('seg');
             setInterval(function () {
                 restante--;
                 if (el) el.innerText = restante > 0 ? restante : 0;
             }, 1000);
-            setTimeout(function () { window.location.replace(destino); }, 15000);
+            setTimeout(function () { window.location.replace(destino); }, 20000);
         </script>
     </body>
     </html>
