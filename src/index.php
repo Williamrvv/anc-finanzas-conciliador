@@ -1,6 +1,99 @@
 <?php
 // Forzar al servidor a enviar el documento en UTF-8 nativo
 header('Content-Type: text/html; charset=utf-8');
+
+// ============================================================================
+//  AVISO DE CAMBIO DE DOMINIO
+//  Sólo se muestra a quien entra por la IP antigua. Cualquier otro host
+//  (el dominio nuevo, localhost, pruebas) pasa de largo sin ver nada.
+//  Cuando ya nadie use la IP, basta con borrar este bloque completo.
+// ============================================================================
+$hostActual   = $_SERVER['HTTP_HOST'] ?? '';
+// $ipAntigua    = '186.177.78.196:8443';
+$ipAntigua    = '172.16.31.42:4435';
+$dominioNuevo = 'https://iri.ancwebapps.com';
+
+if ($hostActual === $ipAntigua && !isset($_GET['sin_aviso'])) {
+    // Se conserva la ruta y los parámetros: si alguien llegó con un enlace
+    // directo a un módulo, aterriza en el mismo lugar del dominio nuevo.
+    $destino = $dominioNuevo . ($_SERVER['REQUEST_URI'] ?? '/');
+    ?>
+    <!DOCTYPE html>
+    <html lang="es" class="h-full">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>IRI — Nueva dirección del sistema</title>
+        <link rel="icon" type="image/png" href="assets/logo_iri_claro.png">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            @keyframes entrada { from { opacity:0; transform:translateY(14px) scale(.98); } to { opacity:1; transform:none; } }
+            @keyframes barra   { from { width:100%; } to { width:0%; } }
+            .tarjeta { animation: entrada .5s cubic-bezier(.34,1.4,.64,1); }
+            .cuenta  { animation: barra 15s linear forwards; }
+        </style>
+    </head>
+    <body class="h-full bg-slate-100 flex items-center justify-center p-5 font-sans">
+
+        <div class="tarjeta bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden ring-1 ring-slate-200">
+
+            <div class="h-1.5 bg-slate-200">
+                <div class="cuenta h-full bg-blue-600"></div>
+            </div>
+
+            <div class="p-8 text-center">
+                <img src="assets/logo_iri_claro.png" alt="IRI" class="h-11 mx-auto mb-6">
+
+                <h1 class="text-2xl font-black text-slate-800 tracking-tight">El sistema cambió de dirección</h1>
+
+                <p class="mt-3 text-slate-500 leading-relaxed">
+                    Esta dirección dejará de utilizarse. A partir de ahora ingrese a IRI desde:
+                </p>
+
+                <a href="<?php echo htmlspecialchars($destino); ?>"
+                   class="mt-5 block px-5 py-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-700
+                          font-mono font-bold text-lg break-all hover:bg-blue-100 hover:border-blue-300 transition-colors">
+                    <?php echo htmlspecialchars($dominioNuevo); ?>
+                </a>
+
+                <p class="mt-5 text-sm text-slate-500 leading-relaxed">
+                    El cambio mejora la seguridad del sitio. El sistema funciona exactamente igual:
+                    sus datos, accesos y trabajo pendiente permanecen intactos.
+                </p>
+
+                <p class="mt-4 text-xs text-slate-400">
+                    Le recomendamos actualizar su marcador o favorito.
+                </p>
+
+                <a href="<?php echo htmlspecialchars($destino); ?>"
+                   class="mt-6 inline-flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-700
+                          text-white py-3.5 rounded-xl font-bold shadow-md transition-colors">
+                    Ir ahora a la nueva dirección
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                </a>
+
+                <p class="mt-4 text-xs text-slate-400">
+                    Será redirigido automáticamente en <span id="seg" class="font-bold text-slate-500">15</span> segundos.
+                </p>
+            </div>
+        </div>
+
+        <script>
+            var destino = <?php echo json_encode($destino); ?>;
+            var restante = 15;
+            var el = document.getElementById('seg');
+            setInterval(function () {
+                restante--;
+                if (el) el.innerText = restante > 0 ? restante : 0;
+            }, 1000);
+            setTimeout(function () { window.location.replace(destino); }, 15000);
+        </script>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
 session_start();
 $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? 'Analista');
 ?>
@@ -13,85 +106,6 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <link rel="icon" type="image/png" href="assets/logo_iri_claro.png">
     
     <title>IRI - Integración Regional de Ingresos</title>
-
-    <!-- ====================================================================
-         AVISO DE CAMBIO DE DOMINIO
-         Sólo se muestra si el usuario entró por la IP anterior. Cualquier otro
-         host (subdominio nuevo, localhost, pruebas) no dispara nada.
-         Se puede eliminar por completo cuando todos migren.
-         ==================================================================== -->
-    <script>
-    (function () {
-        if (location.hostname !== '186.177.78.196') return;
-
-        var DESTINO = 'https://iri.ancwebapps.com';
-        // Conserva la ruta y los parámetros: si tenía un enlace directo, no lo pierde
-        var url = DESTINO + location.pathname + location.search + location.hash;
-        var restantes = 15;
-
-        document.addEventListener('DOMContentLoaded', function () {
-            var css = document.createElement('style');
-            css.textContent =
-                '@keyframes dmIn{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}' +
-                '#dom-aviso{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;' +
-                'padding:20px;background:rgba(15,23,42,.75);backdrop-filter:blur(10px);' +
-                'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
-                '#dom-caja{width:100%;max-width:540px;background:#fff;border-radius:22px;overflow:hidden;' +
-                'box-shadow:0 28px 70px rgba(0,0,0,.42);animation:dmIn .45s cubic-bezier(.34,1.56,.64,1)}' +
-                '#dom-top{height:5px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#6366f1)}' +
-                '#dom-cuerpo{padding:34px 34px 26px;text-align:center}' +
-                '#dom-ico{width:62px;height:62px;margin:0 auto 18px;border-radius:50%;background:#eef2ff;' +
-                'display:flex;align-items:center;justify-content:center}' +
-                '#dom-caja h2{margin:0 0 10px;font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-.02em}' +
-                '#dom-caja p{margin:0 0 20px;font-size:14.5px;line-height:1.6;color:#475569}' +
-                '#dom-url{display:block;margin:0 0 20px;padding:15px;border-radius:14px;background:#f8fafc;' +
-                'border:2px dashed #c7d2fe;color:#4f46e5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-                'font-size:16px;font-weight:700;text-decoration:none;word-break:break-all;transition:all .2s}' +
-                '#dom-url:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-1px)}' +
-                '#dom-btn{width:100%;padding:14px;border:0;border-radius:14px;cursor:pointer;' +
-                'background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:15px;font-weight:700;' +
-                'box-shadow:0 8px 20px rgba(79,70,229,.35);transition:transform .18s,box-shadow .18s}' +
-                '#dom-btn:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(79,70,229,.45)}' +
-                '#dom-pie{padding:13px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;' +
-                'font-size:12.5px;color:#64748b}' +
-                '#dom-seg{font-weight:800;color:#4f46e5}' +
-                '@media(prefers-color-scheme:dark){' +
-                '#dom-caja{background:#1e293b}#dom-caja h2{color:#f1f5f9}#dom-caja p{color:#cbd5e1}' +
-                '#dom-ico{background:#312e81}#dom-url{background:#0f172a;border-color:#4338ca;color:#a5b4fc}' +
-                '#dom-url:hover{background:#1e1b4b}#dom-pie{background:#0f172a;border-color:#334155}}';
-            document.head.appendChild(css);
-
-            var d = document.createElement('div');
-            d.id = 'dom-aviso';
-            d.innerHTML =
-                '<div id="dom-caja">' +
-                  '<div id="dom-top"></div>' +
-                  '<div id="dom-cuerpo">' +
-                    '<div id="dom-ico">' +
-                      '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-                      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>' +
-                    '</div>' +
-                    '<h2>El sistema tiene una nueva dirección</h2>' +
-                    '<p>Actualizamos la forma de ingresar a IRI para reforzar la seguridad de la conexión. ' +
-                       'El sistema funciona exactamente igual: sólo cambia la dirección.</p>' +
-                    '<a id="dom-url" href="' + url + '">iri.ancwebapps.com</a>' +
-                    '<button id="dom-btn" type="button">Ir ahora al nuevo sitio</button>' +
-                  '</div>' +
-                  '<div id="dom-pie">Le llevaremos automáticamente en <span id="dom-seg">15</span> segundos</div>' +
-                '</div>';
-            document.body.appendChild(d);
-
-            document.getElementById('dom-btn').onclick = function () { location.replace(url); };
-
-            var t = setInterval(function () {
-                restantes--;
-                var s = document.getElementById('dom-seg');
-                if (s) s.textContent = restantes;
-                if (restantes <= 0) { clearInterval(t); location.replace(url); }
-            }, 1000);
-        });
-    })();
-    </script>
     <!-- Tailwind CSS (CDN para desarrollo ágil) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
