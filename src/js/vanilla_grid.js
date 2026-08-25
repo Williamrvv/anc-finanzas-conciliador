@@ -938,17 +938,30 @@ class VanillaGrid {
     }
 
     handleArrowKey(e) {
-        if(this.focusedRow===-1) { this.setFocus(0,0); return; }
+        if(this.focusedRow===-1) {
+            this.clearSelection();
+            this.anchorCell={r:0,c:0};
+            this.setFocus(0,0);
+            return;
+        }
+
         let nr=this.focusedRow, nc=this.focusedCol;
         const maxR=this.displayData.length-1, maxC=this.columns.length-1;
         const jump=e.ctrlKey;
+
         if(e.key==='ArrowUp') nr=jump?0:Math.max(0, nr-1);
         if(e.key==='ArrowDown') nr=jump?maxR:Math.min(maxR, nr+1);
         if(e.key==='ArrowLeft') nc=jump?0:Math.max(0, nc-1);
         if(e.key==='ArrowRight') nc=jump?maxC:Math.min(maxC, nc+1);
-        
-        if(e.shiftKey) this.selectRange(this.anchorCell||{r:this.focusedRow,c:this.focusedCol}, {r:nr,c:nc});
-        else { this.clearSelection(); this.anchorCell={r:nr,c:nc}; const c=this.getCell(nr,nc); if(c) this.addSelection(c); }
+
+        if(e.shiftKey) {
+            const start=this.anchorCell||{r:this.focusedRow,c:this.focusedCol};
+            this.selectRange(start,{r:nr,c:nc});
+        } else {
+            this.clearSelection();
+            this.anchorCell={r:nr,c:nc};
+        }
+
         this.setFocus(nr,nc);
     }
 

@@ -13,6 +13,85 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <link rel="icon" type="image/png" href="assets/logo_iri_claro.png">
     
     <title>IRI - Integración Regional de Ingresos</title>
+
+    <!-- ====================================================================
+         AVISO DE CAMBIO DE DOMINIO
+         Sólo se muestra si el usuario entró por la IP anterior. Cualquier otro
+         host (subdominio nuevo, localhost, pruebas) no dispara nada.
+         Se puede eliminar por completo cuando todos migren.
+         ==================================================================== -->
+    <script>
+    (function () {
+        if (location.hostname !== '186.177.78.196') return;
+
+        var DESTINO = 'https://iri.ancwebapps.com';
+        // Conserva la ruta y los parámetros: si tenía un enlace directo, no lo pierde
+        var url = DESTINO + location.pathname + location.search + location.hash;
+        var restantes = 15;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            var css = document.createElement('style');
+            css.textContent =
+                '@keyframes dmIn{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}' +
+                '#dom-aviso{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;' +
+                'padding:20px;background:rgba(15,23,42,.75);backdrop-filter:blur(10px);' +
+                'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
+                '#dom-caja{width:100%;max-width:540px;background:#fff;border-radius:22px;overflow:hidden;' +
+                'box-shadow:0 28px 70px rgba(0,0,0,.42);animation:dmIn .45s cubic-bezier(.34,1.56,.64,1)}' +
+                '#dom-top{height:5px;background:linear-gradient(90deg,#6366f1,#8b5cf6,#6366f1)}' +
+                '#dom-cuerpo{padding:34px 34px 26px;text-align:center}' +
+                '#dom-ico{width:62px;height:62px;margin:0 auto 18px;border-radius:50%;background:#eef2ff;' +
+                'display:flex;align-items:center;justify-content:center}' +
+                '#dom-caja h2{margin:0 0 10px;font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-.02em}' +
+                '#dom-caja p{margin:0 0 20px;font-size:14.5px;line-height:1.6;color:#475569}' +
+                '#dom-url{display:block;margin:0 0 20px;padding:15px;border-radius:14px;background:#f8fafc;' +
+                'border:2px dashed #c7d2fe;color:#4f46e5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
+                'font-size:16px;font-weight:700;text-decoration:none;word-break:break-all;transition:all .2s}' +
+                '#dom-url:hover{background:#eef2ff;border-color:#818cf8;transform:translateY(-1px)}' +
+                '#dom-btn{width:100%;padding:14px;border:0;border-radius:14px;cursor:pointer;' +
+                'background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-size:15px;font-weight:700;' +
+                'box-shadow:0 8px 20px rgba(79,70,229,.35);transition:transform .18s,box-shadow .18s}' +
+                '#dom-btn:hover{transform:translateY(-2px);box-shadow:0 12px 26px rgba(79,70,229,.45)}' +
+                '#dom-pie{padding:13px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;' +
+                'font-size:12.5px;color:#64748b}' +
+                '#dom-seg{font-weight:800;color:#4f46e5}' +
+                '@media(prefers-color-scheme:dark){' +
+                '#dom-caja{background:#1e293b}#dom-caja h2{color:#f1f5f9}#dom-caja p{color:#cbd5e1}' +
+                '#dom-ico{background:#312e81}#dom-url{background:#0f172a;border-color:#4338ca;color:#a5b4fc}' +
+                '#dom-url:hover{background:#1e1b4b}#dom-pie{background:#0f172a;border-color:#334155}}';
+            document.head.appendChild(css);
+
+            var d = document.createElement('div');
+            d.id = 'dom-aviso';
+            d.innerHTML =
+                '<div id="dom-caja">' +
+                  '<div id="dom-top"></div>' +
+                  '<div id="dom-cuerpo">' +
+                    '<div id="dom-ico">' +
+                      '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                      '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>' +
+                    '</div>' +
+                    '<h2>El sistema tiene una nueva dirección</h2>' +
+                    '<p>Actualizamos la forma de ingresar a IRI para reforzar la seguridad de la conexión. ' +
+                       'El sistema funciona exactamente igual: sólo cambia la dirección.</p>' +
+                    '<a id="dom-url" href="' + url + '">iri.ancwebapps.com</a>' +
+                    '<button id="dom-btn" type="button">Ir ahora al nuevo sitio</button>' +
+                  '</div>' +
+                  '<div id="dom-pie">Le llevaremos automáticamente en <span id="dom-seg">15</span> segundos</div>' +
+                '</div>';
+            document.body.appendChild(d);
+
+            document.getElementById('dom-btn').onclick = function () { location.replace(url); };
+
+            var t = setInterval(function () {
+                restantes--;
+                var s = document.getElementById('dom-seg');
+                if (s) s.textContent = restantes;
+                if (restantes <= 0) { clearInterval(t); location.replace(url); }
+            }, 1000);
+        });
+    })();
+    </script>
     <!-- Tailwind CSS (CDN para desarrollo ágil) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
