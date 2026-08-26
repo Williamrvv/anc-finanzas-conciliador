@@ -36,6 +36,17 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         .dark ::-webkit-scrollbar-thumb { background-color: #475569; }
         .vanilla-grid-wrapper { height: 100% !important; border-radius: 0.75rem; border: 1px solid var(--border-color, #e2e8f0); }
         .dark .vanilla-grid-wrapper { border-color: #334155; }
+
+        /* El ícono nativo del calendario es negro y se pierde en modo oscuro.
+           Se invierte y se realza al pasar el mouse, sin sumar elementos. */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            opacity: .5;
+            transition: opacity .15s ease;
+        }
+        input[type="date"]:hover::-webkit-calendar-picker-indicator { opacity: 1; }
+        .dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: .55; }
+        .dark input[type="date"]:hover::-webkit-calendar-picker-indicator { opacity: 1; }
     </style>
 </head>
 <body class="bg-slate-100 dark:bg-slate-900 h-screen w-screen flex flex-col font-sans">
@@ -65,11 +76,28 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 <svg class="w-4 h-4 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             </div>
             
-            <div id="historico-controls" class="hidden items-center gap-2">
-                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">Estado al:</span>
-                <input type="date" id="historico-fecha" value="<?php echo $historicoDefault; ?>" onchange="loadHistorico(this.value)"
-                    class="px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white">
-                <span id="historico-resumen" class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap"></span>
+            <!-- Carril de ancho fijo: rango e histórico se turnan aquí dentro, así
+                 ningún control se corre al cambiar de pestaña. -->
+            <div class="flex items-center justify-end gap-2 w-[420px] shrink-0">
+
+                <!-- Rango del visor: se hereda del histórico y se aplica solo -->
+                <div id="rango-controls" class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">Rango:</span>
+                    <input type="date" id="rango-inicio" value="<?php echo htmlspecialchars($start); ?>" onchange="aplicarRango()"
+                        class="px-2 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white transition-shadow">
+                    <span class="text-xs font-bold text-slate-400">a</span>
+                    <input type="date" id="rango-fin" value="<?php echo htmlspecialchars($end); ?>" onchange="aplicarRango()"
+                        class="px-2 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white transition-shadow">
+                    <svg id="rango-spin" class="animate-spin h-4 w-4 text-blue-500 hidden shrink-0" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                </div>
+
+                <div id="historico-controls" class="hidden items-center gap-2 min-w-0">
+                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">Estado al:</span>
+                    <input type="date" id="historico-fecha" value="<?php echo $historicoDefault; ?>" onchange="loadHistorico(this.value)"
+                        class="px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white">
+                    <span id="historico-resumen" class="text-xs font-bold text-slate-500 dark:text-slate-400 truncate"></span>
+                </div>
+
             </div>
 
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
@@ -230,7 +258,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         async function fetchSource(sourceName) {
             document.getElementById(`spin-${sourceName}`).classList.remove('hidden');
             try {
-                const res = await fetch(`api/get_crudos_m3.php?start=<?php echo $start; ?>&end=<?php echo $end; ?>&source=${SOURCE_MAP[sourceName]}`);
+                const { start, end } = rangoActual();
+                const res = await fetch(`api/get_crudos_m3.php?start=${start}&end=${end}&source=${SOURCE_MAP[sourceName]}`);
                 const json = await res.json();
                 if (!json.success) throw new Error(json.error);
                 
@@ -567,6 +596,67 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             }
         }
 
+        // El rango se aplica solo. Una pausa breve agrupa los cambios seguidos
+        // (elegir inicio y luego fin) en una sola consulta.
+        let rangoTimer = null;
+
+        function rangoActual() {
+            return {
+                start: document.getElementById('rango-inicio').value,
+                end: document.getElementById('rango-fin').value
+            };
+        }
+
+        function aplicarRango() {
+            clearTimeout(rangoTimer);
+
+            const inicio = document.getElementById('rango-inicio');
+            const fin = document.getElementById('rango-fin');
+            const invalido = !inicio.value || !fin.value || inicio.value > fin.value;
+
+            // El rango inválido se avisa en el propio campo, sin interrumpir con diálogos
+            [inicio, fin].forEach(el => {
+                el.classList.toggle('ring-2', invalido);
+                el.classList.toggle('ring-red-500', invalido);
+            });
+            if (invalido) return;
+
+            rangoTimer = setTimeout(async () => {
+                const spin = document.getElementById('rango-spin');
+                if (spin) spin.classList.remove('hidden');
+
+                sincronizarHistorico(fin.value);
+
+                for (const fuente of ['bac', 'scotia', 'tsd']) {
+                    await fetchSource(fuente);
+                    // fetchSource repinta la pestaña activa; el resto se refresca aquí
+                    // para que ninguna quede con datos del rango anterior.
+                    if (fuente !== currentActiveTab && grids[fuente]) {
+                        grids[fuente].updateData(rawData[fuente] || []);
+                    }
+                }
+
+                if (spin) spin.classList.add('hidden');
+            }, 500);
+        }
+
+        // Cortesía de lectura: el corte del histórico va siempre un día por delante
+        // del rango de bancos y TSD, para que incluya lo conciliado de ese último día.
+        function sincronizarHistorico(finRango) {
+            const inputHist = document.getElementById('historico-fecha');
+            if (!inputHist || !finRango) return;
+
+            const dia = new Date(`${finRango}T00:00:00`);
+            dia.setDate(dia.getDate() + 1);
+            const siguiente = dia.toISOString().slice(0, 10);
+
+            if (inputHist.value === siguiente) return;
+            inputHist.value = siguiente;
+
+            rawData.historico = null;
+            if (currentActiveTab === 'historico') loadHistorico(siguiente);
+        }
+
         async function startSequentialLoading() {
             // 1. CARGA BAC (Rápido)
             await fetchSource('bac');
@@ -589,6 +679,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 if (rawData.historico !== null) {
                     renderHistoricoGrids();
                 }
+                return;
+            }
+
+            // La tabla ya existe: solo se le cambian los datos y conserva
+            // filtros, orden y scroll del usuario.
+            if (rawData[tab] && grids[tab]) {
+                grids[tab].updateData(rawData[tab]);
                 return;
             }
 
@@ -627,6 +724,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             }
 
             // 1. Limpiar el buscador visual global 
+            // El rango solo aplica a BAC, Davibank y TSD; el histórico usa su fecha de corte
+            const rangoControls = document.getElementById('rango-controls');
+            if (rangoControls) {
+                rangoControls.classList.toggle('hidden', tab === 'historico');
+                rangoControls.classList.toggle('flex', tab !== 'historico');
+            }
+
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 
