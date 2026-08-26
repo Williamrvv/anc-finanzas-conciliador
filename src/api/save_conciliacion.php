@@ -14,6 +14,32 @@ if (!isset($_SESSION['user'])) {
 
 require_once '../db.php';
 
+/**
+ * Devuelve la fecha como 'AAAA-MM-DD', o null si no es reconocible.
+ *
+ * Nunca se le entrega a SQL Server una fecha en formato ambiguo: el driver la
+ * manda como nvarchar y el servidor la interpreta según el idioma de SU login,
+ * que no es el mismo en desarrollo y en producción. Con 'us_english' un día 31
+ * se lee como mes 31 y la conversión falla con "valor fuera de intervalo".
+ */
+function normalizarFechaISO($valor) {
+    $v = trim((string)($valor ?? ''));
+    if ($v === '' || strtoupper($v) === 'N/A') return null;
+
+    // Ya viene en ISO (con o sin hora)
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $v, $m)) {
+        return checkdate((int)$m[2], (int)$m[3], (int)$m[1]) ? "{$m[1]}-{$m[2]}-{$m[3]}" : null;
+    }
+
+    // dd/mm/aaaa o dd-mm-aaaa: el formato de los archivos de BAC y Davibank
+    if (preg_match('#^(\d{1,2})[/-](\d{1,2})[/-](\d{4})#', $v, $m)) {
+        $dia = (int)$m[1]; $mes = (int)$m[2]; $anio = (int)$m[3];
+        return checkdate($mes, $dia, $anio) ? sprintf('%04d-%02d-%02d', $anio, $mes, $dia) : null;
+    }
+
+    return null;
+}
+
 $inputJSON = file_get_contents('php://input');
 $data = json_decode($inputJSON, true);
 
@@ -68,11 +94,16 @@ try {
     // FECHA DE REGISTRO elegida por el usuario. Se usa mientras dura la carga
     // de datos históricos: indica a qué fecha corresponde el dato, no cuándo se
     // subió. Si no viene o es inválida se usa hoy; nunca se admite futuro.
-    $fechaRegistro = trim($input['fechaRegistro'] ?? '');
+    // El JSON decodificado vive en $data, no en $input. Leerlo de $input hacía que
+    // la fecha elegida por el usuario se descartara siempre y todo quedara con hoy.
+    $fechaRegistro = trim($data['fechaRegistro'] ?? '');
+
+    // Separador 'T': para columnas datetime el formato 'AAAA-MM-DD hh:mm:ss'
+    // depende del idioma del login; con la 'T' la lectura es siempre la misma.
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaRegistro) || $fechaRegistro > date('Y-m-d')) {
-        $fechaRegistro = date('Y-m-d H:i:s');
+        $fechaRegistro = date('Y-m-d\TH:i:s');
     } else {
-        $fechaRegistro .= ' ' . date('H:i:s');   // conserva la hora real de carga
+        $fechaRegistro .= 'T' . date('H:i:s');   // conserva la hora real de carga
     }
 
     $stmtCheck = $pdo->prepare("SELECT IdTransaccion FROM Tbl_Transacciones_Maestra WHERE HashUnico = ?");
@@ -107,7 +138,7 @@ try {
         $bancoT = $t['Banco'] ?? 'DESC';
         $idCierre = $cierresIds[$bancoT] ?? null; 
         
-        $fecha = (!empty($t['FechaTransaccion']) && $t['FechaTransaccion'] !== 'N/A') ? $t['FechaTransaccion'] : null;
+        $fecha = normalizarFechaISO($t['FechaTransaccion'] ?? null);
         $bruto = floatval($t['MontoBruto'] ?? 0);
         $neto  = floatval($t['MontoNeto'] ?? 0);
 

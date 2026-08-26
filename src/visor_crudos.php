@@ -727,14 +727,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 }
             }
 
-            // 1. Limpiar el buscador visual global 
-            // El rango solo aplica a BAC, Davibank y TSD; el histórico usa su fecha de corte
             const rangoControls = document.getElementById('rango-controls');
             if (rangoControls) {
                 rangoControls.classList.toggle('hidden', tab === 'historico');
                 rangoControls.classList.toggle('flex', tab !== 'historico');
             }
 
+            // 1. Limpiar el buscador visual global
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 

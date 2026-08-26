@@ -20,12 +20,6 @@ if (!checkdate($mes, $dia, $anio)) {
     echo json_encode(['success' => false, 'error' => 'Fecha inválida']); exit;
 }
 
-$inicio = $fecha . ' 00:00:00';
-
-$fechaFin = DateTime::createFromFormat('!Y-m-d', $fecha);
-$fechaFin->modify('+1 day');
-$fin = $fechaFin->format('Y-m-d H:i:s');
-
 try {
     $pdo = Database::connect();
 

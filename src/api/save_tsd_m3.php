@@ -131,8 +131,7 @@ try {
         )
         VALUES (
             ?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            CASE WHEN ? = 'PENDIENTE' THEN GETDATE() ELSE NULL END,
-            ?, ?|
+            ?, ?
         )
     ");
     
@@ -200,7 +199,6 @@ try {
                 $montoCRC,
                 $hashUnico,
                 $tarjeta,
-                $estado,
                 $estado === 'CONCILIADO' ? $fechaConcil : null,
                 $estado === 'CONCILIADO' ? $fechaRealConcil : null
             ]); 
