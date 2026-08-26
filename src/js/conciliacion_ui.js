@@ -2313,7 +2313,7 @@ window.ConciliacionLogic = {
             // Si el cierre fue total, guardarCopiaLocalM2 elimina la copia.
             await this.guardarCopiaLocalM2();
 
-            this.startAutoSave();
+            this.startAutoSave(); 
             this.startHeartbeat();
             this.startLocalBackupM2();
     
