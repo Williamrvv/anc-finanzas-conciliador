@@ -23,13 +23,26 @@ if (!$input) {
 
 $folios = $input['folios'] ?? [];
 
-// Fecha CONTABLE elegida por el usuario. Si no viene o es inválida, se usa hoy;
-// nunca se admite una fecha futura.
+// Fecha CONTABLE elegida explícitamente por el usuario.
+// NUNCA se sustituye silenciosamente por la fecha actual.
 $fechaConcil = trim($input['fechaConciliacion'] ?? '');
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaConcil) || $fechaConcil > date('Y-m-d')) {
-    $fechaConcil = date('Y-m-d');
+
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaConcil)) {
+    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación no fue recibida correctamente.']); exit;
 }
-$fechaRealConcil = date('Y-m-d H:i:s');
+
+[$anioConcil, $mesConcil, $diaConcil] = array_map('intval', explode('-', $fechaConcil));
+
+if (!checkdate($mesConcil, $diaConcil, $anioConcil)) {
+    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación indicada no es válida.']); exit;
+}
+
+$hoyCR = (new \DateTimeImmutable('now', new \DateTimeZone('America/Costa_Rica')))->format('Y-m-d');
+
+if ($fechaConcil > $hoyCR) {
+    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación no puede estar en el futuro.']); exit;
+}
+
 $matches = $input['matches'] ?? [];
 $pendientes = $input['pendientes'] ?? [];
   
@@ -145,7 +158,7 @@ try {
                 ELSE FechaConciliacion
             END,
             FechaRealConciliacion = CASE
-                WHEN ? = 'CONCILIADO' THEN ?
+                WHEN ? = 'CONCILIADO' THEN GETDATE()
                 ELSE FechaRealConciliacion
             END
         WHERE HashUnico = ?
@@ -199,7 +212,6 @@ try {
                 $estado,
                 $fechaConcil,
                 $estado,
-                $fechaRealConcil,
                 $hashUnico
             ]);
         } else {
@@ -236,7 +248,7 @@ try {
     // ==============================================================
     // 7. PROCESAR MATCHES Y PENDIENTES
     // ==============================================================
-    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = ? WHERE IdTransaccion = ?");
+    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = GETDATE() WHERE IdTransaccion = ?");
     $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, 'Cruce Manual TSD', ?)");
 
     foreach ($matches as $match) {
@@ -258,7 +270,7 @@ try {
         }
 
         foreach ($match['Bancos'] as $bancoIdTrans) {
-            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $fechaConcil, $fechaRealConcil, $bancoIdTrans]);
+            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $fechaConcil, $bancoIdTrans]);
         }
     }
 
