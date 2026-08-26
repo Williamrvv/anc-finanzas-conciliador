@@ -20,7 +20,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 <html lang="es" class="h-screen overflow-hidden">
 <head>
     <meta charset="UTF-8">
-    <title>Visor de Datos Crudos - IRI</title>
+    <title>Explorador de Datos - IRI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script>
@@ -57,7 +57,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
             </div>
             <div>
-                <h1 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Visor Detallado de Transacciones</h1>
+                <h1 class="text-xl font-black text-slate-800 dark:text-white leading-tight">Explorador de Datos</h1>
                 <p class="text-xs text-slate-500 dark:text-slate-400 font-medium"><?php echo $ctx === 'm4' ? "Historial consolidado por fecha de folio: $start al $end" : "Filtro TSD: $start al $end | Bancos: Folios Pendientes"; ?></p>
             </div>
         </div>

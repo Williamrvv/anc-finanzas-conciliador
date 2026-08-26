@@ -61,10 +61,10 @@
 
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
 
-            <!-- Botón Visor PopUp -->
+            <!-- Botón Explorador de Datos -->
             <button type="button" onclick="window.TSDLogic.openRawViewer()" class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm flex items-center gap-2 border border-slate-200 dark:border-slate-600">
                 <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                Visor Crudos
+                Explorador de Datos
             </button>
 
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>

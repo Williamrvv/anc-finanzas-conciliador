@@ -53,7 +53,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-            <button onclick="window.AuxiliarLogic.abrirVisorCrudos()" title="Ver datos crudos de BAC, Davibank y TSD guardados en base de datos" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 dark:border-slate-600">🔎 Visor Crudos</button>
+            <button onclick="window.AuxiliarLogic.abrirVisorCrudos()" title="Explorar datos de BAC, Davibank y TSD guardados en base de datos" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 dark:border-slate-600">🔎 Explorador de Datos</button>
             <div class="relative">
                 <input type="text" id="search-m4" placeholder="Filtrar en Auxiliar..." 
                     class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 w-72 shadow-sm text-slate-700 dark:text-white">
@@ -120,7 +120,7 @@
             <div class="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha de Folio:</span>
                 <input type="text" id="m4-historial-date" class="bg-slate-50 dark:bg-slate-900 text-sm font-bold text-slate-700 dark:text-white px-3 py-1 outline-none cursor-pointer w-52 text-center rounded border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-blue-500" placeholder="Seleccione fechas...">
-                <button onclick="window.AuxiliarLogic.abrirVisorCrudos()" title="Ver datos crudos de BAC, Davibank y TSD guardados en base de datos" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 px-3 py-1 rounded text-xs font-bold transition-colors border border-slate-200 dark:border-slate-600">🔎 Visor Crudos</button>
+                <button onclick="window.AuxiliarLogic.abrirVisorCrudos()" title="Explorar datos de BAC, Davibank y TSD guardados en base de datos" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 px-3 py-1 rounded text-xs font-bold transition-colors border border-slate-200 dark:border-slate-600">🔎 Explorador de Datos</button>
                 <span id="m4-hist-global-badge" class="hidden items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700 px-2 py-1 rounded-lg text-[10px] font-bold">
                     🌐 Búsqueda global — fechas ignoradas
                     <button onclick="window.AuxiliarLogic.exitGlobalMode()" title="Volver al rango de fechas" class="hover:text-red-500 font-black px-1 transition-colors">✕</button>
