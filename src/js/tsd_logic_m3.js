@@ -13,10 +13,14 @@ window.TSDLogic = {
     // nunca por usuario.
     _rangoBorradorM3: null,
 
-    // Autoguardado de respaldo cada 5 minutos.
+    // Borrador compartido en servidor.
     _autoSaveBorradorM3Timer: null,
     _ultimoSnapshotBorradorM3: null,
     _guardandoBorradorM3: false,
+
+    // Segunda capa: respaldo local del rango activo.
+    _localBackupM3Timer: null,
+    _salidaLocalM3Bound: false,
 
     // --------------------------------------------------------
     // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
@@ -588,6 +592,110 @@ window.TSDLogic = {
             : [];
     },
 
+    _getLocalKeyM3: function() {
+        if (!this._rangoBorradorM3) return null;
+
+        return 'iri_tsd_m3_backup_v1_' +
+            this._rangoBorradorM3.start + '_' +
+            this._rangoBorradorM3.end;
+    },
+
+    _guardarCopiaLocalM3: function(snapshot = null) {
+        const key = this._getLocalKeyM3();
+        if (!key) return;
+
+        try {
+            const data = snapshot || this._crearSnapshotBorradorM3();
+
+            const tieneCambios =
+                data.manualMatches.length > 0 ||
+                data.blacklist.length > 0;
+
+            if (!tieneCambios) {
+                localStorage.removeItem(key);
+                return;
+            }
+
+            localStorage.setItem(
+                key,
+                JSON.stringify({
+                    savedAt: Date.now(),
+                    data: data
+                })
+            );
+
+        } catch (e) {
+            console.error('No se pudo guardar copia local M3:', e);
+        }
+    },
+
+    _leerCopiaLocalM3: function() {
+        const key = this._getLocalKeyM3();
+        if (!key) return null;
+
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return null;
+
+            const copia = JSON.parse(raw);
+
+            return copia && copia.data
+                ? copia
+                : null;
+
+        } catch (e) {
+            console.error('No se pudo leer copia local M3:', e);
+            return null;
+        }
+    },
+
+    _eliminarCopiaLocalM3: function() {
+        const key = this._getLocalKeyM3();
+        if (!key) return;
+
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {}
+    },
+
+    startLocalBackupM3: function() {
+        this.stopLocalBackupM3();
+
+        this._localBackupM3Timer = setInterval(() => {
+            if (!this._rangoBorradorM3) return;
+
+            this._guardarCopiaLocalM3();
+        }, 60 * 1000);
+    },
+
+    stopLocalBackupM3: function() {
+        if (this._localBackupM3Timer) {
+            clearInterval(this._localBackupM3Timer);
+            this._localBackupM3Timer = null;
+        }
+    },
+
+    _vincularSalidaLocalM3: function() {
+        if (this._salidaLocalM3Bound) return;
+
+        const guardar = () => {
+            if (this._rangoBorradorM3) {
+                this._guardarCopiaLocalM3();
+            }
+        };
+
+        window.addEventListener('pagehide', guardar);
+        window.addEventListener('beforeunload', guardar);
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                guardar();
+            }
+        });
+
+        this._salidaLocalM3Bound = true;
+    },
+
     guardarBorradorM3: async function(opciones = {}) {
         const forzar = opciones.forzar === true;
 
@@ -606,6 +714,10 @@ window.TSDLogic = {
             snapshot.blacklist.length > 0;
 
         const dataJson = JSON.stringify(snapshot);
+
+        // Copia síncrona inmediata en el navegador antes de cualquier
+        // comunicación con el servidor.
+        this._guardarCopiaLocalM3(snapshot);
 
         // Si no existe ningún cambio y tampoco teníamos un borrador
         // previo, no hacemos una petición inútil cada 5 minutos.
@@ -796,6 +908,8 @@ window.TSDLogic = {
         this.currentPendingData = [];
 
         this.stopAutoSaveBorradorM3();
+        this.stopLocalBackupM3();
+        this._vincularSalidaLocalM3();
 
         this._rangoBorradorM3 = null;
         this._ultimoSnapshotBorradorM3 = null;
@@ -886,6 +1000,7 @@ window.TSDLogic = {
         // Nunca permitir que el reloj de un rango anterior guarde datos
         // mientras estamos cambiando a otro rango.
         this.stopAutoSaveBorradorM3();
+        this.stopLocalBackupM3();
         this._ultimoSnapshotBorradorM3 = null;
 
         let start = dateVal, end = dateVal;
@@ -992,9 +1107,9 @@ window.TSDLogic = {
                 this.lastBancos
             );
 
-            // Desde este momento existe un rango válido en memoria.
-            // El respaldo automático se ejecutará cada 5 minutos.
+            // Servidor cada 5 minutos + respaldo local cada minuto.
             this.startAutoSaveBorradorM3();
+            this.startLocalBackupM3();
 
             if (borradorEncontrado) {
                 const usuario =
@@ -2489,6 +2604,11 @@ window.TSDLogic = {
             this.currentPendingData = [];
 
             this.stopAutoSaveBorradorM3();
+            this.stopLocalBackupM3();
+
+            // El consolidado ya quedó archivado definitivamente:
+            // esta copia ya no debe volver a resucitar.
+            this._eliminarCopiaLocalM3();
 
             this._rangoBorradorM3 = null;
             this._ultimoSnapshotBorradorM3 = null;

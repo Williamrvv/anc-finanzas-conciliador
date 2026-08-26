@@ -12,23 +12,10 @@
         </div>
         
         <!-- Botonera de Acción Flotante -->
-        <div id="m4-action-bar" class="flex items-center gap-2 mt-2 md:mt-0 transition-opacity">
-
-            <button
-                id="btn-save-draft-m4"
-                type="button"
-                onclick="window.AuxiliarLogic.guardarBorradorManualM4()"
-                title="Guardar el estado temporal del Auxiliar. También se respalda automáticamente cada 5 minutos."
-                class="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-black text-xs transition-colors shadow-sm flex items-center gap-2 border border-slate-200 dark:border-slate-600 shrink-0"
-            >
-                <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7M5 3h11l3 3v15H5V3z"></path>
-                </svg>
-                GUARDAR BORRADOR
-            </button>
+        <div id="m4-action-bar" class="flex items-center mt-2 md:mt-0 transition-opacity">
 
             <button id="btn-save-m4" onclick="window.AuxiliarLogic.saveAprobaciones()" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-black text-xs transition-all shadow-md shadow-green-500/30 flex items-center gap-2 shrink-0 hover:scale-105">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
                 APROBAR Y GUARDAR AJUSTES
             </button>
 

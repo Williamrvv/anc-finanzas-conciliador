@@ -264,12 +264,20 @@ window.ConciliacionLogic = {
                 .catch(() => {});
         }
 
-        // 3) Relojes: latido de presencia (1 min) + autoguardado pesado (10 min)
+        // Relojes:
+        // - heartbeat servidor
+        // - borrador compartido servidor
+        // - copia local IndexedDB cada minuto
         this.startAutoSave();
         this.startHeartbeat();
+        this.startLocalBackupM2();
 
         // BLOQUEO ANTI-DESASTRES (F5 o Cerrar Pestaña)
         window.onbeforeunload = (e) => {
+            // IndexedDB es asíncrono, por eso el respaldo principal corre
+            // cada minuto; aun así intentamos una última escritura.
+            this.guardarCopiaLocalM2().catch(() => {});
+
             if (this.hasUnsavedData()) {
                 const msg = "Tienes archivos cargados que no se han guardado en la Base de Datos. ¿Seguro que deseas salir?";
                 e.returnValue = msg;
@@ -287,7 +295,9 @@ window.ConciliacionLogic = {
             this._autoSaveInterval = null;
         }
 
-        // 1. MUTACIÓN DIRECTA: Vaciar arrays existentes (Destruye referencias de memoria)
+        this.stopLocalBackupM2();
+
+        // 1. MUTACIÓN DIRECTA: Vaciar arrays existentes
         const purge = (arr) => { if (Array.isArray(arr)) arr.length = 0; };
         
         if (this.data) {
@@ -354,6 +364,82 @@ window.ConciliacionLogic = {
                checkFiles(this.data.files.bac_pagado) || 
                checkFiles(this.data.files.scotia_detalle) || 
                checkFiles(this.data.files.scotia_pagado);
+    },
+
+    _localBackupIntervalM2: null,
+
+    _getLocalBackupKeyM2: function() {
+        const email = String(
+            window.CURRENT_USER_EMAIL || 'usuario'
+        )
+        .replace(/[^a-zA-Z0-9]/g, '_')
+        .toLowerCase();
+
+        return 'm2_emergency_' + email;
+    },
+
+    _crearSnapshotLocalM2: function() {
+        return {
+            data: this.data,
+            manualBAC: this.manualMatches || [],
+            manualScotia: this.manualMatchesScotia || [],
+            deferred: this.deferredRows || {
+                det: [],
+                pag: []
+            }
+        };
+    },
+
+    guardarCopiaLocalM2: async function() {
+        if (!window.LocalDB) return false;
+
+        const tieneAlgo =
+            this.hasUnsavedData() ||
+            (this.manualMatches || []).length > 0 ||
+            (this.manualMatchesScotia || []).length > 0 ||
+            ((this.deferredRows || {}).det || []).length > 0 ||
+            ((this.deferredRows || {}).pag || []).length > 0;
+
+        const key = this._getLocalBackupKeyM2();
+
+        if (!tieneAlgo) {
+            await window.LocalDB.delete(key);
+            return false;
+        }
+
+        await window.LocalDB.save(key, {
+            savedAt: Date.now(),
+            baseVersion: this._dbDraftVersion || 0,
+            draft: this._crearSnapshotLocalM2()
+        });
+
+        return true;
+    },
+
+    startLocalBackupM2: function() {
+        this.stopLocalBackupM2();
+
+        this._localBackupIntervalM2 = setInterval(() => {
+            if (!this._moduloAbierto()) {
+                this.stopLocalBackupM2();
+                return;
+            }
+
+            this.guardarCopiaLocalM2().catch(error => {
+                console.error(
+                    'Error en respaldo local M2:',
+                    error
+                );
+            });
+
+        }, 60 * 1000);
+    },
+
+    stopLocalBackupM2: function() {
+        if (this._localBackupIntervalM2) {
+            clearInterval(this._localBackupIntervalM2);
+            this._localBackupIntervalM2 = null;
+        }
     },
 
     // Guarda el borrador COMPARTIDO en BD (snapshot atómico). tipo: 'auto' | 'manual'
@@ -2222,8 +2308,14 @@ window.ConciliacionLogic = {
                     this.restoreDraftFromLocal(JSON.parse(full.dataJson));
                 }
             }
+
+            // Si quedó residuo guarda la nueva versión local.
+            // Si el cierre fue total, guardarCopiaLocalM2 elimina la copia.
+            await this.guardarCopiaLocalM2();
+
             this.startAutoSave();
             this.startHeartbeat();
+            this.startLocalBackupM2();
     
         } catch (error) {
             clearInterval(progressInterval);

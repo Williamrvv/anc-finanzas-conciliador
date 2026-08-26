@@ -12,6 +12,11 @@ window.AuxiliarLogic = {
     _datosM4Cargados: false,
     _guardandoBorradorM4: false,
 
+    // Respaldo local de emergencia. Sólo contiene decisiones humanas:
+    // manualMatches + blacklist. NUNCA copia la fuente completa.
+    _LS_BORRADOR_M4: 'iri_auxiliar_m4_backup_v1',
+    _salidaLocalM4Bound: false,
+
     // Diccionario Universal de Tailwind para evitar purga
     // Nombre en español y color de muestra de cada tono (también se usa al exportar)
     COLORES_ES: {
@@ -489,23 +494,114 @@ window.AuxiliarLogic = {
         );
     },
 
+    _leerCopiaLocalM4: function() {
+        try {
+            const raw = localStorage.getItem(this._LS_BORRADOR_M4);
+            if (!raw) return null;
+
+            const copia = JSON.parse(raw);
+
+            if (
+                !copia ||
+                !copia.data ||
+                !Array.isArray(copia.data.manualMatches) ||
+                !Array.isArray(copia.data.blacklist)
+            ) {
+                return null;
+            }
+
+            return copia;
+
+        } catch (e) {
+            console.error('No se pudo leer respaldo local M4:', e);
+            return null;
+        }
+    },
+
+    _guardarCopiaLocalM4: function(snapshot = null, pendienteSync = false) {
+        try {
+            const data = snapshot || this._crearSnapshotBorradorM4();
+
+            const vacio =
+                data.manualMatches.length === 0 &&
+                data.blacklist.length === 0;
+
+            // Si el estado vacío YA está sincronizado, no necesitamos
+            // conservar ninguna copia.
+            if (vacio && !pendienteSync) {
+                localStorage.removeItem(this._LS_BORRADOR_M4);
+                return;
+            }
+
+            localStorage.setItem(
+                this._LS_BORRADOR_M4,
+                JSON.stringify({
+                    savedAt: Date.now(),
+
+                    // true = esta copia contiene algo que todavía podría
+                    // no haber llegado a SQL Server.
+                    pendingSync: !!pendienteSync,
+
+                    // Estado remoto sobre el cual nació este cambio.
+                    // Permite detectar si al regresar el servidor continúa
+                    // exactamente donde lo dejamos.
+                    baseSnapshot: pendienteSync
+                        ? this._ultimoSnapshotBorradorM4
+                        : JSON.stringify(data),
+
+                    data: data
+                })
+            );
+
+        } catch (e) {
+            console.error('No se pudo guardar respaldo local M4:', e);
+        }
+    },
+
+    _limpiarCopiaLocalM4: function() {
+        try {
+            localStorage.removeItem(this._LS_BORRADOR_M4);
+        } catch (e) {
+            console.error('No se pudo limpiar respaldo local M4:', e);
+        }
+    },
+
+    _vincularRespaldoSalidaM4: function() {
+        if (this._salidaLocalM4Bound) return;
+
+        const guardarAntesDeSalir = () => {
+            if (!this._datosM4Cargados) return;
+
+            const snapshot = this._crearSnapshotBorradorM4();
+            const dataJson = JSON.stringify(snapshot);
+
+            this._guardarCopiaLocalM4(
+                snapshot,
+                dataJson !== this._ultimoSnapshotBorradorM4
+            );
+        };
+
+        // localStorage es síncrono: aquí no dependemos de que el navegador
+        // espere una petición HTTP antes de cerrar.
+        window.addEventListener('pagehide', guardarAntesDeSalir);
+        window.addEventListener('beforeunload', guardarAntesDeSalir);
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                guardarAntesDeSalir();
+            }
+        });
+
+        this._salidaLocalM4Bound = true;
+    },
+
     guardarBorradorM4: async function(opciones = {}) {
         const forzar = opciones.forzar === true;
 
-        if (
-            !this._datosM4Cargados ||
-            !this._borradorM4Disponible
-        ) {
+        if (!this._datosM4Cargados) {
             return {
                 guardado: false,
-                motivo: 'no_disponible'
-            };
-        }
-
-        if (this._guardandoBorradorM4) {
-            return {
-                guardado: false,
-                motivo: 'ocupado'
+                motivo: 'sin_datos'
             };
         }
 
@@ -516,15 +612,55 @@ window.AuxiliarLogic = {
             snapshot.manualMatches.length === 0 &&
             snapshot.blacklist.length === 0;
 
+        const hayCambioPendiente =
+            dataJson !== this._ultimoSnapshotBorradorM4;
+
+        // PRIMER ESCUDO:
+        // antes de cualquier await, el estado queda físicamente en
+        // el navegador. Si el usuario cierra aquí, no se pierde.
+        this._guardarCopiaLocalM4(
+            snapshot,
+            hayCambioPendiente
+        );
+
+        // Si temporalmente no pudimos leer el borrador del servidor,
+        // NO pisamos SQL a ciegas. La copia local queda a salvo.
+        if (!this._borradorM4Disponible) {
+            return {
+                guardado: false,
+                motivo: 'solo_local'
+            };
+        }
+
+        if (this._guardandoBorradorM4) {
+            return {
+                guardado: false,
+                motivo: 'ocupado'
+            };
+        }
+
         if (vacio) {
             if (this._borradorM4Existe) {
                 this._guardandoBorradorM4 = true;
 
                 try {
+                    // Mientras esperamos, la copia local vacía queda marcada
+                    // como pendiente de sincronización.
+                    this._guardarCopiaLocalM4(
+                        snapshot,
+                        true
+                    );
+
                     await this._borradorApiM4('delete');
 
                     this._borradorM4Existe = false;
                     this._ultimoSnapshotBorradorM4 = dataJson;
+
+                    // Vacío + sincronizado = eliminar respaldo local.
+                    this._guardarCopiaLocalM4(
+                        snapshot,
+                        false
+                    );
 
                     return {
                         guardado: true,
@@ -537,6 +673,7 @@ window.AuxiliarLogic = {
             }
 
             this._ultimoSnapshotBorradorM4 = dataJson;
+            this._guardarCopiaLocalM4(snapshot, false);
 
             return {
                 guardado: false,
@@ -548,6 +685,9 @@ window.AuxiliarLogic = {
             !forzar &&
             dataJson === this._ultimoSnapshotBorradorM4
         ) {
+            // El servidor ya tiene exactamente esto.
+            this._guardarCopiaLocalM4(snapshot, false);
+
             return {
                 guardado: false,
                 motivo: 'sin_cambios'
@@ -557,12 +697,25 @@ window.AuxiliarLogic = {
         this._guardandoBorradorM4 = true;
 
         try {
+            // Mientras la petición está volando, la copia local conserva
+            // explícitamente que todavía no podemos asegurar la sincronización.
+            this._guardarCopiaLocalM4(
+                snapshot,
+                true
+            );
+
             await this._borradorApiM4('save', {
                 dataJson: dataJson
             });
 
             this._borradorM4Existe = true;
             this._ultimoSnapshotBorradorM4 = dataJson;
+
+            // SQL confirmó recepción.
+            this._guardarCopiaLocalM4(
+                snapshot,
+                false
+            );
 
             return {
                 guardado: true
@@ -576,6 +729,8 @@ window.AuxiliarLogic = {
     startAutoSaveBorradorM4: function() {
         this.stopAutoSaveBorradorM4();
 
+        // Respaldo silencioso cada minuto.
+        // Si no cambió nada, guardarBorradorM4 evita escribir de nuevo en SQL.
         this._autoSaveBorradorM4Timer = setInterval(() => {
             this.guardarBorradorM4().catch(error => {
                 console.error(
@@ -583,7 +738,7 @@ window.AuxiliarLogic = {
                     error
                 );
             });
-        }, 5 * 60 * 1000);
+        }, 60 * 1000);
     },
 
     stopAutoSaveBorradorM4: function() {
@@ -674,6 +829,10 @@ window.AuxiliarLogic = {
         this._borradorM4Existe = false;
         this._ultimoSnapshotBorradorM4 = null;
 
+        // Se registra una sola vez aunque el módulo se abra varias veces
+        // dentro de la SPA.
+        this._vincularRespaldoSalidaM4();
+
         await this.fetchTags();
 
         // Iniciar Calendario
@@ -700,8 +859,8 @@ window.AuxiliarLogic = {
 
         await this.fetchPendientes();
 
-        // Respaldo adicional. Los cambios manuales también se guardan
-        // inmediatamente; este reloj funciona únicamente como seguro.
+        // Seguro adicional cada minuto. Los cambios manuales se protegen
+        // inmediatamente y este reloj cubre cualquier caso intermedio.
         this.startAutoSaveBorradorM4();
     },
 
@@ -1488,39 +1647,81 @@ window.AuxiliarLogic = {
             this.manualMatches = [];
 
             // =====================================================
-            // 2. BORRADOR COMPARTIDO
+            // 2. BORRADOR COMPARTIDO + RESPALDO LOCAL
             // =====================================================
+            const copiaLocal = this._leerCopiaLocalM4();
+
             try {
                 const borrador = await this._borradorApiM4('get');
 
                 this._borradorM4Disponible = true;
                 this._borradorM4Existe = !!borrador.existe;
 
+                const snapshotVacio = JSON.stringify({
+                    manualMatches: [],
+                    blacklist: []
+                });
+
+                const remotoJson = borrador.existe
+                    ? (borrador.dataJson || snapshotVacio)
+                    : snapshotVacio;
+
+                // El servidor sigue siendo la autoridad principal.
+                this._ultimoSnapshotBorradorM4 = remotoJson;
+
                 if (borrador.existe) {
-                    // Guardamos primero el snapshot ORIGINAL del servidor.
-                    // Si al reconstruir desaparecen filas viejas, después
-                    // detectaremos la diferencia y limpiaremos el borrador.
-                    this._ultimoSnapshotBorradorM4 =
-                        borrador.dataJson || null;
-
-                    const snapshot = JSON.parse(
-                        borrador.dataJson || '{}'
+                    this._aplicarSnapshotBorradorM4(
+                        JSON.parse(remotoJson)
                     );
+                }
 
-                    this._aplicarSnapshotBorradorM4(snapshot);
+                // -------------------------------------------------
+                // RECUPERACIÓN DE UNA ESCRITURA INTERRUMPIDA
+                // -------------------------------------------------
+                // Sólo recuperamos automáticamente una copia marcada
+                // como pendiente si el servidor sigue EXACTAMENTE en
+                // el estado base desde el cual nació esa copia.
+                //
+                // Así una copia local vieja jamás pisa silenciosamente
+                // cambios nuevos hechos por otro usuario.
+                if (
+                    copiaLocal &&
+                    copiaLocal.pendingSync &&
+                    copiaLocal.data
+                ) {
+                    const localJson =
+                        JSON.stringify(copiaLocal.data);
 
-                } else {
-                    this._ultimoSnapshotBorradorM4 =
-                        JSON.stringify(
-                            this._crearSnapshotBorradorM4()
+                    if (localJson === remotoJson) {
+                        // La petición anterior sí llegó al servidor aunque
+                        // el navegador no alcanzara a enterarse.
+                        this._guardarCopiaLocalM4(
+                            copiaLocal.data,
+                            false
                         );
+
+                    } else if (
+                        copiaLocal.baseSnapshot === remotoJson
+                    ) {
+                        // El servidor todavía está exactamente donde estaba:
+                        // estos son cambios locales legítimos no sincronizados.
+                        this._aplicarSnapshotBorradorM4(
+                            copiaLocal.data
+                        );
+                    } else {
+                        // Hubo cambios remotos después de la copia local.
+                        // Por seguridad gana el servidor y NO mezclamos
+                        // automáticamente dos decisiones potencialmente
+                        // incompatibles.
+                        console.warn(
+                            'Existe una copia local M4 pendiente, pero el ' +
+                            'borrador remoto cambió después. Se mantiene ' +
+                            'la versión remota para evitar una colisión.'
+                        );
+                    }
                 }
 
             } catch (errorBorrador) {
-                // La conciliación debe seguir funcionando incluso si
-                // temporalmente falla el almacenamiento del borrador.
-                // Pero deshabilitamos escrituras para no pisar un estado
-                // remoto que no logramos leer.
                 this._borradorM4Disponible = false;
                 this._borradorM4Existe = false;
                 this._ultimoSnapshotBorradorM4 = null;
@@ -1529,6 +1730,17 @@ window.AuxiliarLogic = {
                     'No se pudo cargar el borrador Auxiliar M4:',
                     errorBorrador
                 );
+
+                // Si SQL/endpoint no está disponible, todavía podemos
+                // reconstruir el trabajo desde el navegador.
+                if (
+                    copiaLocal &&
+                    copiaLocal.data
+                ) {
+                    this._aplicarSnapshotBorradorM4(
+                        copiaLocal.data
+                    );
+                }
             }
 
             // =====================================================
