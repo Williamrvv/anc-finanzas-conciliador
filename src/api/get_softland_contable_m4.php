@@ -40,13 +40,13 @@ try {
     $stmt = $pdo->prepare("
         SELECT
             IdRegistro AS id,
-            FechaContable,
+            CONVERT(varchar(10), FechaContable, 23) AS FechaContable,
             Monto,
             ReferenciaSoftland,
             EmailUsuario,
-            FechaRegistro
+            CONVERT(varchar(19), FechaRegistro, 120) AS FechaRegistro
         FROM Tbl_Contabilidad_Softland
-        WHERE FechaContable = ?
+        WHERE FechaContable = CONVERT(date, ?, 23)
         ORDER BY FechaRegistro DESC, IdRegistro DESC
     ");
 

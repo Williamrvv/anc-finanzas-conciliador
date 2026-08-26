@@ -124,7 +124,9 @@ try {
                     WHERE m2.IdMatchTSD IS NOT NULL
                       AND COALESCE(t2.FechaPago,
                             TRY_CONVERT(date, b2.FECHA_PAGO, 23), TRY_CONVERT(date, b2.FECHA_PAGO, 103),
-                            TRY_CONVERT(date, s2.Fecha_Pago, 23), TRY_CONVERT(date, s2.Fecha_Pago, 103)) BETWEEN :start AND :end
+                            TRY_CONVERT(date, s2.Fecha_Pago, 23), TRY_CONVERT(date, s2.Fecha_Pago, 103))
+                          BETWEEN CONVERT(date, :start, 23)
+                              AND CONVERT(date, :end, 23)
                   )";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':start' => $start, ':end' => $end]);

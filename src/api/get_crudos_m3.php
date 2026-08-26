@@ -96,7 +96,9 @@ try {
             INNER JOIN Tbl_Conciliacion_Cierres c ON b.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON b.IdTransaccion = a.IdTransaccion
             WHERE COALESCE(TRY_CONVERT(date, b.FECHA_PAGO, 23),
-                           TRY_CONVERT(date, b.FECHA_PAGO, 103)) BETWEEN :start AND :end
+                           TRY_CONVERT(date, b.FECHA_PAGO, 103))
+                  BETWEEN CONVERT(date, :start, 23)
+                      AND CONVERT(date, :end, 23)
             ORDER BY c.IdCierre ASC
         ");
         $stmt->execute([':start' => $startDate, ':end' => $endDate]);
@@ -122,7 +124,9 @@ try {
             INNER JOIN Tbl_Conciliacion_Cierres c ON s.IdCierre = c.IdCierre 
             LEFT JOIN Tbl_Ajustes_Auditoria a ON s.IdTransaccion = a.IdTransaccion
             WHERE COALESCE(TRY_CONVERT(date, s.Fecha_Pago, 23),
-                           TRY_CONVERT(date, s.Fecha_Pago, 103)) BETWEEN :start AND :end
+                           TRY_CONVERT(date, s.Fecha_Pago, 103))
+                  BETWEEN CONVERT(date, :start, 23)
+                      AND CONVERT(date, :end, 23)
             ORDER BY c.IdCierre ASC
         ");
         $stmt->execute([':start' => $startDate, ':end' => $endDate]);
@@ -144,7 +148,9 @@ try {
             FROM Tbl_Detalle_TSD t
             INNER JOIN Tbl_Conciliacion_Cierres c ON t.IdCierre = c.IdCierre
             LEFT JOIN Tbl_Transacciones_Maestra m ON t.IdTransaccion = m.IdTransaccion
-            WHERE t.FechaPago BETWEEN :start AND :end
+            WHERE t.FechaPago
+                  BETWEEN CONVERT(date, :start, 23)
+                      AND CONVERT(date, :end, 23)
             ORDER BY t.FechaPago DESC, t.Contrato
         ");
         $stmt->execute([':start' => $startDate, ':end' => $endDate]);
@@ -190,7 +196,9 @@ try {
             WHERE P.PAY_CHARGE = 'P'                            
               AND P.TYPE IN ('3', '7', 'C', 'F', 'J')           
               AND S.Country = 'CRI'                      
-              AND CAST(P.Pay_Date AS DATE) BETWEEN :start AND :end 
+              AND CAST(P.Pay_Date AS DATE)
+                  BETWEEN CONVERT(date, :start, 23)
+                      AND CONVERT(date, :end, 23)
             ORDER BY P.Pay_Date DESC, P.KNUM;
         ";
         $stmtTSD = $pdoTSD->prepare($sqlTSD);

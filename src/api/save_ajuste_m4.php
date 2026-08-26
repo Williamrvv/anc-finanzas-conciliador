@@ -204,15 +204,19 @@ try {
          (IdTransaccion, IdCierre, Banco, Origen, Estado, IdMatch, FechaTransaccion, Afiliado_MerID,
           Autorizacion, Tarjeta, MontoBruto, MontoNeto, ArchivoOrigen, HashUnico, ColorEtiqueta, NotaUsuario,
           FechaRegistro)
-         VALUES (?, ?, ?, 'AJUSTE', 'CONCILIADO', ?, ?, ?, ?, ?, ?, ?, 'AJUSTE-M4', ?, ?, ?, ?)"
+         VALUES (
+            ?, ?, ?, 'AJUSTE', 'CONCILIADO', ?,
+            CONVERT(date, ?, 23),
+            ?, ?, ?, ?, ?, 'AJUSTE-M4', ?, ?, ?,
+            CONVERT(datetime, ?, 126)
+         )"
     );
     $stMaestra->execute([
         $idTrans, $idCierre, $bancoDB, $idMatch, $fecha, ($afiliado !== '' ? $afiliado : null),
         ($auth !== '' ? $auth : null), ($tarjeta !== '' ? $tarjeta : null), $bruto, $neto, $hashUnico,
         $idEtiq, ($nota !== '' ? $nota : null),
-        // La fecha del ajuste manda: así el histórico lo encuentra en SU día y no
-        // en el día en que alguien lo digitó.
-        $fecha . ' ' . date('H:i:s')
+        // ISO 8601 con "T": independiente del idioma/DATEFORMAT del SQL Server.
+        $fecha . 'T' . date('H:i:s')
     ]);
 
     // ---------- 3. DETALLE POR BANCO ----------

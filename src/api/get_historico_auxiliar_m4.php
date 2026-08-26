@@ -47,7 +47,7 @@ try {
             TM.Banco,
             TM.Origen,
             CASE
-                WHEN TM.FechaConciliacion = CAST(? AS date)
+                WHEN TM.FechaConciliacion = CONVERT(date, ?, 23)
                     THEN 'CONCILIADO ESE DÍA'
                 ELSE 'PENDIENTE AL CIERRE'
             END AS EstadoHistorico,
@@ -56,7 +56,7 @@ try {
             CONVERT(varchar(19), TM.FechaRegistro, 120) AS FechaRegistro,
             CONVERT(varchar(10), TM.FechaConciliacion, 23) AS FechaConciliacion,
             CONVERT(varchar(19), TM.FechaRealConciliacion, 120) AS FechaRealConciliacion,
-            DATEDIFF(DAY, TM.FechaTransaccion, CAST(? AS date)) AS DiasAntiguedadAlCorte,
+            DATEDIFF(DAY, TM.FechaTransaccion, CONVERT(date, ?, 23)) AS DiasAntiguedadAlCorte,
             TM.Afiliado_MerID,
             TM.Autorizacion,
             TM.Tarjeta,
@@ -85,15 +85,15 @@ try {
         (
             -- Estado histórico normal: sólo registros que ya existían al corte.
             (
-                TM.FechaRegistro < DATEADD(DAY, 1, CAST(? AS date))
+                TM.FechaRegistro < DATEADD(DAY, 1, CONVERT(date, ?, 23))
                 AND (
                     TM.FechaConciliacion IS NULL
-                    OR TM.FechaConciliacion > CAST(? AS date)
+                    OR TM.FechaConciliacion > CONVERT(date, ?, 23)
                 )
             )
 
             -- CONCILIADO ESE DÍA
-            OR TM.FechaConciliacion = CAST(? AS date)
+            OR TM.FechaConciliacion = CONVERT(date, ?, 23)
 
             -- En el último día contable disponible también mostramos todos
             -- los pendientes actuales, aunque hayan sido registrados después.

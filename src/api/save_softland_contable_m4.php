@@ -104,7 +104,7 @@ try {
             EmailUsuario
         )
         OUTPUT INSERTED.IdRegistro
-        VALUES (?, ?, ?, ?)
+        VALUES (CONVERT(date, ?, 23), ?, ?, ?)
     ");
 
     $stmt->execute([

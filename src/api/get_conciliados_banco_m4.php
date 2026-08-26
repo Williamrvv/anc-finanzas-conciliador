@@ -49,8 +49,10 @@ try {
               AND det.Origen = 'DETALLADO'
               AND det.Estado = 'CONCILIADO' 
               AND det.IdMatch IS NOT NULL
-              AND COALESCE(TRY_CONVERT(date, dv.Fecha_Pago, 23),
-                           TRY_CONVERT(date, dv.Fecha_Pago, 103)) BETWEEN :start AND :end
+              AND COALESCE(TRY_CONVERT(date, dv.FECHA_PAGO, 23),
+                           TRY_CONVERT(date, dv.FECHA_PAGO, 103))
+                  BETWEEN CONVERT(date, :start, 23)
+                      AND CONVERT(date, :end, 23)
             ORDER BY COALESCE(TRY_CONVERT(date, dv.Fecha_Pago, 23),
                               TRY_CONVERT(date, dv.Fecha_Pago, 103)) DESC, det.IdMatch
         ";
@@ -91,8 +93,10 @@ try {
               AND det.Origen = 'DETALLADO'
               AND det.Estado = 'CONCILIADO' 
               AND det.IdMatch IS NOT NULL
-              AND COALESCE(TRY_CONVERT(date, dv.FECHA_PAGO, 23),
-                           TRY_CONVERT(date, dv.FECHA_PAGO, 103)) BETWEEN :start AND :end
+              AND COALESCE(TRY_CONVERT(date, dv.Fecha_Pago, 23),
+                           TRY_CONVERT(date, dv.Fecha_Pago, 103))
+                  BETWEEN CONVERT(date, :start, 23)
+                      AND CONVERT(date, :end, 23)
             ORDER BY COALESCE(TRY_CONVERT(date, dv.FECHA_PAGO, 23),
                               TRY_CONVERT(date, dv.FECHA_PAGO, 103)) DESC, det.IdMatch
         ";

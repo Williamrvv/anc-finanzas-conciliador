@@ -1459,7 +1459,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 
-            ['bac', 'scotia', 'tsd', 'dbr', 'softland', 'historico'].forEach(t => {    
+            ['bac', 'scotia', 'tsd', 'dbr', 'softland', 'historico'].forEach(t => {
                 const btn = document.getElementById(`tab-${t}`);
                 const gridDiv = document.getElementById(`grid-${t}`);
                 
