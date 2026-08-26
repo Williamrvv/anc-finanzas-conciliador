@@ -161,6 +161,23 @@ try {
     // ==============================================================
     // 6. FUNCIÓN HELPER: Procesar fila TSD
     // ==============================================================
+    // ==============================================================
+    //  BLINDAJE DE FORMATO DE FECHAS (antes de que salgan hacia SQL)
+    // --------------------------------------------------------------
+    //  FechaConciliacion es 'date': 'AAAA-MM-DD' se lee como ISO siempre.
+    //  FechaRealConciliacion es 'datetime', y ahí el formato con ESPACIO
+    //  ('AAAA-MM-DD hh:mm:ss') sí se interpreta según el idioma del login:
+    //  con dmy intenta leer el año como día y falla con "valor fuera de
+    //  intervalo". Con separador 'T' la lectura es única en cualquier idioma.
+    //  Debe ir antes del closure: use(...) captura por valor.
+    // ==============================================================
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$fechaConcil)) {
+        throw new \Exception("La fecha de conciliación no llegó en formato AAAA-MM-DD. Valor recibido: '" . $fechaConcil . "'");
+    }
+
+    $tsReal = strtotime((string)$fechaRealConcil);
+    $fechaRealConcil = date('Y-m-d\TH:i:s', $tsReal !== false ? $tsReal : time());
+
     $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC, $normCod, $fechaConcil, $fechaRealConcil) {
         $idTransaccion = trim($t['ID_Transaccion'] ?? 'SD');
         $contrato = trim($t['Contrato'] ?? '');
