@@ -633,6 +633,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     // para que ninguna quede con datos del rango anterior.
                     if (fuente !== currentActiveTab && grids[fuente]) {
                         grids[fuente].updateData(rawData[fuente] || []);
+                        // VanillaGrid reescribe el className del contenedor al repintar
+                        // y se lleva el 'hidden'. Sin esto, las tablas se apilan.
+                        const cont = document.getElementById(`grid-${fuente}`);
+                        if (cont) cont.classList.add('hidden');
                     }
                 }
 
