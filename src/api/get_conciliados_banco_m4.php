@@ -49,8 +49,10 @@ try {
               AND det.Origen = 'DETALLADO'
               AND det.Estado = 'CONCILIADO' 
               AND det.IdMatch IS NOT NULL
-              AND TRY_CONVERT(date, dv.FECHA_PAGO) BETWEEN :start AND :end
-            ORDER BY TRY_CONVERT(date, dv.FECHA_PAGO) DESC, det.IdMatch
+              AND COALESCE(TRY_CONVERT(date, dv.Fecha_Pago, 23),
+                           TRY_CONVERT(date, dv.Fecha_Pago, 103)) BETWEEN :start AND :end
+            ORDER BY COALESCE(TRY_CONVERT(date, dv.Fecha_Pago, 23),
+                              TRY_CONVERT(date, dv.Fecha_Pago, 103)) DESC, det.IdMatch
         ";
     } else {
         $sql = "
@@ -89,8 +91,10 @@ try {
               AND det.Origen = 'DETALLADO'
               AND det.Estado = 'CONCILIADO' 
               AND det.IdMatch IS NOT NULL
-              AND TRY_CONVERT(date, dv.Fecha_Pago) BETWEEN :start AND :end
-            ORDER BY TRY_CONVERT(date, dv.Fecha_Pago) DESC, det.IdMatch
+              AND COALESCE(TRY_CONVERT(date, dv.FECHA_PAGO, 23),
+                           TRY_CONVERT(date, dv.FECHA_PAGO, 103)) BETWEEN :start AND :end
+            ORDER BY COALESCE(TRY_CONVERT(date, dv.FECHA_PAGO, 23),
+                              TRY_CONVERT(date, dv.FECHA_PAGO, 103)) DESC, det.IdMatch
         ";
     }
 
