@@ -187,7 +187,7 @@ try {
             ]);
         } else {
             $stmtInsertMaestra->execute([
-                $idTr       ansaccion,
+                $idTransaccion,
                 $nuevoIdCierreTSD,
                 $estado,
                 $idMatchTSD,
