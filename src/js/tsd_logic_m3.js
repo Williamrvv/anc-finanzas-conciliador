@@ -9,6 +9,10 @@ window.TSDLogic = {
     currentMatchedData: [], // Almacenará los éxitos para el guardado
     currentPendingData: [], // Almacenará los pendientes para el guardado
 
+    // Borrador compartido M3. Se identifica únicamente por rango,
+    // nunca por usuario.
+    _rangoBorradorM3: null,
+
     // --------------------------------------------------------
     // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
     // --------------------------------------------------------
@@ -472,23 +476,150 @@ window.TSDLogic = {
         XLSX.writeFile(wb, `Cargador_${tipo}_${asientoId}.xlsx`);
     },
 
+    _borradorApiM3: async function(action, payload = {}) {
+        const rango = this._rangoBorradorM3 || {};
+
+        const res = await fetch('api/borrador_tsd_m3.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({
+                action: action,
+                inicio: rango.start || '',
+                fin: rango.end || ''
+            }, payload))
+        });
+
+        const data = await res.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'No se pudo procesar el borrador TSD.');
+        }
+
+        return data;
+    },
+
+    _crearSnapshotBorradorM3: function() {
+        return {
+            manualMatches: (this.manualMatches || []).map(match => ({
+                tsdIds: (match.tsdArr || [])
+                    .map(t => String(t.ID_Transaccion || ''))
+                    .filter(Boolean),
+
+                bancoIds: (match.bancoArr || [])
+                    .map(b => String(b.IdTransaccion || ''))
+                    .filter(Boolean),
+
+                justificacion: match.justificacion || ''
+            })),
+
+            blacklist: Array.from(
+                new Set(
+                    (this.blacklist || [])
+                        .map(item => String(item || ''))
+                        .filter(Boolean)
+                )
+            )
+        };
+    },
+
+    _aplicarSnapshotBorradorM3: function(snapshot) {
+        snapshot = snapshot || {};
+
+        const mapaTSD = new Map(
+            (this.lastTSD || []).map(t => [
+                String(t.ID_Transaccion),
+                t
+            ])
+        );
+
+        const mapaBancos = new Map(
+            (this.lastBancos || []).map(b => [
+                String(b.IdTransaccion),
+                b
+            ])
+        );
+
+        this.blacklist = Array.isArray(snapshot.blacklist)
+            ? Array.from(new Set(snapshot.blacklist.map(String)))
+            : [];
+
+        this.manualMatches = Array.isArray(snapshot.manualMatches)
+            ? snapshot.manualMatches.map(match => ({
+                tsdArr: (match.tsdIds || [])
+                    .map(id => mapaTSD.get(String(id)))
+                    .filter(Boolean),
+
+                bancoArr: (match.bancoIds || [])
+                    .map(id => mapaBancos.get(String(id)))
+                    .filter(Boolean),
+
+                justificacion: match.justificacion || ''
+            })).filter(match =>
+                match.tsdArr.length > 0 ||
+                match.bancoArr.length > 0
+            )
+            : [];
+    },
+
+    guardarBorradorM3: async function() {
+        if (!this._rangoBorradorM3) return;
+
+        const snapshot = this._crearSnapshotBorradorM3();
+
+        // Si el usuario deshizo absolutamente todos sus cambios,
+        // ya no existe nada que recordar.
+        if (
+            snapshot.manualMatches.length === 0 &&
+            snapshot.blacklist.length === 0
+        ) {
+            await this.eliminarBorradorM3();
+            return;
+        }
+
+        await this._borradorApiM3('save', {
+            dataJson: JSON.stringify(snapshot)
+        });
+    },
+
+    eliminarBorradorM3: async function() {
+        if (!this._rangoBorradorM3) return;
+
+        await this._borradorApiM3('delete');
+    },
+
     init: function() {
         console.log("🚀 Módulo TSD Inicializado");
-        
-        if(this.gridMatched) { if (typeof this.gridMatched.destroy === 'function') this.gridMatched.destroy(); this.gridMatched = null; }
-        if(this.gridPending) { if (typeof this.gridPending.destroy === 'function') this.gridPending.destroy(); this.gridPending = null; }
-        
-        this.blacklist = []; // Reiniciar blacklist al entrar
-        
+
+        if(this.gridMatched) {
+            if (typeof this.gridMatched.destroy === 'function') this.gridMatched.destroy();
+            this.gridMatched = null;
+        }
+
+        if(this.gridPending) {
+            if (typeof this.gridPending.destroy === 'function') this.gridPending.destroy();
+            this.gridPending = null;
+        }
+
+        // Al entrar al módulo NO heredamos ningún trabajo anterior en RAM.
+        // Todo empieza únicamente después de que el usuario seleccione un rango.
+        this.lastTSD = [];
+        this.lastBancos = [];
+        this.manualMatches = [];
+        this.blacklist = [];
+        this.currentMatchedData = [];
+        this.currentPendingData = [];
+        this._rangoBorradorM3 = null;
+
         if (window.flatpickr) {
             this.datePicker = flatpickr("#tsd-date-picker", {
                 mode: "range",
                 dateFormat: "Y-m-d",
-                locale: "es", 
-                defaultDate: [new Date(), new Date()],
+                locale: "es",
+
+                // Sin defaultDate: M3 espera explícitamente a que
+                // el usuario indique el rango que desea trabajar.
                 onClose: (selectedDates, dateStr, instance) => {
-                    // Si seleccionó un rango válido o un solo día, arrancamos el cruce automáticamente
-                    if (selectedDates.length > 0) {
+                    if (selectedDates.length > 0 && dateStr) {
                         window.TSDLogic.fetchAndMatch(dateStr);
                     }
                 }
@@ -600,16 +731,88 @@ window.TSDLogic = {
 
             if (!json.success) throw new Error(json.error);
 
-            // Sellar usando las llaves primarias de BD para evitar "secuestros" de memoria tras una recarga
-            this.lastTSD = json.tsd.map(t => { t._id = 't_' + t.ID_Transaccion; return t; });
-            this.lastBancos = json.bancos.map(b => { b._id = 'b_' + b.IdTransaccion; return b; });
+            // El borrador pertenece EXACTAMENTE al rango consultado.
+            this._rangoBorradorM3 = {
+                start: start,
+                end: end
+            };
 
-            // Actualizar Dashboard Financiero
-            this.updateFinancialDashboard(this.lastTSD, this.lastBancos);
+            // Un cambio de rango NUNCA puede heredar modificaciones
+            // que estaban solamente en la RAM del rango anterior.
+            this.manualMatches = [];
+            this.blacklist = [];
 
-            // Ya NO limpiamos manualMatches ni la blacklist aquí.
-            // Preservamos el "Snapshot" del usuario intacto entre recargas.
-            this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+            // Siempre obtenemos primero la fuente fresca.
+            this.lastTSD = json.tsd.map(t => {
+                t._id = 't_' + t.ID_Transaccion;
+                return t;
+            });
+
+            this.lastBancos = json.bancos.map(b => {
+                b._id = 'b_' + b.IdTransaccion;
+                return b;
+            });
+
+            this.updateFinancialDashboard(
+                this.lastTSD,
+                this.lastBancos
+            );
+
+            // Después de tener los datos actuales, buscamos si alguien
+            // dejó cambios manuales guardados para ESTE MISMO rango.
+            let borradorEncontrado = null;
+
+            try {
+                const borrador = await this._borradorApiM3('get');
+
+                if (borrador.existe) {
+                    const snapshot = JSON.parse(borrador.dataJson || '{}');
+
+                    this._aplicarSnapshotBorradorM3(snapshot);
+                    borradorEncontrado = borrador;
+                }
+            } catch (errorBorrador) {
+                console.error(
+                    'No se pudo consultar el borrador M3:',
+                    errorBorrador
+                );
+
+                await window.SysUI.alert(
+                    `Los datos del rango fueron consultados correctamente, pero no fue posible revisar si existe un borrador compartido.\n\n${errorBorrador.message}`,
+                    "Borrador no disponible",
+                    "warning"
+                );
+            }
+
+            // El algoritmo siempre trabaja sobre la data fresca.
+            // manualMatches + blacklist reconstruyen encima los cambios humanos.
+            this.runMatchingAlgorithm(
+                this.lastTSD,
+                this.lastBancos
+            );
+
+            if (borradorEncontrado) {
+                const usuario =
+                    borradorEncontrado.usuarioUltimo ||
+                    borradorEncontrado.usuarioInicio ||
+                    'otro usuario';
+
+                const fechaCambio =
+                    borradorEncontrado.fechaActualizacion
+                        ? `\nÚltima modificación: ${borradorEncontrado.fechaActualizacion}`
+                        : '';
+
+                const rangoTexto =
+                    start === end
+                        ? start
+                        : `${start} a ${end}`;
+
+                await window.SysUI.alert(
+                    `Se encontró una conciliación temporal guardada para el rango ${rangoTexto}.\n\nSe mostrarán automáticamente los cambios realizados por ${usuario}.${fechaCambio}`,
+                    "Conciliación recuperada",
+                    "info"
+                );
+            }
 
         } catch (error) {
             console.error(error);
@@ -1790,6 +1993,23 @@ window.TSDLogic = {
         // Re-ejecutar el algoritmo permitiendo que los liberados busquen nuevas parejas
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
 
+        // Cada modificación confirmada en la Estación Manual queda
+        // inmediatamente disponible para cualquier otro usuario.
+        try {
+            await this.guardarBorradorM3();
+        } catch (errorBorrador) {
+            console.error(
+                'No se pudo guardar el borrador M3:',
+                errorBorrador
+            );
+
+            await window.SysUI.alert(
+                `Los cambios sí se aplicaron en pantalla, pero NO pudieron guardarse como borrador compartido.\n\n${errorBorrador.message}`,
+                "Borrador no guardado",
+                "warning"
+            );
+        }
+
         // --- RASTREO DE NUEVOS MATCHES ---
         const newMatches = [];
         this.currentMatchedData.forEach(row => {
@@ -1971,7 +2191,14 @@ window.TSDLogic = {
             const res = await fetch('api/save_tsd_m3.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending, fechaConciliacion: fechaConciliacion })
+                body: JSON.stringify({
+                    folios: foliosArray,
+                    matches: payloadMatched,
+                    pendientes: payloadPending,
+                    fechaConciliacion: fechaConciliacion,
+                    rangoInicio: this._rangoBorradorM3?.start || '',
+                    rangoFin: this._rangoBorradorM3?.end || ''
+                })
             });
             let data = await res.json();
 
@@ -2002,6 +2229,25 @@ window.TSDLogic = {
 
             if (!data.success) throw new Error(data.error);
 
+            // El backend elimina el borrador después del COMMIT.
+            // Este segundo intento sólo actúa como respaldo.
+            if (!data.borradorEliminado) {
+                try {
+                    await this.eliminarBorradorM3();
+                } catch (errorBorrador) {
+                    console.error(
+                        'El cierre quedó guardado, pero no se pudo purgar el borrador M3:',
+                        errorBorrador
+                    );
+
+                    await window.SysUI.alert(
+                        "El consolidado TSD quedó guardado correctamente, pero no fue posible eliminar automáticamente su borrador temporal.",
+                        "Advertencia de limpieza",
+                        "warning"
+                    );
+                }
+            }
+
             // 4.6 ÉXITO: COMPLETAR AL 100% Y PINTAR DE VERDE
             clearInterval(progressInterval);
             elBar.style.width = '100%'; 
@@ -2026,6 +2272,9 @@ window.TSDLogic = {
             this.lastBancos = [];
             this.manualMatches = [];
             this.blacklist = [];
+            this.currentMatchedData = [];
+            this.currentPendingData = [];
+            this._rangoBorradorM3 = null;
             if(this.gridMatched) { if (typeof this.gridMatched.destroy === 'function') this.gridMatched.destroy(); this.gridMatched = null; }
             if(this.gridPending) { if (typeof this.gridPending.destroy === 'function') this.gridPending.destroy(); this.gridPending = null; }
             

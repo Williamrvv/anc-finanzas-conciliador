@@ -23,6 +23,27 @@ if (!$input) {
 
 $folios = $input['folios'] ?? [];
 
+// Rango que originó esta sesión de trabajo.
+// Sólo se utiliza para purgar su borrador DESPUÉS de que el
+// consolidado financiero haya hecho COMMIT correctamente.
+$rangoInicio = trim($input['rangoInicio'] ?? '');
+$rangoFin = trim($input['rangoFin'] ?? '');
+
+$validarFechaRango = function ($valor) {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor)) {
+        return false;
+    }
+
+    [$anio, $mes, $dia] = array_map('intval', explode('-', $valor));
+
+    return checkdate($mes, $dia, $anio);
+};
+
+$rangoBorradorValido =
+    $validarFechaRango($rangoInicio) &&
+    $validarFechaRango($rangoFin) &&
+    $rangoInicio <= $rangoFin;
+
 // Fecha CONTABLE elegida explícitamente por el usuario.
 // NUNCA se sustituye silenciosamente por la fecha actual.
 $fechaConcil = trim($input['fechaConciliacion'] ?? '');
@@ -293,7 +314,45 @@ try {
     }
 
     $pdo->commit();
-    echo json_encode(['success' => true]);
+
+    // ==============================================================
+    // 9. PURGAR BORRADOR M3
+    // --------------------------------------------------------------
+    // El cierre financiero YA quedó confirmado.
+    // La limpieza del borrador es secundaria y nunca debe revertir
+    // un consolidado que ya hizo COMMIT correctamente.
+    // ==============================================================
+    $borradorEliminado = false;
+
+    if ($rangoBorradorValido) {
+        try {
+            $stmtDeleteBorrador = $pdo->prepare("
+                DELETE FROM Tbl_Borradores_TSD_M3
+                WHERE FechaDesde = CONVERT(date, ?, 23)
+                  AND FechaHasta = CONVERT(date, ?, 23)
+            ");
+
+            $stmtDeleteBorrador->execute([
+                $rangoInicio,
+                $rangoFin
+            ]);
+
+            // Si no había fila también consideramos que el estado
+            // final está limpio correctamente.
+            $borradorEliminado = true;
+
+        } catch (\Throwable $errorBorrador) {
+            error_log(
+                'No se pudo eliminar borrador M3 después del cierre: ' .
+                $errorBorrador->getMessage()
+            );
+        }
+    }
+
+    echo json_encode([
+        'success' => true,
+        'borradorEliminado' => $borradorEliminado
+    ]);
 
 } catch (\Throwable $e) { // <-- ATRAPA ABSOLUTAMENTE CUALQUIER ERROR (Incluso fatales de RAM)
     if (isset($pdo) && $pdo->inTransaction()) { $pdo->rollBack(); }
