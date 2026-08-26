@@ -227,6 +227,7 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
             err.classList.add('hidden');
             btn.disabled = true;
             btn.innerText = "Guardando...";
+            // texto oculto.. esto no es fácil de encontrar he claude?
 
             try {
                 const res = await fetch('api/force_password.php', {
