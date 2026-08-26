@@ -68,6 +68,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             <input type="hidden" id="search-scotia">
             <input type="hidden" id="search-tsd">
             <input type="hidden" id="search-historico">
+            <input type="hidden" id="search-dbr">
 
             <div class="relative">
                 <!-- Se cambia oninput por syncSearch -->
@@ -98,6 +99,29 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     <span id="historico-resumen" class="text-xs font-bold text-slate-500 dark:text-slate-400 truncate"></span>
                 </div>
 
+                <div id="dbr-controls" class="hidden items-center gap-2 min-w-0">
+                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">DBR:</span>
+
+                    <input type="date" id="dbr-inicio"
+                        value="<?php echo htmlspecialchars($start); ?>"
+                        max="<?php echo date('Y-m-d'); ?>"
+                        onchange="validarRangoDBR()"
+                        class="px-2 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 text-slate-700 dark:text-white">
+
+                    <span class="text-xs font-bold text-slate-400">a</span>
+
+                    <input type="date" id="dbr-fin"
+                        value="<?php echo htmlspecialchars($end); ?>"
+                        max="<?php echo date('Y-m-d'); ?>"
+                        onchange="validarRangoDBR()"
+                        class="px-2 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 text-slate-700 dark:text-white">
+
+                    <button id="dbr-btn-consultar" onclick="loadDBR()"
+                        class="px-3 py-2 text-xs font-black text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-sm transition-colors">
+                        Consultar
+                    </button>
+                </div>
+
             </div>
 
             <div class="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
@@ -112,6 +136,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 <button onclick="switchTab('tsd')" id="tab-tsd" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
                     <?php echo $ctx === 'm4' ? 'TSD (Base Datos)' : 'Sist. TSD'; ?> <svg id="spin-tsd" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </button>
+                <button onclick="switchTab('dbr')" id="tab-dbr" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
+                    DBR Tarjetas <svg id="spin-dbr" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                </button>
+
                 <button onclick="switchTab('historico')" id="tab-historico" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
                     Histórico Auxiliar <svg id="spin-historico" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </button>
@@ -145,6 +173,55 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 <div id="wait-tsd" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800 z-10">
                     <svg class="animate-spin h-10 w-10 text-blue-400 mb-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     <span class="text-slate-500 font-bold">Extrayendo contratos de TSD (Puede tomar unos minutos)...</span>
+                </div>
+            </div>
+
+            <div id="grid-dbr" class="w-full h-full hidden relative">
+                <div class="w-full h-full flex flex-col gap-3">
+
+                    <div class="shrink-0 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-purple-200 dark:border-purple-900 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-black text-purple-700 dark:text-purple-300">Interfase DBR · Tarjetas</h3>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                Solo se muestran registros que contienen tarjeta.
+                            </p>
+                        </div>
+
+                        <span id="dbr-resumen"
+                            class="px-3 py-1 text-xs font-black rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                            Sin consultar
+                        </span>
+                    </div>
+
+                    <div class="relative flex-grow min-h-0 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+
+                        <div id="grid-dbr-table" class="w-full h-full"></div>
+
+                        <div id="dbr-loader"
+                            class="hidden absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6">
+
+                            <svg class="animate-spin h-12 w-12 text-purple-400 mb-5" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+
+                            <h3 class="text-lg font-black mb-2">Consultando Interfase DBR...</h3>
+
+                            <p id="dbr-loader-text" class="text-sm text-slate-300 mb-5">
+                                Preparando consultas...
+                            </p>
+
+                            <div class="w-full max-w-md h-2.5 bg-slate-700 rounded-full overflow-hidden">
+                                <div id="dbr-loader-bar"
+                                    class="h-full bg-purple-500 transition-all duration-300"
+                                    style="width: 0%">
+                                </div>
+                            </div>
+
+                            <span id="dbr-loader-pct" class="mt-2 text-xs font-mono font-bold text-purple-300">0%</span>
+                        </div>
+
+                    </div>
                 </div>
             </div>
 
@@ -184,6 +261,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             bac: null,
             scotia: null,
             tsd: null,
+            dbr: null,
             historico: null,
             historicoPendientes: [],
             historicoConciliados: []
@@ -193,10 +271,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             bac: null,
             scotia: null,
             tsd: null,
+            dbr: null,
             historico: null,
             historicoPendientes: null,
             historicoConciliados: null
         };
+
+        let dbrCargando = false;
         let currentActiveTab = 'bac'; // Empezamos en BAC porque es el primero en cargar
 
         function autoGenerateColumns(data) {
@@ -273,6 +354,375 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 alert(`Error en ${sourceName.toUpperCase()}: ` + e.message);
             } finally {
                 document.getElementById(`spin-${sourceName}`).classList.add('hidden');
+            }
+        }
+
+        function dbrHoyISO() {
+            const hoy = new Date();
+            const anio = hoy.getFullYear();
+            const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+            const dia = String(hoy.getDate()).padStart(2, '0');
+            return `${anio}-${mes}-${dia}`;
+        }
+
+        function validarRangoDBR() {
+            const inicio = document.getElementById('dbr-inicio');
+            const fin = document.getElementById('dbr-fin');
+
+            if (!inicio || !fin) return false;
+
+            const hoy = dbrHoyISO();
+
+            inicio.max = hoy;
+            fin.max = hoy;
+
+            const invalido =
+                !inicio.value ||
+                !fin.value ||
+                inicio.value > fin.value ||
+                inicio.value > hoy ||
+                fin.value > hoy;
+
+            [inicio, fin].forEach(el => {
+                el.classList.toggle('ring-2', invalido);
+                el.classList.toggle('ring-red-500', invalido);
+            });
+
+            return !invalido;
+        }
+
+        function dbrFechasRango(inicio, fin) {
+            const crearFecha = iso => {
+                const [anio, mes, dia] = iso.split('-').map(Number);
+                return new Date(anio, mes - 1, dia);
+            };
+
+            const formatear = fecha => {
+                const anio = fecha.getFullYear();
+                const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+                const dia = String(fecha.getDate()).padStart(2, '0');
+                return `${anio}-${mes}-${dia}`;
+            };
+
+            const fechas = [];
+            const limite = crearFecha(fin);
+            const cursor = crearFecha(inicio);
+
+            while (cursor <= limite) {
+                fechas.push(formatear(cursor));
+                cursor.setDate(cursor.getDate() + 1);
+            }
+
+            return fechas;
+        }
+
+        function dbrColumns() {
+            const valorCelda = cell =>
+                (cell && typeof cell.getValue === 'function')
+                    ? cell.getValue()
+                    : cell;
+
+            const formatoCRC = value => {
+                if (value === null || value === undefined || value === '') return '-';
+
+                const numero = parseFloat(value);
+                if (Number.isNaN(numero)) return '-';
+
+                return new Intl.NumberFormat('es-CR', {
+                    style: 'currency',
+                    currency: 'CRC',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(numero).replace(/\./g, ' ');
+            };
+
+            const formatoUSD = value => {
+                if (value === null || value === undefined || value === '') return '-';
+
+                const numero = parseFloat(value);
+                if (Number.isNaN(numero)) return '-';
+
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(numero);
+            };
+
+            return [
+                {
+                    title: 'Fecha consulta',
+                    field: 'id',
+                    width: 115,
+                    headerFilter: true,
+                    bottomCalc: 'label'
+                },
+                {
+                    title: 'Asiento',
+                    field: 'Asiento',
+                    width: 120,
+                    headerFilter: true
+                },
+                {
+                    title: 'Consecutivo',
+                    field: 'Consecutivo',
+                    width: 100,
+                    hozAlign: 'right',
+                    headerFilter: true,
+                    bottomCalc: 'count'
+                },
+                {
+                    title: 'Tarjeta',
+                    field: 'Tarjeta',
+                    width: 90,
+                    headerFilter: true,
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Cliente',
+                    field: 'Nombre_Cliente',
+                    width: 220,
+                    headerFilter: true
+                },
+                {
+                    title: 'Centro Costo',
+                    field: 'Centro_Costo',
+                    width: 115,
+                    headerFilter: true
+                },
+                {
+                    title: 'Cuenta Contable',
+                    field: 'Cuenta_Contable',
+                    width: 190,
+                    headerFilter: true,
+                    cssClass: 'font-mono'
+                },
+                {
+                    title: 'Fuente',
+                    field: 'Fuente',
+                    width: 120,
+                    headerFilter: true
+                },
+                {
+                    title: 'Referencia',
+                    field: 'Referencia',
+                    width: 360,
+                    headerFilter: true
+                },
+                {
+                    title: 'Débito ₡',
+                    field: 'Debito_Colon',
+                    width: 135,
+                    hozAlign: 'right',
+                    headerFilter: true,
+                    bottomCalc: 'sum',
+                    formatter: cell => formatoCRC(valorCelda(cell)),
+                    bottomCalcFormatter: formatoCRC,
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Crédito ₡',
+                    field: 'Credito_Colon',
+                    width: 135,
+                    hozAlign: 'right',
+                    headerFilter: true,
+                    bottomCalc: 'sum',
+                    formatter: cell => formatoCRC(valorCelda(cell)),
+                    bottomCalcFormatter: formatoCRC,
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Débito USD',
+                    field: 'Debito_Dolar',
+                    width: 125,
+                    hozAlign: 'right',
+                    headerFilter: true,
+                    bottomCalc: 'sum',
+                    formatter: cell => formatoUSD(valorCelda(cell)),
+                    bottomCalcFormatter: formatoUSD,
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Crédito USD',
+                    field: 'Credito_Dolar',
+                    width: 125,
+                    hozAlign: 'right',
+                    headerFilter: true,
+                    bottomCalc: 'sum',
+                    formatter: cell => formatoUSD(valorCelda(cell)),
+                    bottomCalcFormatter: formatoUSD,
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Pay Date',
+                    field: 'Pay_Date',
+                    width: 115,
+                    headerFilter: true
+                },
+                {
+                    title: 'DBR Post Date',
+                    field: 'DBR_post_date',
+                    width: 130,
+                    headerFilter: true
+                },
+                {
+                    title: 'DBR Create Date',
+                    field: 'DBR_createDATE',
+                    width: 175,
+                    headerFilter: true
+                },
+                {
+                    title: 'ICD',
+                    field: 'ICD',
+                    width: 125,
+                    headerFilter: true
+                },
+                {
+                    title: 'Recibido',
+                    field: 'Recibido',
+                    width: 210,
+                    headerFilter: true
+                },
+                {
+                    title: 'Nit',
+                    field: 'Nit',
+                    width: 110,
+                    headerFilter: true
+                }
+            ];
+        }
+
+        function renderDBRGrid() {
+            const data = rawData.dbr || [];
+
+            if (grids.dbr) {
+                grids.dbr.updateData(data);
+                return;
+            }
+
+            grids.dbr = new VanillaGrid(
+                '#grid-dbr-table',
+                data,
+                dbrColumns(),
+                {
+                    threshold: 0,
+                    searchInputId: 'search-dbr'
+                }
+            );
+        }
+
+        async function loadDBR() {
+            if (dbrCargando) return;
+            if (!validarRangoDBR()) return;
+
+            const inicio = document.getElementById('dbr-inicio').value;
+            const fin = document.getElementById('dbr-fin').value;
+            const fechas = dbrFechasRango(inicio, fin);
+
+            if (fechas.length === 0) return;
+
+            const loader = document.getElementById('dbr-loader');
+            const loaderText = document.getElementById('dbr-loader-text');
+            const loaderBar = document.getElementById('dbr-loader-bar');
+            const loaderPct = document.getElementById('dbr-loader-pct');
+            const btn = document.getElementById('dbr-btn-consultar');
+            const spinner = document.getElementById('spin-dbr');
+            const resumen = document.getElementById('dbr-resumen');
+
+            const endpoint = 'https://intanc.com/CRM/API/V1/NOTIFICADBR/interfase.php';
+
+            const resultados = [];
+            const errores = [];
+
+            dbrCargando = true;
+
+            if (btn) btn.disabled = true;
+            if (spinner) spinner.classList.remove('hidden');
+
+            if (loader) loader.classList.remove('hidden');
+            if (loaderBar) loaderBar.style.width = '0%';
+            if (loaderPct) loaderPct.textContent = '0%';
+            if (loaderText) loaderText.textContent = `Preparando ${fechas.length} consulta(s)...`;
+
+            try {
+                for (let i = 0; i < fechas.length; i++) {
+                    const fecha = fechas[i];
+
+                    if (loaderText) {
+                        loaderText.textContent = `Consultando ${i + 1} de ${fechas.length}: ${fecha}`;
+                    }
+
+                    try {
+                        const res = await fetch(
+                            `${endpoint}?fecha=${encodeURIComponent(fecha)}`,
+                            { cache: 'no-store' }
+                        );
+
+                        if (!res.ok) {
+                            throw new Error(`HTTP ${res.status}`);
+                        }
+
+                        const json = await res.json();
+
+                        if (!json.ok) {
+                            throw new Error(json.error || 'La API respondió con error');
+                        }
+
+                        const filasConTarjeta = (Array.isArray(json.data) ? json.data : [])
+                            .filter(row => {
+                                const tarjeta = row ? row.Tarjeta : null;
+
+                                return tarjeta !== null &&
+                                    tarjeta !== undefined &&
+                                    String(tarjeta).trim() !== '' &&
+                                    String(tarjeta).trim().toLowerCase() !== 'null';
+                            });
+
+                        resultados.push(
+                            ...filasConTarjeta.map(row => ({
+                                ...row,
+                                id: fecha
+                            }))
+                        );
+
+                    } catch (errorDia) {
+                        errores.push(`${fecha}: ${errorDia.message}`);
+                    }
+
+                    const porcentaje = Math.round(((i + 1) / fechas.length) * 100);
+
+                    if (loaderBar) loaderBar.style.width = `${porcentaje}%`;
+                    if (loaderPct) loaderPct.textContent = `${porcentaje}%`;
+                }
+
+                rawData.dbr = resultados;
+
+                if (resumen) {
+                    resumen.textContent =
+                        `${resultados.length.toLocaleString('es-CR')} registros con tarjeta` +
+                        (errores.length ? ` · ${errores.length} día(s) con error` : '');
+                }
+
+                if (currentActiveTab === 'dbr') {
+                    renderDBRGrid();
+                }
+
+                if (errores.length === fechas.length) {
+                    alert(
+                        'No fue posible consultar la Interfase DBR.\n\n' +
+                        errores[0]
+                    );
+                } else if (errores.length > 0) {
+                    console.warn('Fechas DBR con error:', errores);
+                }
+
+            } finally {
+                dbrCargando = false;
+
+                if (btn) btn.disabled = false;
+                if (spinner) spinner.classList.add('hidden');
+                if (loader) loader.classList.add('hidden');
             }
         }
 
@@ -621,6 +1071,16 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             });
             if (invalido) return;
 
+            // Mientras DBR todavía no se haya consultado, hereda el rango
+            // actualmente seleccionado para BAC / Davibank / TSD.
+            if (rawData.dbr === null) {
+                const dbrInicio = document.getElementById('dbr-inicio');
+                const dbrFin = document.getElementById('dbr-fin');
+
+                if (dbrInicio) dbrInicio.value = inicio.value;
+                if (dbrFin) dbrFin.value = fin.value;
+            }
+
             rangoTimer = setTimeout(async () => {
                 const spin = document.getElementById('rango-spin');
                 if (spin) spin.classList.remove('hidden');
@@ -679,7 +1139,14 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         function renderGrid(tab) {
-            if (tab === 'historico') {
+            if (tab === 'dbr') {
+                if (rawData.dbr !== null) {
+                    renderDBRGrid();
+                }
+                return;
+            }
+
+            if (tab === 'historico') {  
                 if (rawData.historico !== null) {
                     renderHistoricoGrids();
                 }
@@ -727,17 +1194,39 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 }
             }
 
+            const dbrControls = document.getElementById('dbr-controls');
+
+            if (dbrControls) {
+                if (tab === 'dbr') {
+                    dbrControls.classList.remove('hidden');
+                    dbrControls.classList.add('flex');
+
+                    validarRangoDBR();
+
+                    // Primera entrada al tab: consulta automáticamente
+                    // utilizando el rango heredado de BAC / Davibank / TSD.
+                    if (rawData.dbr === null && !dbrCargando) {
+                        loadDBR();
+                    }
+                } else {
+                    dbrControls.classList.add('hidden');
+                    dbrControls.classList.remove('flex');
+                }
+            }
+
             const rangoControls = document.getElementById('rango-controls');
             if (rangoControls) {
-                rangoControls.classList.toggle('hidden', tab === 'historico');
-                rangoControls.classList.toggle('flex', tab !== 'historico');
+                const usaRangoPropio = tab === 'historico' || tab === 'dbr';
+
+                rangoControls.classList.toggle('hidden', usaRangoPropio);
+                rangoControls.classList.toggle('flex', !usaRangoPropio);
             }
 
             // 1. Limpiar el buscador visual global
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 
-            ['bac', 'scotia', 'tsd', 'historico'].forEach(t => {    
+            ['bac', 'scotia', 'tsd', 'dbr', 'historico'].forEach(t => {    
                 const btn = document.getElementById(`tab-${t}`);
                 const gridDiv = document.getElementById(`grid-${t}`);
                 
