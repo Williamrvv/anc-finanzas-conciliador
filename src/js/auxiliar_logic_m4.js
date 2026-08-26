@@ -3,6 +3,15 @@ window.AuxiliarLogic = {
     gridSug: null, gridLimbo: null, gridHistorial: null,
     currentSugData: [], currentLimboData: [], currentHistorialData: [],
 
+    // Estado temporal compartido del Auxiliar.
+    // Nunca guarda los datos fuente: únicamente decisiones manuales.
+    _autoSaveBorradorM4Timer: null,
+    _ultimoSnapshotBorradorM4: null,
+    _borradorM4Existe: false,
+    _borradorM4Disponible: false,
+    _datosM4Cargados: false,
+    _guardandoBorradorM4: false,
+
     // Diccionario Universal de Tailwind para evitar purga
     // Nombre en español y color de muestra de cada tono (también se usa al exportar)
     COLORES_ES: {
@@ -316,34 +325,384 @@ window.AuxiliarLogic = {
         this._engancharArrastre();   // los chips se re-crean en cada pintado
     },
 
+    _borradorApiM4: async function(action, payload = {}) {
+        const res = await fetch('api/borrador_auxiliar_m4.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify(Object.assign({
+                action: action
+            }, payload))
+        });
+
+        const raw = await res.text();
+
+        let data;
+
+        try {
+            data = JSON.parse(raw);
+        } catch (e) {
+            throw new Error(
+                `Respuesta no JSON del endpoint de borrador M4 (HTTP ${res.status}).`
+            );
+        }
+
+        if (!res.ok || !data.success) {
+            throw new Error(
+                data.error ||
+                `Error HTTP ${res.status} al procesar el borrador M4.`
+            );
+        }
+
+        return data;
+    },
+
+    _crearSnapshotBorradorM4: function() {
+        return {
+            manualMatches: (this.manualMatches || []).map(match => ({
+                tsdIds: (match.tsdArr || [])
+                    .map(t => String(t.ID_Transaccion || ''))
+                    .filter(Boolean),
+
+                bancoIds: (match.bancoArr || [])
+                    .map(b => String(b.IdTransaccion || ''))
+                    .filter(Boolean),
+
+                justificacion: match.justificacion || '',
+                motivo: match.motivo || null
+            })),
+
+            blacklist: Array.from(
+                new Set(
+                    (this.blacklist || [])
+                        .map(x => String(x || ''))
+                        .filter(Boolean)
+                )
+            )
+        };
+    },
+
+    _aplicarSnapshotBorradorM4: function(snapshot) {
+        snapshot = snapshot || {};
+
+        const mapaTSD = new Map(
+            (this.lastTSD || []).map(t => [
+                String(t.ID_Transaccion),
+                t
+            ])
+        );
+
+        const mapaBancos = new Map(
+            (this.lastBancos || []).map(b => [
+                String(b.IdTransaccion),
+                b
+            ])
+        );
+
+        const normalizarIds = arr =>
+            Array.from(
+                new Set(
+                    (Array.isArray(arr) ? arr : [])
+                        .map(String)
+                        .filter(Boolean)
+                )
+            );
+
+        // =========================================================
+        // MANUAL MATCHES
+        // ---------------------------------------------------------
+        // Se restaura un grupo ÚNICAMENTE si todavía existen TODOS
+        // sus miembros. Nunca reconstruimos una agrupación parcial.
+        // =========================================================
+        const reconstruidos = [];
+
+        (Array.isArray(snapshot.manualMatches)
+            ? snapshot.manualMatches
+            : []
+        ).forEach(match => {
+
+            const tsdIds = normalizarIds(match.tsdIds);
+            const bancoIds = normalizarIds(match.bancoIds);
+
+            if (tsdIds.length === 0 && bancoIds.length === 0) {
+                return;
+            }
+
+            const tsdArr = tsdIds
+                .map(id => mapaTSD.get(id))
+                .filter(Boolean);
+
+            const bancoArr = bancoIds
+                .map(id => mapaBancos.get(id))
+                .filter(Boolean);
+
+            const tsdCompleto = tsdArr.length === tsdIds.length;
+            const bancoCompleto = bancoArr.length === bancoIds.length;
+
+            if (!tsdCompleto || !bancoCompleto) {
+                return;
+            }
+
+            reconstruidos.push({
+                tsdArr: tsdArr,
+                bancoArr: bancoArr,
+                justificacion: match.justificacion || '',
+                motivo: match.motivo || null
+            });
+        });
+
+        this.manualMatches = reconstruidos;
+
+        // =========================================================
+        // BLACKLIST
+        // ---------------------------------------------------------
+        // También eliminamos decisiones asociadas a transacciones
+        // que ya dejaron de existir entre los pendientes.
+        // =========================================================
+        const idsActuales = new Set([
+            ...mapaTSD.keys(),
+            ...mapaBancos.keys()
+        ]);
+
+        this.blacklist = Array.from(
+            new Set(
+                (Array.isArray(snapshot.blacklist)
+                    ? snapshot.blacklist
+                    : []
+                )
+                .map(String)
+                .filter(key => {
+                    const partes = key.split('|');
+
+                    if (partes.length !== 2) return false;
+
+                    if (partes[1] === 'MENOR') {
+                        return idsActuales.has(partes[0]);
+                    }
+
+                    return (
+                        idsActuales.has(partes[0]) &&
+                        idsActuales.has(partes[1])
+                    );
+                })
+            )
+        );
+    },
+
+    guardarBorradorM4: async function(opciones = {}) {
+        const forzar = opciones.forzar === true;
+
+        if (
+            !this._datosM4Cargados ||
+            !this._borradorM4Disponible
+        ) {
+            return {
+                guardado: false,
+                motivo: 'no_disponible'
+            };
+        }
+
+        if (this._guardandoBorradorM4) {
+            return {
+                guardado: false,
+                motivo: 'ocupado'
+            };
+        }
+
+        const snapshot = this._crearSnapshotBorradorM4();
+        const dataJson = JSON.stringify(snapshot);
+
+        const vacio =
+            snapshot.manualMatches.length === 0 &&
+            snapshot.blacklist.length === 0;
+
+        if (vacio) {
+            if (this._borradorM4Existe) {
+                this._guardandoBorradorM4 = true;
+
+                try {
+                    await this._borradorApiM4('delete');
+
+                    this._borradorM4Existe = false;
+                    this._ultimoSnapshotBorradorM4 = dataJson;
+
+                    return {
+                        guardado: true,
+                        eliminado: true
+                    };
+
+                } finally {
+                    this._guardandoBorradorM4 = false;
+                }
+            }
+
+            this._ultimoSnapshotBorradorM4 = dataJson;
+
+            return {
+                guardado: false,
+                motivo: 'sin_cambios'
+            };
+        }
+
+        if (
+            !forzar &&
+            dataJson === this._ultimoSnapshotBorradorM4
+        ) {
+            return {
+                guardado: false,
+                motivo: 'sin_cambios'
+            };
+        }
+
+        this._guardandoBorradorM4 = true;
+
+        try {
+            await this._borradorApiM4('save', {
+                dataJson: dataJson
+            });
+
+            this._borradorM4Existe = true;
+            this._ultimoSnapshotBorradorM4 = dataJson;
+
+            return {
+                guardado: true
+            };
+
+        } finally {
+            this._guardandoBorradorM4 = false;
+        }
+    },
+
+    startAutoSaveBorradorM4: function() {
+        this.stopAutoSaveBorradorM4();
+
+        this._autoSaveBorradorM4Timer = setInterval(() => {
+            this.guardarBorradorM4().catch(error => {
+                console.error(
+                    'Error en autoguardado Auxiliar M4:',
+                    error
+                );
+            });
+        }, 5 * 60 * 1000);
+    },
+
+    stopAutoSaveBorradorM4: function() {
+        if (this._autoSaveBorradorM4Timer) {
+            clearInterval(this._autoSaveBorradorM4Timer);
+            this._autoSaveBorradorM4Timer = null;
+        }
+    },
+
+    guardarBorradorManualM4: async function() {
+        const btn = document.getElementById('btn-save-draft-m4');
+
+        if (!btn) return;
+
+        const originalHtml = btn.innerHTML;
+
+        const mostrarEstado = (texto) => {
+            btn.innerHTML = texto;
+
+            setTimeout(() => {
+                if (btn) btn.innerHTML = originalHtml;
+            }, 1400);
+        };
+
+        if (
+            !this._datosM4Cargados ||
+            !this._borradorM4Disponible
+        ) {
+            mostrarEstado('NO DISPONIBLE');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = 'GUARDANDO...';
+
+        try {
+            const resultado = await this.guardarBorradorM4({
+                forzar: true
+            });
+
+            btn.disabled = false;
+
+            if (
+                resultado &&
+                resultado.motivo === 'sin_cambios'
+            ) {
+                mostrarEstado('SIN CAMBIOS');
+            } else {
+                mostrarEstado('BORRADOR GUARDADO');
+            }
+
+        } catch (error) {
+            console.error(
+                'No se pudo guardar el borrador M4:',
+                error
+            );
+
+            btn.disabled = false;
+            mostrarEstado('ERROR AL GUARDAR');
+        }
+    },
+
     init: async function() {
         console.log("⚖️ Módulo Auxiliar Contable (M4) Inicializado");
-        if(this.gridSug) { if (typeof this.gridSug.destroy === 'function') this.gridSug.destroy(); this.gridSug = null; }
-        if(this.gridLimbo) { if (typeof this.gridLimbo.destroy === 'function') this.gridLimbo.destroy(); this.gridLimbo = null; }
-        if(this.gridHistorial) { if (typeof this.gridHistorial.destroy === 'function') this.gridHistorial.destroy(); this.gridHistorial = null; }
-        
+
+        if(this.gridSug) {
+            if (typeof this.gridSug.destroy === 'function') this.gridSug.destroy();
+            this.gridSug = null;
+        }
+
+        if(this.gridLimbo) {
+            if (typeof this.gridLimbo.destroy === 'function') this.gridLimbo.destroy();
+            this.gridLimbo = null;
+        }
+
+        if(this.gridHistorial) {
+            if (typeof this.gridHistorial.destroy === 'function') this.gridHistorial.destroy();
+            this.gridHistorial = null;
+        }
+
+        this.stopAutoSaveBorradorM4();
+
         this.blacklist = [];
         this.manualMatches = [];
+
+        this._datosM4Cargados = false;
+        this._borradorM4Disponible = false;
+        this._borradorM4Existe = false;
+        this._ultimoSnapshotBorradorM4 = null;
+
         await this.fetchTags();
-        
-        this.blacklist = [];
-        this.manualMatches = [];
-        
+
         // Iniciar Calendario
         if (window.flatpickr) {
             flatpickr("#m4-historial-date", {
                 mode: "range", dateFormat: "Y-m-d", locale: "es",
+
                 // Buscar al cerrar el calendario; si la fecha no cambió, NO recargar
                 onClose: () => {
                     const v = document.getElementById('m4-historial-date').value;
-                    if (v && v !== window.AuxiliarLogic._lastDateQuery) window.AuxiliarLogic.fetchHistorial();
+
+                    if (
+                        v &&
+                        v !== window.AuxiliarLogic._lastDateQuery
+                    ) {
+                        window.AuxiliarLogic.fetchHistorial();
+                    }
                 }
             });
         }
-        
+
         this.switchTab('bandeja');
         this.injectLegend();
-        this.fetchPendientes();
+
+        await this.fetchPendientes();
+
+        // Respaldo adicional. Los cambios manuales también se guardan
+        // inmediatamente; este reloj funciona únicamente como seguro.
+        this.startAutoSaveBorradorM4();
     },
 
     switchTab: function(tabName) {
@@ -1095,19 +1454,123 @@ window.AuxiliarLogic = {
         const loader = document.getElementById('m4-loader');
         if (loader) loader.classList.remove('hidden');
 
+        // Mientras reconstruimos la fuente, ningún autoguardado puede
+        // escribir un estado parcial o desactualizado.
+        this._datosM4Cargados = false;
+
         try {
-            const res = await fetch(`api/get_pendientes_m4.php`);
+            const res = await fetch(
+                `api/get_pendientes_m4.php`,
+                { cache: 'no-store' }
+            );
+
             const json = await res.json();
-            if (!json.success) throw new Error(json.error);
 
-            // Sellar usando las llaves primarias de BD para evitar "secuestros" de memoria
-            this.lastTSD = json.tsd.map(t => { t._id = 't_' + t.ID_Transaccion; return t; });
-            this.lastBancos = json.bancos.map(b => { b._id = 'b_' + b.IdTransaccion; return b; });
+            if (!json.success) {
+                throw new Error(json.error);
+            }
 
-            this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
+            // =====================================================
+            // 1. FUENTE FRESCA
+            // =====================================================
+            this.lastTSD = json.tsd.map(t => {
+                t._id = 't_' + t.ID_Transaccion;
+                return t;
+            });
+
+            this.lastBancos = json.bancos.map(b => {
+                b._id = 'b_' + b.IdTransaccion;
+                return b;
+            });
+
+            // Nunca heredamos directamente la RAM anterior.
+            this.blacklist = [];
+            this.manualMatches = [];
+
+            // =====================================================
+            // 2. BORRADOR COMPARTIDO
+            // =====================================================
+            try {
+                const borrador = await this._borradorApiM4('get');
+
+                this._borradorM4Disponible = true;
+                this._borradorM4Existe = !!borrador.existe;
+
+                if (borrador.existe) {
+                    // Guardamos primero el snapshot ORIGINAL del servidor.
+                    // Si al reconstruir desaparecen filas viejas, después
+                    // detectaremos la diferencia y limpiaremos el borrador.
+                    this._ultimoSnapshotBorradorM4 =
+                        borrador.dataJson || null;
+
+                    const snapshot = JSON.parse(
+                        borrador.dataJson || '{}'
+                    );
+
+                    this._aplicarSnapshotBorradorM4(snapshot);
+
+                } else {
+                    this._ultimoSnapshotBorradorM4 =
+                        JSON.stringify(
+                            this._crearSnapshotBorradorM4()
+                        );
+                }
+
+            } catch (errorBorrador) {
+                // La conciliación debe seguir funcionando incluso si
+                // temporalmente falla el almacenamiento del borrador.
+                // Pero deshabilitamos escrituras para no pisar un estado
+                // remoto que no logramos leer.
+                this._borradorM4Disponible = false;
+                this._borradorM4Existe = false;
+                this._ultimoSnapshotBorradorM4 = null;
+
+                console.error(
+                    'No se pudo cargar el borrador Auxiliar M4:',
+                    errorBorrador
+                );
+            }
+
+            // =====================================================
+            // 3. ALGORITMO
+            // -----------------------------------------------------
+            // Primero quedaron aplicados los manuales válidos.
+            // Ahora el algoritmo procesa todo lo nuevo que haya llegado.
+            // =====================================================
+            this.runMatchingAlgorithm(
+                this.lastTSD,
+                this.lastBancos
+            );
+
+            this._datosM4Cargados = true;
+
+            // Si el borrador contenía registros que ya fueron conciliados
+            // y por eso desaparecieron de pendientes, lo compactamos
+            // silenciosamente en este mismo momento.
+            if (this._borradorM4Disponible) {
+                try {
+                    await this.guardarBorradorM4();
+                } catch (errorLimpieza) {
+                    console.error(
+                        'No se pudo compactar el borrador M4:',
+                        errorLimpieza
+                    );
+                }
+            }
+
+            return true;
+
         } catch (error) {
             console.error(error);
-            window.SysUI.alert("Error al reconstruir historial: " + error.message, "Fallo", "error");
+
+            window.SysUI.alert(
+                "Error al reconstruir historial: " + error.message,
+                "Fallo",
+                "error"
+            );
+
+            return false;
+
         } finally {
             if (loader) loader.classList.add('hidden');
         }
@@ -2337,6 +2800,17 @@ window.AuxiliarLogic = {
 
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
 
+        // Persistencia silenciosa inmediata.
+        // Un error de borrador NO debe bloquear el algoritmo ni la conciliación.
+        try {
+            await this.guardarBorradorM4();
+        } catch (errorBorrador) {
+            console.error(
+                'No se pudo guardar inmediatamente el borrador M4:',
+                errorBorrador
+            );
+        }
+
         // --- RASTREO DE NUEVAS SUGERENCIAS EN M4 ---
         const newMatches = [];
         this.currentLimboData.forEach(row => {
@@ -2516,8 +2990,9 @@ window.AuxiliarLogic = {
 
             await window.SysUI.alert("Las conciliaciones han sido aprobadas y guardadas exitosamente en el historial contable.", "Operación Exitosa", "success");
             
-            // Recargar la pantalla para vaciar los aprobados y refrescar el limbo
-            this.fetchPendientes();
+            // Recargar desde BD. Los registros recién conciliados dejarán de
+            // venir como pendientes y el borrador se compactará automáticamente.
+            await this.fetchPendientes();
 
         } catch (error) {
             window.SysUI.alert("Hubo un error al conectar con la Base de Datos:\n\n" + error.message, "Fallo Crítico", "error");

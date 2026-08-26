@@ -13,6 +13,11 @@ window.TSDLogic = {
     // nunca por usuario.
     _rangoBorradorM3: null,
 
+    // Autoguardado de respaldo cada 5 minutos.
+    _autoSaveBorradorM3Timer: null,
+    _ultimoSnapshotBorradorM3: null,
+    _guardandoBorradorM3: false,
+
     // --------------------------------------------------------
     // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
     // --------------------------------------------------------
@@ -482,6 +487,7 @@ window.TSDLogic = {
         const res = await fetch('api/borrador_tsd_m3.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            cache: 'no-store',
             body: JSON.stringify(Object.assign({
                 action: action,
                 inicio: rango.start || '',
@@ -489,10 +495,31 @@ window.TSDLogic = {
             }, payload))
         });
 
-        const data = await res.json();
+        const raw = await res.text();
 
-        if (!data.success) {
-            throw new Error(data.error || 'No se pudo procesar el borrador TSD.');
+        let data;
+
+        try {
+            data = JSON.parse(raw);
+        } catch (error) {
+            const preview = raw
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .substring(0, 160);
+
+            throw new Error(
+                `El endpoint de borradores devolvió una respuesta no JSON ` +
+                `(HTTP ${res.status}).` +
+                (preview ? ` Respuesta: ${preview}` : '')
+            );
+        }
+
+        if (!res.ok || !data.success) {
+            throw new Error(
+                data.error ||
+                `Error HTTP ${res.status} al procesar el borrador TSD.`
+            );
         }
 
         return data;
@@ -561,30 +588,189 @@ window.TSDLogic = {
             : [];
     },
 
-    guardarBorradorM3: async function() {
-        if (!this._rangoBorradorM3) return;
+    guardarBorradorM3: async function(opciones = {}) {
+        const forzar = opciones.forzar === true;
+
+        if (!this._rangoBorradorM3) {
+            return { guardado: false, motivo: 'sin_rango' };
+        }
+
+        if (this._guardandoBorradorM3) {
+            return { guardado: false, motivo: 'ocupado' };
+        }
 
         const snapshot = this._crearSnapshotBorradorM3();
 
-        // Si el usuario deshizo absolutamente todos sus cambios,
-        // ya no existe nada que recordar.
+        const tieneCambios =
+            snapshot.manualMatches.length > 0 ||
+            snapshot.blacklist.length > 0;
+
+        const dataJson = JSON.stringify(snapshot);
+
+        // Si no existe ningún cambio y tampoco teníamos un borrador
+        // previo, no hacemos una petición inútil cada 5 minutos.
         if (
-            snapshot.manualMatches.length === 0 &&
-            snapshot.blacklist.length === 0
+            !tieneCambios &&
+            this._ultimoSnapshotBorradorM3 === null
         ) {
-            await this.eliminarBorradorM3();
-            return;
+            return {
+                guardado: false,
+                motivo: 'sin_cambios'
+            };
         }
 
-        await this._borradorApiM3('save', {
-            dataJson: JSON.stringify(snapshot)
-        });
+        // Si el usuario deshizo todos los cambios, borramos el
+        // borrador existente para que el rango vuelva a estado limpio.
+        if (!tieneCambios) {
+            this._guardandoBorradorM3 = true;
+
+            try {
+                await this.eliminarBorradorM3();
+                this._ultimoSnapshotBorradorM3 = null;
+
+                return {
+                    guardado: true,
+                    eliminado: true
+                };
+            } finally {
+                this._guardandoBorradorM3 = false;
+            }
+        }
+
+        // El autoguardado no vuelve a escribir exactamente el mismo
+        // snapshot. El botón manual sí puede forzar una actualización.
+        if (
+            !forzar &&
+            dataJson === this._ultimoSnapshotBorradorM3
+        ) {
+            return {
+                guardado: false,
+                motivo: 'sin_cambios'
+            };
+        }
+
+        this._guardandoBorradorM3 = true;
+
+        try {
+            await this._borradorApiM3('save', {
+                dataJson: dataJson
+            });
+
+            this._ultimoSnapshotBorradorM3 = dataJson;
+
+            return {
+                guardado: true
+            };
+
+        } finally {
+            this._guardandoBorradorM3 = false;
+        }
     },
 
     eliminarBorradorM3: async function() {
         if (!this._rangoBorradorM3) return;
 
         await this._borradorApiM3('delete');
+    },
+
+    startAutoSaveBorradorM3: function() {
+        this.stopAutoSaveBorradorM3();
+
+        // 5 minutos exactos.
+        this._autoSaveBorradorM3Timer = setInterval(async () => {
+            if (!this._rangoBorradorM3) return;
+
+            try {
+                const resultado = await this.guardarBorradorM3();
+
+                if (resultado && resultado.guardado) {
+                    console.log(
+                        '💾 Borrador M3 autoguardado:',
+                        new Date().toLocaleTimeString()
+                    );
+                }
+
+            } catch (error) {
+                // Un fallo de autoguardado NO interrumpe al usuario.
+                // El siguiente ciclo volverá a intentarlo.
+                console.error(
+                    'Error en autoguardado M3:',
+                    error
+                );
+            }
+
+        }, 5 * 60 * 1000);
+    },
+
+    stopAutoSaveBorradorM3: function() {
+        if (this._autoSaveBorradorM3Timer) {
+            clearInterval(this._autoSaveBorradorM3Timer);
+            this._autoSaveBorradorM3Timer = null;
+        }
+    },
+
+    guardarBorradorManualM3: async function() {
+        if (!this._rangoBorradorM3) {
+            return window.SysUI.alert(
+                "Primero debe seleccionar y consultar un rango de fechas.",
+                "Sin rango",
+                "warning"
+            );
+        }
+
+        const snapshot = this._crearSnapshotBorradorM3();
+
+        if (
+            snapshot.manualMatches.length === 0 &&
+            snapshot.blacklist.length === 0
+        ) {
+            return window.SysUI.alert(
+                "No existen cambios manuales que guardar en este rango.",
+                "Sin cambios",
+                "info"
+            );
+        }
+
+        const btn = document.getElementById('btn-save-draft-tsd');
+        const originalHtml = btn ? btn.innerHTML : '';
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `
+                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10"
+                        stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                GUARDANDO...
+            `;
+        }
+
+        try {
+            await this.guardarBorradorM3({
+                forzar: true
+            });
+
+            await window.SysUI.alert(
+                "El borrador del Consolidado TSD fue guardado correctamente.",
+                "Borrador guardado",
+                "success"
+            );
+
+        } catch (error) {
+            await window.SysUI.alert(
+                "No fue posible guardar el borrador:\n\n" + error.message,
+                "Error de borrador",
+                "error"
+            );
+
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
     },
 
     init: function() {
@@ -608,7 +794,11 @@ window.TSDLogic = {
         this.blacklist = [];
         this.currentMatchedData = [];
         this.currentPendingData = [];
+
+        this.stopAutoSaveBorradorM3();
+
         this._rangoBorradorM3 = null;
+        this._ultimoSnapshotBorradorM3 = null;
 
         if (window.flatpickr) {
             this.datePicker = flatpickr("#tsd-date-picker", {
@@ -693,6 +883,11 @@ window.TSDLogic = {
         const dateVal = dateValParam || document.getElementById('tsd-date-picker').value;
         if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas válido.");
 
+        // Nunca permitir que el reloj de un rango anterior guarde datos
+        // mientras estamos cambiando a otro rango.
+        this.stopAutoSaveBorradorM3();
+        this._ultimoSnapshotBorradorM3 = null;
+
         let start = dateVal, end = dateVal;
         if (dateVal.includes(' a ')) {
             [start, end] = dateVal.split(' a ');
@@ -769,6 +964,12 @@ window.TSDLogic = {
                     const snapshot = JSON.parse(borrador.dataJson || '{}');
 
                     this._aplicarSnapshotBorradorM3(snapshot);
+
+                    // Evita que el autoguardado vuelva a escribir exactamente
+                    // el mismo borrador cinco minutos después sin necesidad.
+                    this._ultimoSnapshotBorradorM3 =
+                        JSON.stringify(this._crearSnapshotBorradorM3());
+
                     borradorEncontrado = borrador;
                 }
             } catch (errorBorrador) {
@@ -790,6 +991,10 @@ window.TSDLogic = {
                 this.lastTSD,
                 this.lastBancos
             );
+
+            // Desde este momento existe un rango válido en memoria.
+            // El respaldo automático se ejecutará cada 5 minutos.
+            this.startAutoSaveBorradorM3();
 
             if (borradorEncontrado) {
                 const usuario =
@@ -2222,7 +2427,15 @@ window.TSDLogic = {
                 const res2 = await fetch('api/save_tsd_m3.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folios: foliosArray, matches: payloadMatched, pendientes: payloadPending, fechaConciliacion: fechaConciliacion, confirmarSinCC: true })
+                    body: JSON.stringify({
+                        folios: foliosArray,
+                        matches: payloadMatched,
+                        pendientes: payloadPending,
+                        fechaConciliacion: fechaConciliacion,
+                        confirmarSinCC: true,
+                        rangoInicio: this._rangoBorradorM3?.start || '',
+                        rangoFin: this._rangoBorradorM3?.end || ''
+                    })
                 });
                 data = await res2.json();
             }
@@ -2274,7 +2487,11 @@ window.TSDLogic = {
             this.blacklist = [];
             this.currentMatchedData = [];
             this.currentPendingData = [];
+
+            this.stopAutoSaveBorradorM3();
+
             this._rangoBorradorM3 = null;
+            this._ultimoSnapshotBorradorM3 = null;
             if(this.gridMatched) { if (typeof this.gridMatched.destroy === 'function') this.gridMatched.destroy(); this.gridMatched = null; }
             if(this.gridPending) { if (typeof this.gridPending.destroy === 'function') this.gridPending.destroy(); this.gridPending = null; }
             
