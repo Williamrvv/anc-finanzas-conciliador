@@ -23,6 +23,24 @@ if (!checkdate($mes, $dia, $anio)) {
 try {
     $pdo = Database::connect();
 
+    // Último día contable que tiene conciliaciones registradas.
+    // Si se consulta este día, también debemos mostrar todos los pendientes
+    // actuales cuya FechaConciliacion todavía sea NULL.
+    $stmtUltimaFecha = $pdo->query("
+        SELECT MAX(CAST(FechaConciliacion AS date))
+        FROM Tbl_Transacciones_Maestra
+        WHERE Origen IN ('DETALLADO', 'AJUSTE')
+          AND FechaConciliacion IS NOT NULL
+    ");
+
+    $ultimaFechaConRegistros = $stmtUltimaFecha->fetchColumn();
+
+    $esUltimoDia = (
+        $ultimaFechaConRegistros !== false
+        && $ultimaFechaConRegistros !== null
+        && $fecha === $ultimaFechaConRegistros
+    );
+
     $stmt = $pdo->prepare("
         SELECT
             TM.IdTransaccion,
@@ -65,8 +83,7 @@ try {
         TM.Origen IN ('DETALLADO', 'AJUSTE')
         AND
         (
-            -- PENDIENTE AL CIERRE: ya existía a esa fecha y todavía no se había
-            -- conciliado contablemente (o se concilió después).
+            -- Estado histórico normal: sólo registros que ya existían al corte.
             (
                 TM.FechaRegistro < DATEADD(DAY, 1, CAST(? AS date))
                 AND (
@@ -74,8 +91,16 @@ try {
                     OR TM.FechaConciliacion > CAST(? AS date)
                 )
             )
+
             -- CONCILIADO ESE DÍA
             OR TM.FechaConciliacion = CAST(? AS date)
+
+            -- En el último día contable disponible también mostramos todos
+            -- los pendientes actuales, aunque hayan sido registrados después.
+            OR (
+                ? = 1
+                AND TM.FechaConciliacion IS NULL
+            )
         )
             ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
         ");
@@ -85,7 +110,8 @@ try {
         $fecha,
         $fecha,
         $fecha,
-        $fecha
+        $fecha,
+        $esUltimoDia ? 1 : 0
     ]);
 
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
