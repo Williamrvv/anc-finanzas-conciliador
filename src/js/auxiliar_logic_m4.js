@@ -3100,6 +3100,182 @@ window.AuxiliarLogic = {
         }
     },
 
+    abrirRegistroSoftland: function() {
+        const ahora = new Date();
+        const hoy =
+            ahora.getFullYear() + '-' +
+            String(ahora.getMonth() + 1).padStart(2, '0') + '-' +
+            String(ahora.getDate()).padStart(2, '0');
+
+        const html = `
+        <div class="space-y-4 text-left whitespace-normal" id="softland-contable-form">
+
+            <div class="text-[11px] text-slate-500 dark:text-slate-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                Registre el monto informado por la contabilidad de Softland para la fecha correspondiente.
+                Este registro es independiente de las conciliaciones bancarias.
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Monto de contabilidad Softland *
+                </label>
+                <input id="softland-contable-monto"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    class="w-full p-2.5 text-sm font-mono font-bold border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Fecha del monto *
+                </label>
+                <input id="softland-contable-fecha"
+                    type="date"
+                    value="${hoy}"
+                    max="${hoy}"
+                    class="w-full p-2.5 text-sm font-bold border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Referencia Softland *
+                </label>
+                <input id="softland-contable-referencia"
+                    type="text"
+                    maxlength="100"
+                    placeholder="Número o referencia del registro en Softland"
+                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div id="softland-contable-error"
+                class="hidden text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2">
+            </div>
+
+            <button id="softland-contable-save"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+                Guardar registro Softland
+            </button>
+        </div>`;
+
+        window.SysUI._createModal(
+            'Contabilidad Softland',
+            html,
+            [
+                {
+                    text: 'Cancelar',
+                    value: false,
+                    class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors'
+                }
+            ],
+            'info',
+            'max-w-lg'
+        );
+
+        setTimeout(() => {
+            const btn = document.getElementById('softland-contable-save');
+            if (btn) {
+                btn.addEventListener('click', () => this.guardarRegistroSoftland());
+            }
+        }, 0);
+    },
+
+    guardarRegistroSoftland: async function() {
+        const montoInput = document.getElementById('softland-contable-monto');
+        const fechaInput = document.getElementById('softland-contable-fecha');
+        const referenciaInput = document.getElementById('softland-contable-referencia');
+        const errorBox = document.getElementById('softland-contable-error');
+        const btn = document.getElementById('softland-contable-save');
+
+        if (!montoInput || !fechaInput || !referenciaInput) return;
+
+        const montoRaw = montoInput.value.trim();
+        const monto = Number(montoRaw);
+        const fecha = fechaInput.value;
+        const referencia = referenciaInput.value.trim();
+
+        const ahora = new Date();
+        const hoy =
+            ahora.getFullYear() + '-' +
+            String(ahora.getMonth() + 1).padStart(2, '0') + '-' +
+            String(ahora.getDate()).padStart(2, '0');
+
+        const mostrarError = (mensaje) => {
+            if (!errorBox) return;
+            errorBox.innerText = mensaje;
+            errorBox.classList.remove('hidden');
+        };
+
+        if (errorBox) errorBox.classList.add('hidden');
+
+        if (montoRaw === '' || !Number.isFinite(monto)) {
+            return mostrarError('Debe indicar un monto válido.');
+        }
+
+        if (!fecha) {
+            return mostrarError('Debe indicar la fecha correspondiente al monto.');
+        }
+
+        if (fecha > hoy) {
+            return mostrarError('La fecha no puede estar en el futuro.');
+        }
+
+        if (!referencia) {
+            return mostrarError('Debe indicar la referencia de Softland.');
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerText = 'Guardando...';
+            btn.classList.add('opacity-60');
+        }
+
+        try {
+            const res = await fetch('api/save_softland_contable_m4.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    monto: monto,
+                    fecha: fecha,
+                    referencia: referencia
+                })
+            });
+
+            const data = await res.json();
+
+            if (!data.success) {
+                mostrarError(data.error || 'No se pudo guardar el registro.');
+
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'Guardar registro Softland';
+                    btn.classList.remove('opacity-60');
+                }
+
+                return;
+            }
+
+            const form = document.getElementById('softland-contable-form');
+            const overlay = form ? form.closest('.fixed') : null;
+            if (overlay) overlay.remove();
+
+            await window.SysUI.alert(
+                `Registro Softland #${data.id} guardado correctamente.`,
+                'Registro guardado',
+                'success'
+            );
+
+        } catch (e) {
+            mostrarError('Error de conexión: ' + e.message);
+
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = 'Guardar registro Softland';
+                btn.classList.remove('opacity-60');
+            }
+        }
+    },
+
     abrirAjusteManual: async function() {
         this._ajusteCatManual = false;   // cada apertura vuelve a sugerir categoría
         const tags = this.customTags || [];

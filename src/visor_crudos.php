@@ -69,6 +69,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             <input type="hidden" id="search-tsd">
             <input type="hidden" id="search-historico">
             <input type="hidden" id="search-dbr">
+            <input type="hidden" id="search-softland">
 
             <div class="relative">
                 <!-- Se cambia oninput por syncSearch -->
@@ -99,13 +100,22 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     <span id="historico-resumen" class="text-xs font-bold text-slate-500 dark:text-slate-400 truncate"></span>
                 </div>
 
+                <div id="softland-controls" class="hidden items-center gap-2 min-w-0">
+                    <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">Fecha contable:</span>
+                    <input type="date"
+                        id="softland-fecha"
+                        value="<?php echo htmlspecialchars($historicoDefault); ?>"
+                        onchange="loadSoftland(this.value)"
+                        class="px-3 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 dark:text-white">
+                </div>
+
                 <div id="dbr-controls" class="hidden items-center gap-2 min-w-0">
                     <span class="text-xs font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap">DBR:</span>
 
                     <input type="date" id="dbr-inicio"
                         value="<?php echo htmlspecialchars($start); ?>"
                         max="<?php echo date('Y-m-d'); ?>"
-                        onchange="validarRangoDBR()"
+                        onchange="programarDBR()"
                         class="px-2 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 text-slate-700 dark:text-white">
 
                     <span class="text-xs font-bold text-slate-400">a</span>
@@ -113,13 +123,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     <input type="date" id="dbr-fin"
                         value="<?php echo htmlspecialchars($end); ?>"
                         max="<?php echo date('Y-m-d'); ?>"
-                        onchange="validarRangoDBR()"
+                        onchange="programarDBR()"
                         class="px-2 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 text-slate-700 dark:text-white">
-
-                    <button id="dbr-btn-consultar" onclick="loadDBR()"
-                        class="px-3 py-2 text-xs font-black text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-sm transition-colors">
-                        Consultar
-                    </button>
                 </div>
 
             </div>
@@ -138,6 +143,14 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 </button>
                 <button onclick="switchTab('dbr')" id="tab-dbr" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
                     DBR Tarjetas <svg id="spin-dbr" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                </button>
+
+                <button onclick="switchTab('softland')" id="tab-softland" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
+                    Contabilidad Softland
+                    <svg id="spin-softland" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
                 </button>
 
                 <button onclick="switchTab('historico')" id="tab-historico" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
@@ -225,6 +238,32 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 </div>
             </div>
 
+            <div id="grid-softland" class="w-full h-full hidden relative">
+                <div class="w-full h-full flex flex-col gap-3">
+
+                    <div class="shrink-0 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-blue-200 dark:border-blue-900 flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-black text-blue-700 dark:text-blue-300">
+                                Contabilidad Softland
+                            </h3>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                Monto contable registrado manualmente para el día seleccionado.
+                            </p>
+                        </div>
+
+                        <span id="softland-resumen"
+                            class="px-3 py-1 text-xs font-black rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                            Sin consultar
+                        </span>
+                    </div>
+
+                    <div id="grid-softland-table"
+                        class="w-full flex-grow min-h-0 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                    </div>
+
+                </div>
+            </div>
+
             <div id="grid-historico" class="w-full hidden relative overflow-y-auto">
                 <div class="w-full flex flex-col gap-3 pb-4">
 
@@ -262,6 +301,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             scotia: null,
             tsd: null,
             dbr: null,
+            softland: null,
             historico: null,
             historicoPendientes: [],
             historicoConciliados: []
@@ -272,12 +312,16 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             scotia: null,
             tsd: null,
             dbr: null,
+            softland: null,
             historico: null,
             historicoPendientes: null,
             historicoConciliados: null
         };
 
         let dbrCargando = false;
+        let dbrTimer = null;
+        let dbrAbortController = null;
+        let dbrConsultaSeq = 0;
         let currentActiveTab = 'bac'; // Empezamos en BAC porque es el primero en cargar
 
         function autoGenerateColumns(data) {
@@ -389,6 +433,18 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             });
 
             return !invalido;
+        }
+
+        function programarDBR() {
+            clearTimeout(dbrTimer);
+
+            if (!validarRangoDBR()) return;
+
+            // Evita disparar dos consultas pesadas cuando el usuario
+            // cambia inicio y fin uno inmediatamente después del otro.
+            dbrTimer = setTimeout(() => {
+                loadDBR();
+            }, 500);
         }
 
         function dbrFechasRango(inicio, fin) {
@@ -613,8 +669,19 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         async function loadDBR() {
-            if (dbrCargando) return;
             if (!validarRangoDBR()) return;
+
+            clearTimeout(dbrTimer);
+
+            // Si el usuario cambia el rango mientras una consulta lenta sigue
+            // ejecutándose, abandonamos la respuesta vieja.
+            if (dbrAbortController) {
+                dbrAbortController.abort();
+            }
+
+            const consultaId = ++dbrConsultaSeq;
+            const controller = new AbortController();
+            dbrAbortController = controller;
 
             const inicio = document.getElementById('dbr-inicio').value;
             const fin = document.getElementById('dbr-fin').value;
@@ -626,7 +693,6 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const loaderText = document.getElementById('dbr-loader-text');
             const loaderBar = document.getElementById('dbr-loader-bar');
             const loaderPct = document.getElementById('dbr-loader-pct');
-            const btn = document.getElementById('dbr-btn-consultar');
             const spinner = document.getElementById('spin-dbr');
             const resumen = document.getElementById('dbr-resumen');
 
@@ -637,7 +703,6 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 
             dbrCargando = true;
 
-            if (btn) btn.disabled = true;
             if (spinner) spinner.classList.remove('hidden');
 
             if (loader) loader.classList.remove('hidden');
@@ -656,7 +721,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     try {
                         const res = await fetch(
                             `${endpoint}?fecha=${encodeURIComponent(fecha)}`,
-                            { cache: 'no-store' }
+                            {
+                                cache: 'no-store',
+                                signal: controller.signal
+                            }
                         );
 
                         if (!res.ok) {
@@ -687,6 +755,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         );
 
                     } catch (errorDia) {
+                        if (errorDia.name === 'AbortError') {
+                            throw errorDia;
+                        }
+
                         errores.push(`${fecha}: ${errorDia.message}`);
                     }
 
@@ -717,12 +789,138 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     console.warn('Fechas DBR con error:', errores);
                 }
 
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    console.error('Error DBR:', e);
+                }
             } finally {
-                dbrCargando = false;
+                // Una consulta vieja no debe apagar el loader de una consulta nueva.
+                if (consultaId === dbrConsultaSeq) {
+                    dbrCargando = false;
+                    dbrAbortController = null;
 
-                if (btn) btn.disabled = false;
+                    if (spinner) spinner.classList.add('hidden');
+                    if (loader) loader.classList.add('hidden');
+                }
+            }
+        }
+
+        function softlandColumns() {
+            return [
+                {
+                    title: 'ID',
+                    field: 'id',
+                    width: 90,
+                    hozAlign: 'right',
+                    headerFilter: true,
+                    bottomCalc: 'count',
+                    cssClass: 'font-mono'
+                },
+                {
+                    title: 'Fecha contable',
+                    field: 'FechaContable',
+                    width: 140,
+                    headerFilter: true
+                },
+                {
+                    title: 'Monto',
+                    field: 'Monto',
+                    width: 170,
+                    hozAlign: 'right',
+                    formatter: 'money',
+                    bottomCalc: 'sum',
+                    bottomCalcFormatter: 'money',
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Referencia Softland',
+                    field: 'ReferenciaSoftland',
+                    width: 240,
+                    headerFilter: true,
+                    cssClass: 'font-mono font-bold'
+                },
+                {
+                    title: 'Registrado por',
+                    field: 'EmailUsuario',
+                    width: 240,
+                    headerFilter: true
+                },
+                {
+                    title: 'Fecha real de registro',
+                    field: 'FechaRegistro',
+                    width: 190,
+                    headerFilter: true
+                }
+            ];
+        }
+
+        function renderSoftlandGrid() {
+            const data = rawData.softland || [];
+
+            if (grids.softland) {
+                grids.softland.updateData(data);
+                return;
+            }
+
+            grids.softland = new VanillaGrid(
+                '#grid-softland-table',
+                data,
+                softlandColumns(),
+                {
+                    threshold: 0,
+                    searchInputId: 'search-softland'
+                }
+            );
+        }
+
+        async function loadSoftland(fecha) {
+            if (!fecha) return;
+
+            const spinner = document.getElementById('spin-softland');
+            const resumen = document.getElementById('softland-resumen');
+
+            if (spinner) spinner.classList.remove('hidden');
+
+            try {
+                const res = await fetch(
+                    `api/get_softland_contable_m4.php?fecha=${encodeURIComponent(fecha)}`
+                );
+
+                const json = await res.json();
+
+                if (!json.success) {
+                    throw new Error(json.error || 'No se pudo consultar Contabilidad Softland.');
+                }
+
+                rawData.softland = Array.isArray(json.data) ? json.data : [];
+
+                const total = new Intl.NumberFormat('es-CR', {
+                    style: 'currency',
+                    currency: 'CRC',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(json.summary?.total || 0).replace(/\./g, ' ');
+
+                if (resumen) {
+                    resumen.textContent =
+                        `${rawData.softland.length} registro(s) · ${total}`;
+                }
+
+                if (currentActiveTab === 'softland') {
+                    renderSoftlandGrid();
+                }
+
+            } catch (e) {
+                rawData.softland = [];
+
+                if (resumen) {
+                    resumen.textContent = 'Error al consultar';
+                }
+
+                alert('Error en CONTABILIDAD SOFTLAND: ' + e.message);
+
+            } finally {
                 if (spinner) spinner.classList.add('hidden');
-                if (loader) loader.classList.add('hidden');
             }
         }
 
@@ -1146,6 +1344,13 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 return;
             }
 
+            if (tab === 'softland') {
+                if (rawData.softland !== null) {
+                    renderSoftlandGrid();
+                }
+                return;
+            }
+
             if (tab === 'historico') {  
                 if (rawData.historico !== null) {
                     renderHistoricoGrids();
@@ -1214,9 +1419,37 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 }
             }
 
+            const softlandControls = document.getElementById('softland-controls');
+
+            if (softlandControls) {
+                if (tab === 'softland') {
+                    softlandControls.classList.remove('hidden');
+                    softlandControls.classList.add('flex');
+
+                    if (rawData.softland === null) {
+                        const fechaHistorico = document.getElementById('historico-fecha');
+                        const fechaSoftland = document.getElementById('softland-fecha');
+
+                        if (fechaHistorico && fechaSoftland) {
+                            fechaSoftland.value = fechaHistorico.value;
+                        }
+
+                        if (fechaSoftland && fechaSoftland.value) {
+                            loadSoftland(fechaSoftland.value);
+                        }
+                    }
+                } else {
+                    softlandControls.classList.add('hidden');
+                    softlandControls.classList.remove('flex');
+                }
+            }
+
             const rangoControls = document.getElementById('rango-controls');
             if (rangoControls) {
-                const usaRangoPropio = tab === 'historico' || tab === 'dbr';
+                const usaRangoPropio =
+                    tab === 'historico' ||
+                    tab === 'dbr' ||
+                    tab === 'softland';
 
                 rangoControls.classList.toggle('hidden', usaRangoPropio);
                 rangoControls.classList.toggle('flex', !usaRangoPropio);
@@ -1226,7 +1459,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const globalSearch = document.getElementById('global-search');
             if (globalSearch) globalSearch.value = '';
 
-            ['bac', 'scotia', 'tsd', 'dbr', 'historico'].forEach(t => {    
+            ['bac', 'scotia', 'tsd', 'dbr', 'softland', 'historico'].forEach(t => {    
                 const btn = document.getElementById(`tab-${t}`);
                 const gridDiv = document.getElementById(`grid-${t}`);
                 
