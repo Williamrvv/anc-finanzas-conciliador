@@ -1312,27 +1312,27 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "TSD Débito",
-                    field: "TSD_Debito",
+                    title: "Banco Débito",
+                    field: "Banco_Debito",
                     width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
                     bottomCalcFormatter: value =>
                         `<span class="font-black">${fmtMoney(value)}</span>`,
                     formatter: cell =>
-                        fmtMovimiento(cell, 'TSD_Debito'),
+                        fmtMovimiento(cell, 'Banco_Debito'),
                     cssClass: "font-mono"
                 },
                 {
-                    title: "TSD Crédito",
-                    field: "TSD_Credito",
+                    title: "Banco Crédito",
+                    field: "Banco_Credito",
                     width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
                     bottomCalcFormatter: value =>
                         `<span class="font-black">${fmtMoney(value)}</span>`,
                     formatter: cell =>
-                        fmtMovimiento(cell, 'TSD_Credito'),
+                        fmtMovimiento(cell, 'Banco_Credito'),
                     cssClass: "font-mono"
                 },
                 {
@@ -1357,15 +1357,27 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "Crédito",
-                    field: "Credito",
+                    title: "Banco Débito",
+                    field: "Banco_Debito",
                     width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
                     bottomCalcFormatter: value =>
                         `<span class="font-black">${fmtMoney(value)}</span>`,
                     formatter: cell =>
-                        fmtMovimiento(cell, 'Credito'),
+                        fmtMovimiento(cell, 'Banco_Debito'),
+                    cssClass: "font-mono"
+                },
+                {
+                    title: "Banco Crédito",
+                    field: "Banco_Credito",
+                    width: 145,
+                    hozAlign: "right",
+                    bottomCalc: "sum",
+                    bottomCalcFormatter: value =>
+                        `<span class="font-black">${fmtMoney(value)}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'Banco_Credito'),
                     cssClass: "font-mono"
                 },
                 {

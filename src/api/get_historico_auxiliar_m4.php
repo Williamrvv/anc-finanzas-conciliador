@@ -58,7 +58,12 @@ try {
             CONVERT(varchar(19), TM.FechaRealConciliacion, 120) AS FechaRealConciliacion,
             DATEDIFF(DAY, TM.FechaTransaccion, CONVERT(date, ?, 23)) AS DiasAntiguedadAlCorte,
             TM.Afiliado_MerID,
-            TM.Autorizacion,
+            COALESCE(
+                NULLIF(LTRIM(RTRIM(TM.Autorizacion)), ''),
+                NULLIF(LTRIM(RTRIM(DT.Autorizacion)), ''),
+                NULLIF(LTRIM(RTRIM(DB.AUTORIZACION)), ''),
+                NULLIF(LTRIM(RTRIM(DS.Numero_Autorizacion)), '')
+            ) AS Autorizacion,
             TM.Tarjeta,
             DT.Contrato AS ContratoTSD,
             DT.Cliente AS ClienteTSD,
