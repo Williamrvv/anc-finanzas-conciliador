@@ -44,25 +44,58 @@ $rangoBorradorValido =
     $validarFechaRango($rangoFin) &&
     $rangoInicio <= $rangoFin;
 
-// Fecha CONTABLE elegida explícitamente por el usuario.
-// NUNCA se sustituye silenciosamente por la fecha actual.
+// Fechas históricas elegidas explícitamente por el usuario.
 $fechaConcil = trim($input['fechaConciliacion'] ?? '');
+$fechaRegistro = trim($input['fechaRegistro'] ?? '');
 
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaConcil)) {
-    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación no fue recibida correctamente.']); exit;
+if (!$validarFechaRango($fechaConcil)) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'La fecha de conciliación no fue recibida correctamente.'
+    ]);
+    exit;
 }
 
-[$anioConcil, $mesConcil, $diaConcil] = array_map('intval', explode('-', $fechaConcil));
-
-if (!checkdate($mesConcil, $diaConcil, $anioConcil)) {
-    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación indicada no es válida.']); exit;
+if (!$validarFechaRango($fechaRegistro)) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'La fecha de registro no fue recibida correctamente.'
+    ]);
+    exit;
 }
 
-$hoyCR = (new \DateTimeImmutable('now', new \DateTimeZone('America/Costa_Rica')))->format('Y-m-d');
+$ahoraCR = new \DateTimeImmutable(
+    'now',
+    new \DateTimeZone('America/Costa_Rica')
+);
+
+$hoyCR = $ahoraCR->format('Y-m-d');
 
 if ($fechaConcil > $hoyCR) {
-    echo json_encode(['success' => false, 'error' => 'La fecha de conciliación no puede estar en el futuro.']); exit;
+    echo json_encode([
+        'success' => false,
+        'error' => 'La fecha de conciliación no puede estar en el futuro.'
+    ]);
+    exit;
 }
+
+if ($fechaRegistro > $hoyCR) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'La fecha de registro no puede estar en el futuro.'
+    ]);
+    exit;
+}
+
+// Para registros NUEVOS:
+// día histórico indicado por el usuario + hora real del procesamiento.
+$fechaRegistroDateTime =
+    $fechaRegistro . 'T' . $ahoraCR->format('H:i:s');
+
+// La fecha REAL de conciliación continúa siendo el momento real,
+// no la fecha histórica seleccionada.
+$fechaRealConcil =
+    $ahoraCR->format('Y-m-d\TH:i:s');
 
 $matches = $input['matches'] ?? [];
 $pendientes = $input['pendientes'] ?? [];
@@ -146,9 +179,44 @@ try {
     // ==============================================================
     if (count($folios) > 0) {
         $inQuery = implode(',', array_fill(0, count($folios), '?'));
-        $paramsWatermark = array_merge([$folioUnico], $folios);
-        $stmtWatermark = $pdo->prepare("UPDATE Tbl_Conciliacion_Cierres SET ConsolidadoTSD = GETDATE(), Folio = ? WHERE IdCierre IN ($inQuery)");
+
+        $paramsWatermark =
+            array_merge([$folioUnico], $folios);
+
+        $stmtWatermark = $pdo->prepare("
+            UPDATE Tbl_Conciliacion_Cierres
+            SET ConsolidadoTSD = GETDATE(),
+                Folio = ?
+            WHERE IdCierre IN ($inQuery)
+        ");
+
         $stmtWatermark->execute($paramsWatermark);
+
+        // Los bancos ya existen antes del Consolidado TSD.
+        // Sólo cambiamos la parte DATE de FechaRegistro y conservamos
+        // exactamente su hora original.
+        $paramsFechaRegistroBancos =
+            array_merge([$fechaRegistro], $folios);
+
+        $stmtFechaRegistroBancos = $pdo->prepare("
+            UPDATE Tbl_Transacciones_Maestra
+            SET FechaRegistro = DATEADD(
+                DAY,
+                DATEDIFF(
+                    DAY,
+                    CONVERT(date, FechaRegistro),
+                    CONVERT(date, ?, 23)
+                ),
+                FechaRegistro
+            )
+            WHERE IdCierre IN ($inQuery)
+              AND Banco IN ('BAC', 'Davibank')
+              AND Origen IN ('DETALLADO', 'AJUSTE')
+        ");
+
+        $stmtFechaRegistroBancos->execute(
+            $paramsFechaRegistroBancos
+        );
     }
 
     // Preparar statements de inserción/actualización
@@ -160,11 +228,12 @@ try {
             IdTransaccion, IdCierre, Banco, Origen, Estado,
             IdMatchTSD, TipoCruceTSD, FechaTransaccion,
             Afiliado_MerID, Autorizacion, MontoBruto, MontoNeto,
-            HashUnico, Tarjeta,
+            HashUnico, Tarjeta, FechaRegistro,
             FechaConciliacion, FechaRealConciliacion
         )
         VALUES (
             ?, ?, 'TSD', 'DETALLADO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            CONVERT(datetime, ?, 126),
             ?, ?
         )
     ");
@@ -174,10 +243,22 @@ try {
         SET Estado = ?,
             IdMatchTSD = ?,
             TipoCruceTSD = ?,
+
+            FechaRegistro = DATEADD(
+                DAY,
+                DATEDIFF(
+                    DAY,
+                    CONVERT(date, FechaRegistro),
+                    CONVERT(date, ?, 23)
+                ),
+                FechaRegistro
+            ),
+
             FechaConciliacion = CASE
                 WHEN ? = 'CONCILIADO' THEN ?
                 ELSE FechaConciliacion
             END,
+
             FechaRealConciliacion = CASE
                 WHEN ? = 'CONCILIADO' THEN GETDATE()
                 ELSE FechaRealConciliacion
@@ -209,10 +290,20 @@ try {
         throw new \Exception("La fecha de conciliación no llegó en formato AAAA-MM-DD. Valor recibido: '" . $fechaConcil . "'");
     }
 
-    $tsReal = strtotime((string)$fechaRealConcil);
-    $fechaRealConcil = date('Y-m-d\TH:i:s', $tsReal !== false ? $tsReal : time());
-
-    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use ($pdo, $nuevoIdCierreTSD, $stmtCheck, $stmtInsertMaestra, $stmtUpdateMaestra, $stmtInsertDetalle, $mapaCC, $normCod, $fechaConcil, $fechaRealConcil) {
+    $procesarTSD = function($t, $estado, $idMatchTSD, $tipoCruce) use (
+        $pdo,
+        $nuevoIdCierreTSD,
+        $stmtCheck,
+        $stmtInsertMaestra,
+        $stmtUpdateMaestra,
+        $stmtInsertDetalle,
+        $mapaCC,
+        $normCod,
+        $fechaConcil,
+        $fechaRegistro,
+        $fechaRegistroDateTime,
+        $fechaRealConcil
+    ) {
         $idTransaccion = trim($t['ID_Transaccion'] ?? 'SD');
         $contrato = trim($t['Contrato'] ?? '');
         $auth = trim($t['Autorizacion'] ?? '');
@@ -230,6 +321,10 @@ try {
                 $estado,
                 $idMatchTSD,
                 $tipoCruce,
+
+                // Sólo cambia el DATE de FechaRegistro.
+                $fechaRegistro,
+
                 $estado,
                 $fechaConcil,
                 $estado,
@@ -249,6 +344,10 @@ try {
                 $montoCRC,
                 $hashUnico,
                 $tarjeta,
+
+                // Fecha histórica seleccionada + hora real.
+                $fechaRegistroDateTime,
+
                 $estado === 'CONCILIADO' ? $fechaConcil : null,
                 $estado === 'CONCILIADO' ? $fechaRealConcil : null
             ]); 
@@ -269,7 +368,25 @@ try {
     // ==============================================================
     // 7. PROCESAR MATCHES Y PENDIENTES
     // ==============================================================
-    $stmtUpdateBanco = $pdo->prepare("UPDATE Tbl_Transacciones_Maestra SET IdMatchTSD = ?, TipoCruceTSD = ?, FechaConciliacion = ?, FechaRealConciliacion = GETDATE() WHERE IdTransaccion = ?");
+    $stmtUpdateBanco = $pdo->prepare("
+        UPDATE Tbl_Transacciones_Maestra
+        SET IdMatchTSD = ?,
+            TipoCruceTSD = ?,
+            FechaConciliacion = ?,
+            FechaRealConciliacion = GETDATE(),
+
+            FechaRegistro = DATEADD(
+                DAY,
+                DATEDIFF(
+                    DAY,
+                    CONVERT(date, FechaRegistro),
+                    CONVERT(date, ?, 23)
+                ),
+                FechaRegistro
+            )
+
+        WHERE IdTransaccion = ?
+    ");
     $stmtInsertAuditoria = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion) VALUES (?, 'Cruce Manual TSD', ?)");
 
     foreach ($matches as $match) {
@@ -291,7 +408,13 @@ try {
         }
 
         foreach ($match['Bancos'] as $bancoIdTrans) {
-            $stmtUpdateBanco->execute([$idMatchTSD, $tipoCruce, $fechaConcil, $bancoIdTrans]);
+            $stmtUpdateBanco->execute([
+                $idMatchTSD,
+                $tipoCruce,
+                $fechaConcil,
+                $fechaRegistro,
+                $bancoIdTrans
+            ]);
         }
     }
 

@@ -886,29 +886,26 @@ window.AuxiliarLogic = {
                 : row._bancoArr
         );
 
-        let debito = 0;
-        let credito = 0;
+        let tsdDebito = 0;
+        let tsdCredito = 0;
+        let bancoDebito = 0;
+        let bancoCredito = 0;
 
         const detalleDebito = [];
         const detalleCredito = [];
 
-        // =========================================================
-        // TSD
-        // Positivo = DÉBITO
-        // Negativo = CRÉDITO
-        // =========================================================
+        // TSD: positivo = DÉBITO | negativo = CRÉDITO
         tsdArr.forEach(t => {
             const monto = Number(t.MontoCRC) || 0;
 
             if (monto > 0) {
-                debito += Math.abs(monto);
+                tsdDebito += Math.abs(monto);
 
                 if (t.Recibo_Detalle) {
                     detalleDebito.push(String(t.Recibo_Detalle));
                 }
-
             } else if (monto < 0) {
-                credito += Math.abs(monto);
+                tsdCredito += Math.abs(monto);
 
                 if (t.Recibo_Detalle) {
                     detalleCredito.push(String(t.Recibo_Detalle));
@@ -916,14 +913,7 @@ window.AuxiliarLogic = {
             }
         });
 
-        // =========================================================
-        // BANCO
-        // Negativo = DÉBITO
-        // Positivo = CRÉDITO
-        //
-        // Pendientes usa Monto_Venta_Original.
-        // Histórico usa MontoCRC.
-        // =========================================================
+        // BANCO: negativo = DÉBITO | positivo = CRÉDITO
         bancoArr.forEach(b => {
             let valorBanco = b.Monto_Venta_Original;
 
@@ -938,14 +928,20 @@ window.AuxiliarLogic = {
             const monto = Number(valorBanco) || 0;
 
             if (monto < 0) {
-                debito += Math.abs(monto);
+                bancoDebito += Math.abs(monto);
             } else if (monto > 0) {
-                credito += Math.abs(monto);
+                bancoCredito += Math.abs(monto);
             }
         });
 
-        row.Debito = Number(debito.toFixed(2));
-        row.Credito = Number(credito.toFixed(2));
+        row.TSD_Debito = Number(tsdDebito.toFixed(2));
+        row.TSD_Credito = Number(tsdCredito.toFixed(2));
+        row.Banco_Debito = Number(bancoDebito.toFixed(2));
+        row.Banco_Credito = Number(bancoCredito.toFixed(2));
+
+        // Se conservan para no alterar todavía el histórico.
+        row.Debito = Number((tsdDebito + bancoDebito).toFixed(2));
+        row.Credito = Number((tsdCredito + bancoCredito).toFixed(2));
 
         row._detalleDebito = Array.from(
             new Set(detalleDebito.filter(Boolean))
@@ -978,10 +974,18 @@ window.AuxiliarLogic = {
             .format(Math.abs(v || 0))
             .replace(/\./g, ' ');
 
-        const detalle =
-            campo === 'Debito'
-                ? row._detalleDebito
-                : row._detalleCredito;
+        const esDebito =
+            campo === 'Debito' ||
+            campo === 'TSD_Debito';
+
+        const muestraDetalleTSD =
+            campo === 'Debito' ||
+            campo === 'Credito' ||
+            campo.startsWith('TSD_');
+
+        const detalle = muestraDetalleTSD
+            ? (esDebito ? row._detalleDebito : row._detalleCredito)
+            : '';
 
         const detalleHtml = detalle
             ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5 max-w-[150px]" title="${detalle}">${detalle}</div>`
@@ -2566,8 +2570,34 @@ window.AuxiliarLogic = {
                     return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                 }
             },
-            // Los montos TSD y Banco se muestran conjuntamente más adelante
-            // mediante las columnas contables Débito y Crédito.
+            {
+                title: "TSD Débito",
+                field: "TSD_Debito",
+                width: 125,
+                hozAlign: "right",
+                bottomCalc: "sum",
+                cssClass: "font-mono",
+                bottomCalcFormatter: (val) =>
+                    `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
+                formatter: (cell) => {
+                    const row = cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell);
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(row, 'TSD_Debito');
+                }
+            },
+            {
+                title: "TSD Crédito",
+                field: "TSD_Credito",
+                width: 125,
+                hozAlign: "right",
+                bottomCalc: "sum",
+                cssClass: "font-mono",
+                bottomCalcFormatter: (val) =>
+                    `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
+                formatter: (cell) => {
+                    const row = cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell);
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(row, 'TSD_Credito');
+                }
+            },
             { 
                 title: "ESTADO AUX", field: "EstadoMatch", width: 180, hozAlign: "center",
                 cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold",
@@ -2629,59 +2659,31 @@ window.AuxiliarLogic = {
                 }
             },
             {
-                title: "Débito",
-                field: "Debito",
+                title: "Banco Débito",
+                field: "Banco_Debito",
                 width: 125,
                 hozAlign: "right",
                 bottomCalc: "sum",
                 cssClass: "font-mono",
                 bottomCalcFormatter: (val) =>
-                    `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(Math.abs(val || 0))}</span>`,
+                    `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
                 formatter: (cell) => {
-                    const row = (typeof cell === 'object' && cell)
-                        ? (
-                            cell.getRow
-                                ? cell.getRow()
-                                : (
-                                    cell.getData
-                                        ? cell.getData()
-                                        : cell
-                                )
-                        )
-                        : cell;
-
-                    return window.AuxiliarLogic._formatearDebitoCreditoM4(
-                        row,
-                        'Debito'
-                    );
+                    const row = cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell);
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(row, 'Banco_Debito');
                 }
             },
             {
-                title: "Crédito",
-                field: "Credito",
+                title: "Banco Crédito",
+                field: "Banco_Credito",
                 width: 125,
                 hozAlign: "right",
                 bottomCalc: "sum",
                 cssClass: "font-mono",
                 bottomCalcFormatter: (val) =>
-                    `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(Math.abs(val || 0))}</span>`,
+                    `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
                 formatter: (cell) => {
-                    const row = (typeof cell === 'object' && cell)
-                        ? (
-                            cell.getRow
-                                ? cell.getRow()
-                                : (
-                                    cell.getData
-                                        ? cell.getData()
-                                        : cell
-                                )
-                        )
-                        : cell;
-
-                    return window.AuxiliarLogic._formatearDebitoCreditoM4(
-                        row,
-                        'Credito'
-                    );
+                    const row = cell.getRow ? cell.getRow() : (cell.getData ? cell.getData() : cell);
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(row, 'Banco_Credito');
                 }
             },
             { title: "Dif", field: "Diferencia", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-500" },

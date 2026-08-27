@@ -280,50 +280,173 @@ window.TSDLogic = {
         }
     },
 
-    // Modal de fecha contable de conciliación. Sugiere el día en curso y limita
-    // el máximo a hoy: una conciliación con fecha futura no tiene sentido contable.
+    // Fechas históricas utilizadas al archivar el Consolidado TSD.
+    // FechaConciliacion = fecha contable del cruce.
+    // FechaRegistro = desde qué día debe considerarse existente el movimiento
+    // dentro de los cortes históricos del Auxiliar.
     pedirFechaConciliacion: async function() {
-        const hoy = new Date().toISOString().slice(0, 10);
+        const ahora = new Date();
+
+        const hoy =
+            ahora.getFullYear() + '-' +
+            String(ahora.getMonth() + 1).padStart(2, '0') + '-' +
+            String(ahora.getDate()).padStart(2, '0');
 
         const html = `
-        <div class="space-y-3 text-left whitespace-normal" id="fc-form">
+        <div class="space-y-4 text-left whitespace-normal" id="fc-form">
             <p class="text-sm text-slate-600 dark:text-slate-300">
-                Indique la <b>fecha contable</b> con la que se registrará esta conciliación.
+                Indique las fechas históricas con las que debe registrarse este cierre.
             </p>
+
             <div>
-                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha de conciliación *</label>
-                <input type="date" id="fc-fecha" value="${hoy}" max="${hoy}"
-                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Fecha de conciliación *
+                </label>
+
+                <input
+                    type="date"
+                    id="fc-fecha"
+                    value="${hoy}"
+                    max="${hoy}"
+                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                >
+
+                <p class="text-[10px] text-slate-400 mt-1">
+                    Fecha contable en la que la conciliación debe aparecer como realizada.
+                </p>
             </div>
+
+            <div>
+                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    Fecha de registro *
+                </label>
+
+                <input
+                    type="date"
+                    id="fc-fecha-registro"
+                    value="${hoy}"
+                    max="${hoy}"
+                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-orange-500"
+                >
+
+                <p class="text-[10px] text-slate-400 mt-1">
+                    Define desde qué fecha estos movimientos deben existir dentro del histórico del Auxiliar.
+                </p>
+            </div>
+
             <p class="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                Se sugiere el día en curso. Puede fecharse hacia atrás si el movimiento
-                corresponde a días anteriores, pero no hacia adelante.
+                Mientras se cargan períodos históricos, ambas fechas pueden colocarse hacia atrás.
+                La hora real del procesamiento se conservará automáticamente.
             </p>
+
             <div id="fc-error" class="hidden text-[11px] text-red-600 font-bold"></div>
-            <button id="fc-ok" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors">
+
+            <button
+                id="fc-ok"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-bold shadow-md transition-colors"
+            >
                 Confirmar y guardar
             </button>
         </div>`;
 
         return new Promise((resolve) => {
-            window.SysUI._createModal('Fecha de la conciliación', html, [
-                { text: 'Cancelar', value: false, class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors' }
-            ], 'info', 'max-w-md').then(() => resolve(null));   // cerró sin confirmar
+            window.SysUI._createModal(
+                'Fechas del Consolidado TSD',
+                html,
+                [
+                    {
+                        text: 'Cancelar',
+                        value: false,
+                        class: 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 px-5 py-2 rounded-lg font-bold transition-colors'
+                    }
+                ],
+                'info',
+                'max-w-md'
+            ).then(() => resolve(null));
+
+            const fechaConcilEl =
+                document.getElementById('fc-fecha');
+
+            const fechaRegistroEl =
+                document.getElementById('fc-fecha-registro');
+
+            // Por comodidad ambas fechas permanecen juntas mientras
+            // el usuario no modifique expresamente Fecha de Registro.
+            let registroModificado = false;
+
+            if (fechaRegistroEl) {
+                fechaRegistroEl.addEventListener('change', () => {
+                    registroModificado = true;
+                });
+            }
+
+            if (fechaConcilEl) {
+                fechaConcilEl.addEventListener('change', () => {
+                    if (
+                        !registroModificado &&
+                        fechaRegistroEl
+                    ) {
+                        fechaRegistroEl.value =
+                            fechaConcilEl.value;
+                    }
+                });
+            }
 
             const btn = document.getElementById('fc-ok');
-            if (btn) btn.addEventListener('click', function () {
-                const val = (document.getElementById('fc-fecha') || {}).value || '';
-                const err = document.getElementById('fc-error');
-                if (!val) { err.innerText = 'Debe indicar una fecha.'; err.classList.remove('hidden'); return; }
-                if (val > hoy) { err.innerText = 'No se permite una fecha futura.'; err.classList.remove('hidden'); return; }
 
-                const form = document.getElementById('fc-form');
-                const overlay = form ? form.closest('.fixed') : null;
-                if (overlay) overlay.remove();
-                resolve(val);
-            });
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    const fechaConciliacion =
+                        fechaConcilEl?.value || '';
 
-            setTimeout(function () { const f = document.getElementById('fc-fecha'); if (f) f.focus(); }, 80);
+                    const fechaRegistro =
+                        fechaRegistroEl?.value || '';
+
+                    const err =
+                        document.getElementById('fc-error');
+
+                    if (!fechaConciliacion) {
+                        err.innerText =
+                            'Debe indicar la fecha de conciliación.';
+                        err.classList.remove('hidden');
+                        return;
+                    }
+
+                    if (!fechaRegistro) {
+                        err.innerText =
+                            'Debe indicar la fecha de registro.';
+                        err.classList.remove('hidden');
+                        return;
+                    }
+
+                    if (
+                        fechaConciliacion > hoy ||
+                        fechaRegistro > hoy
+                    ) {
+                        err.innerText =
+                            'No se permiten fechas futuras.';
+                        err.classList.remove('hidden');
+                        return;
+                    }
+
+                    const form =
+                        document.getElementById('fc-form');
+
+                    const overlay =
+                        form ? form.closest('.fixed') : null;
+
+                    if (overlay) overlay.remove();
+
+                    resolve({
+                        fechaConciliacion,
+                        fechaRegistro
+                    });
+                });
+            }
+
+            setTimeout(function () {
+                if (fechaConcilEl) fechaConcilEl.focus();
+            }, 80);
         });
     },
 
@@ -2394,10 +2517,15 @@ window.TSDLogic = {
 
         if (!confirmado) return;
 
-        // Fecha CONTABLE de la conciliación: se pregunta al final, cuando el
-        // usuario ya confirmó todo lo demás. Sugiere hoy y no admite futuro.
-        const fechaConciliacion = await this.pedirFechaConciliacion();
-        if (!fechaConciliacion) return;   // canceló
+            body: JSON.stringify({
+                folios: foliosArray,
+                matches: payloadMatched,
+                pendientes: payloadPending,
+                fechaConciliacion: fechaConciliacion,
+                fechaRegistro: fechaRegistro,
+                rangoInicio: this._rangoBorradorM3?.start || '',
+                rangoFin: this._rangoBorradorM3?.end || ''
+            })
 
         // --- 1. BLOQUE A: Extraer Folios a Sellar ---
         // Buscamos todos los IdCierre (Folios) únicos de los bancos que están en la memoria RAM
@@ -2547,6 +2675,7 @@ window.TSDLogic = {
                         matches: payloadMatched,
                         pendientes: payloadPending,
                         fechaConciliacion: fechaConciliacion,
+                        fechaRegistro: fechaRegistro,
                         confirmarSinCC: true,
                         rangoInicio: this._rangoBorradorM3?.start || '',
                         rangoFin: this._rangoBorradorM3?.end || ''

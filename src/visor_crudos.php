@@ -373,6 +373,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         let dbrTimer = null;
         let dbrAbortController = null;
         let dbrConsultaSeq = 0;
+
+        // Control de concurrencia BAC / Davibank / TSD.
+        // Cada cambio de rango invalida inmediatamente cualquier carga anterior.
+        let rangoConsultaSeq = 0;
+        let rangoAbortController = null;
+
         let currentActiveTab = 'bac'; // Empezamos en BAC porque es el primero en cargar
         let historicoSubTabActivo = 'pendientes';
 
@@ -432,24 +438,61 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             tsd:    '<?php echo $ctx === 'm4' ? 'tsd_bd'    : 'tsd'; ?>'
         };
 
-        async function fetchSource(sourceName) {
-            document.getElementById(`spin-${sourceName}`).classList.remove('hidden');
+        async function fetchSource(sourceName, contextoRango) {
+            const spinner =
+                document.getElementById(`spin-${sourceName}`);
+
+            if (spinner) spinner.classList.remove('hidden');
+
             try {
-                const { start, end } = rangoActual();
-                const res = await fetch(`api/get_crudos_m3.php?start=${start}&end=${end}&source=${SOURCE_MAP[sourceName]}`);
+                const res = await fetch(
+                    `api/get_crudos_m3.php?start=${contextoRango.start}&end=${contextoRango.end}&source=${SOURCE_MAP[sourceName]}`,
+                    {
+                        signal: contextoRango.signal
+                    }
+                );
+
                 const json = await res.json();
-                if (!json.success) throw new Error(json.error);
-                
+
+                if (!json.success) {
+                    throw new Error(json.error);
+                }
+
+                // Una respuesta perteneciente a un rango viejo
+                // JAMÁS puede modificar la pantalla actual.
+                if (contextoRango.seq !== rangoConsultaSeq) {
+                    return false;
+                }
+
                 rawData[sourceName] = json.data;
-                
-                // Si el usuario ya estaba en esta pestaña esperándola, pintarla de inmediato
+
                 if (currentActiveTab === sourceName) {
                     renderGrid(sourceName);
                 }
+
+                return true;
+
             } catch (e) {
-                alert(`Error en ${sourceName.toUpperCase()}: ` + e.message);
+                if (e.name === 'AbortError') {
+                    return false;
+                }
+
+                if (contextoRango.seq === rangoConsultaSeq) {
+                    alert(
+                        `Error en ${sourceName.toUpperCase()}: ` +
+                        e.message
+                    );
+                }
+
+                return false;
+
             } finally {
-                document.getElementById(`spin-${sourceName}`).classList.add('hidden');
+                if (
+                    contextoRango.seq === rangoConsultaSeq &&
+                    spinner
+                ) {
+                    spinner.classList.add('hidden');
+                }
             }
         }
 
@@ -1541,47 +1584,135 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         function aplicarRango() {
             clearTimeout(rangoTimer);
 
-            const inicio = document.getElementById('rango-inicio');
-            const fin = document.getElementById('rango-fin');
-            const invalido = !inicio.value || !fin.value || inicio.value > fin.value;
+            // Invalidar INMEDIATAMENTE cualquier consulta anterior.
+            rangoConsultaSeq++;
 
-            // El rango inválido se avisa en el propio campo, sin interrumpir con diálogos
+            if (rangoAbortController) {
+                rangoAbortController.abort();
+                rangoAbortController = null;
+            }
+
+            ['bac', 'scotia', 'tsd'].forEach(fuente => {
+                const spinner =
+                    document.getElementById(`spin-${fuente}`);
+
+                if (spinner) spinner.classList.add('hidden');
+            });
+
+            const spinRango =
+                document.getElementById('rango-spin');
+
+            if (spinRango) spinRango.classList.add('hidden');
+
+            const inicio =
+                document.getElementById('rango-inicio');
+
+            const fin =
+                document.getElementById('rango-fin');
+
+            const invalido =
+                !inicio.value ||
+                !fin.value ||
+                inicio.value > fin.value;
+
             [inicio, fin].forEach(el => {
                 el.classList.toggle('ring-2', invalido);
                 el.classList.toggle('ring-red-500', invalido);
             });
+
             if (invalido) return;
 
-            // Mientras DBR todavía no se haya consultado, hereda el rango
-            // actualmente seleccionado para BAC / Davibank / TSD.
             if (rawData.dbr === null) {
-                const dbrInicio = document.getElementById('dbr-inicio');
-                const dbrFin = document.getElementById('dbr-fin');
+                const dbrInicio =
+                    document.getElementById('dbr-inicio');
+
+                const dbrFin =
+                    document.getElementById('dbr-fin');
 
                 if (dbrInicio) dbrInicio.value = inicio.value;
                 if (dbrFin) dbrFin.value = fin.value;
             }
 
+            const controller = new AbortController();
+            rangoAbortController = controller;
+
+            const contextoRango = {
+                seq: rangoConsultaSeq,
+                start: inicio.value,
+                end: fin.value,
+                signal: controller.signal
+            };
+
             rangoTimer = setTimeout(async () => {
-                const spin = document.getElementById('rango-spin');
+                if (contextoRango.seq !== rangoConsultaSeq) return;
+
+                const spin =
+                    document.getElementById('rango-spin');
+
                 if (spin) spin.classList.remove('hidden');
 
-                sincronizarHistorico(fin.value);
+                sincronizarHistorico(contextoRango.end);
 
-                for (const fuente of ['bac', 'scotia', 'tsd']) {
-                    await fetchSource(fuente);
-                    // fetchSource repinta la pestaña activa; el resto se refresca aquí
-                    // para que ninguna quede con datos del rango anterior.
-                    if (fuente !== currentActiveTab && grids[fuente]) {
-                        grids[fuente].updateData(rawData[fuente] || []);
-                        // VanillaGrid reescribe el className del contenedor al repintar
-                        // y se lleva el 'hidden'. Sin esto, las tablas se apilan.
-                        const cont = document.getElementById(`grid-${fuente}`);
-                        if (cont) cont.classList.add('hidden');
+                try {
+                    for (const fuente of ['bac', 'scotia', 'tsd']) {
+
+                        const cargado = await fetchSource(
+                            fuente,
+                            contextoRango
+                        );
+
+                        if (
+                            !cargado ||
+                            contextoRango.seq !== rangoConsultaSeq
+                        ) {
+                            return;
+                        }
+
+                        if (
+                            fuente === 'bac'
+                        ) {
+                            const loader =
+                                document.getElementById('loader-main');
+
+                            if (
+                                loader &&
+                                loader.style.display !== 'none'
+                            ) {
+                                loader.classList.add('opacity-0');
+
+                                setTimeout(() => {
+                                    loader.style.display = 'none';
+                                }, 300);
+                            }
+                        }
+
+                        if (
+                            fuente !== currentActiveTab &&
+                            grids[fuente]
+                        ) {
+                            grids[fuente].updateData(
+                                rawData[fuente] || []
+                            );
+
+                            const cont =
+                                document.getElementById(
+                                    `grid-${fuente}`
+                                );
+
+                            if (cont) {
+                                cont.classList.add('hidden');
+                            }
+                        }
+                    }
+
+                } finally {
+                    if (
+                        contextoRango.seq === rangoConsultaSeq &&
+                        spin
+                    ) {
+                        spin.classList.add('hidden');
                     }
                 }
-
-                if (spin) spin.classList.add('hidden');
             }, 500);
         }
 
@@ -1603,20 +1734,49 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         async function startSequentialLoading() {
-            // 1. CARGA BAC (Rápido)
-            await fetchSource('bac');
-            
-            // Ocultar Overlay Principal y mostrar BAC inmediatamente
-            const loader = document.getElementById('loader-main');
+            rangoConsultaSeq++;
+
+            if (rangoAbortController) {
+                rangoAbortController.abort();
+            }
+
+            const controller = new AbortController();
+            rangoAbortController = controller;
+
+            const rango = rangoActual();
+
+            const contextoRango = {
+                seq: rangoConsultaSeq,
+                start: rango.start,
+                end: rango.end,
+                signal: controller.signal
+            };
+
+            const bacOk =
+                await fetchSource('bac', contextoRango);
+
+            if (
+                !bacOk ||
+                contextoRango.seq !== rangoConsultaSeq
+            ) return;
+
+            const loader =
+                document.getElementById('loader-main');
+
             loader.classList.add('opacity-0');
             setTimeout(() => loader.style.display = 'none', 300);
+
             renderGrid('bac');
 
-            // 2. CARGA SCOTIA (De fondo)
-            await fetchSource('scotia');
-            
-            // 3. CARGA TSD (De fondo)
-            await fetchSource('tsd');
+            const scotiaOk =
+                await fetchSource('scotia', contextoRango);
+
+            if (
+                !scotiaOk ||
+                contextoRango.seq !== rangoConsultaSeq
+            ) return;
+
+            await fetchSource('tsd', contextoRango);
         }
 
         function renderGrid(tab) {
