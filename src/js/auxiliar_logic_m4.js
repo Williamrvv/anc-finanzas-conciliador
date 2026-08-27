@@ -1,7 +1,8 @@
 window.AuxiliarLogic = {
     lastTSD: [], lastBancos: [], blacklist: [], manualMatches: [], customTags: [],
-    gridSug: null, gridLimbo: null, gridHistorial: null,
+    gridSug: null, gridLimbo: null, gridHistorial: null, gridHistPendientes: null,
     currentSugData: [], currentLimboData: [], currentHistorialData: [],
+    _columnsM4Actuales: null,
 
     // Estado temporal compartido del Auxiliar.
     // Nunca guarda los datos fuente: únicamente decisiones manuales.
@@ -819,6 +820,13 @@ window.AuxiliarLogic = {
             this.gridHistorial = null;
         }
 
+        if(this.gridHistPendientes) {
+            if (typeof this.gridHistPendientes.destroy === 'function') this.gridHistPendientes.destroy();
+            this.gridHistPendientes = null;
+        }
+
+        this._columnsM4Actuales = null;
+
         this.stopAutoSaveBorradorM4();
 
         this.blacklist = [];
@@ -864,6 +872,139 @@ window.AuxiliarLogic = {
         this.startAutoSaveBorradorM4();
     },
 
+    _aplicarDebitoCreditoM4: function(row) {
+        if (!row) return row;
+
+        const toArray = (valor) => {
+            if (!valor) return [];
+            return Array.isArray(valor) ? valor.filter(Boolean) : [valor];
+        };
+
+        // En pendientes/aprobados se llaman _tsdRaw / _bancoRaw.
+        // En histórico se llaman _tsdArr / _bancoArr.
+        const tsdArr = toArray(
+            row._tsdRaw !== undefined
+                ? row._tsdRaw
+                : row._tsdArr
+        );
+
+        const bancoArr = toArray(
+            row._bancoRaw !== undefined
+                ? row._bancoRaw
+                : row._bancoArr
+        );
+
+        let debito = 0;
+        let credito = 0;
+
+        const detalleDebito = [];
+        const detalleCredito = [];
+
+        // =========================================================
+        // TSD
+        // Positivo = DÉBITO
+        // Negativo = CRÉDITO
+        // =========================================================
+        tsdArr.forEach(t => {
+            const monto = Number(t.MontoCRC) || 0;
+
+            if (monto > 0) {
+                debito += Math.abs(monto);
+
+                if (t.Recibo_Detalle) {
+                    detalleDebito.push(String(t.Recibo_Detalle));
+                }
+
+            } else if (monto < 0) {
+                credito += Math.abs(monto);
+
+                if (t.Recibo_Detalle) {
+                    detalleCredito.push(String(t.Recibo_Detalle));
+                }
+            }
+        });
+
+        // =========================================================
+        // BANCO
+        // Negativo = DÉBITO
+        // Positivo = CRÉDITO
+        //
+        // Pendientes usa Monto_Venta_Original.
+        // Histórico usa MontoCRC.
+        // =========================================================
+        bancoArr.forEach(b => {
+            let valorBanco = b.Monto_Venta_Original;
+
+            if (
+                valorBanco === undefined ||
+                valorBanco === null ||
+                valorBanco === ''
+            ) {
+                valorBanco = b.MontoCRC;
+            }
+
+            const monto = Number(valorBanco) || 0;
+
+            if (monto < 0) {
+                debito += Math.abs(monto);
+            } else if (monto > 0) {
+                credito += Math.abs(monto);
+            }
+        });
+
+        row.Debito = Number(debito.toFixed(2));
+        row.Credito = Number(credito.toFixed(2));
+
+        row._detalleDebito = Array.from(
+            new Set(detalleDebito.filter(Boolean))
+        ).join(' · ');
+
+        row._detalleCredito = Array.from(
+            new Set(detalleCredito.filter(Boolean))
+        ).join(' · ');
+
+        return row;
+    },
+
+    _formatearDebitoCreditoM4: function(row, campo) {
+        if (!row) return '';
+
+        const valor = Math.abs(Number(row[campo]) || 0);
+
+        if (valor === 0) {
+            return '<span class="text-slate-300 dark:text-slate-600">—</span>';
+        }
+
+        const fmtMoney = (v) =>
+            new Intl.NumberFormat(
+                'es-CR',
+                {
+                    style: 'currency',
+                    currency: 'CRC'
+                }
+            )
+            .format(Math.abs(v || 0))
+            .replace(/\./g, ' ');
+
+        const detalle =
+            campo === 'Debito'
+                ? row._detalleDebito
+                : row._detalleCredito;
+
+        const detalleHtml = detalle
+            ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5 max-w-[150px]" title="${detalle}">${detalle}</div>`
+            : '';
+
+        return `
+            <div class="flex flex-col justify-center items-end h-full">
+                <span class="font-bold text-slate-800 dark:text-slate-200">
+                    ${fmtMoney(valor)}
+                </span>
+                ${detalleHtml}
+            </div>
+        `;
+    },
+
     switchTab: function(tabName) {
         const btnB = document.getElementById('tab-m4-bandeja');
         const btnH = document.getElementById('tab-m4-historial');
@@ -888,9 +1029,132 @@ window.AuxiliarLogic = {
             viewH.classList.add('flex');
             actionBar.classList.add('hidden');
             
-            // Si el historial está vacío, cargar automáticamente el último registro disponible
-            if(this.currentHistorialData.length === 0) this.fetchHistorial(null, true);
+            // Dentro del Histórico siempre entramos primero a Pendientes.
+            this.switchHistorialSubTab('pendientes');
         }
+    },
+
+    switchHistorialSubTab: function(tabName) {
+        const btnPendientes =
+            document.getElementById('tab-m4-hist-pendientes');
+
+        const btnConciliado =
+            document.getElementById('tab-m4-hist-conciliado');
+
+        const panelPendientes =
+            document.getElementById('m4-hist-pendientes-panel');
+
+        const panelConciliado =
+            document.getElementById('m4-hist-conciliado-panel');
+
+        if (
+            !btnPendientes ||
+            !btnConciliado ||
+            !panelPendientes ||
+            !panelConciliado
+        ) {
+            return;
+        }
+
+        const active =
+            "px-4 py-1.5 text-xs font-black rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all";
+
+        const inactive =
+            "px-4 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all";
+
+        if (tabName === 'pendientes') {
+            btnPendientes.className = active;
+            btnConciliado.className = inactive;
+
+            panelPendientes.classList.remove('hidden');
+            panelPendientes.classList.add('flex');
+
+            panelConciliado.classList.remove('flex');
+            panelConciliado.classList.add('hidden');
+
+            this.renderHistPendientesGrid();
+            return;
+        }
+
+        btnPendientes.className = inactive;
+        btnConciliado.className = active;
+
+        panelPendientes.classList.remove('flex');
+        panelPendientes.classList.add('hidden');
+
+        panelConciliado.classList.remove('hidden');
+        panelConciliado.classList.add('flex');
+
+        // Al abrir "Conciliado del día" por primera vez,
+        // usar el día actual. Si el usuario ya seleccionó otra
+        // fecha/rango anteriormente, se respeta.
+        const input =
+            document.getElementById('m4-historial-date');
+
+        if (input && !input.value) {
+            const hoy =
+                new Date().toISOString().slice(0, 10);
+
+            if (input._flatpickr) {
+                input._flatpickr.setDate(
+                    [hoy, hoy],
+                    false
+                );
+            } else {
+                input.value = hoy;
+            }
+        }
+
+        const fechaActual = input ? input.value : '';
+
+        if (
+            this.currentHistorialData.length === 0 ||
+            fechaActual !== this._lastDateQuery
+        ) {
+            this.fetchHistorial();
+        } else {
+            this.applyHistorialFilter();
+        }
+    },
+
+    renderHistPendientesGrid: function() {
+        if (!this._columnsM4Actuales) {
+            this.renderGrid();
+        }
+
+        if (!this._columnsM4Actuales) return;
+
+        const columns =
+            this._columnsM4Actuales.map(col => ({ ...col }));
+
+        if (this.gridHistPendientes) {
+            this.gridHistPendientes.updateData(
+                this.currentLimboData
+            );
+            return;
+        }
+
+        this.gridHistPendientes = new VanillaGrid(
+            "#table-hist-pendientes-m4",
+            this.currentLimboData,
+            columns,
+            {
+                searchInputId: "search-m4-hist-pendientes",
+
+                onRowDblClick: (r) =>
+                    window.AuxiliarLogic.openTransactionModal(r),
+
+                onRowContextMenu: (r, e, menu) =>
+                    window.AuxiliarLogic.abrirMenuEtiquetas(
+                        r,
+                        e,
+                        menu
+                    ),
+
+                exportRowColor: (r) =>
+                    window.AuxiliarLogic.getColorExport(r)
+            }
+        );
     },
 
     fetchHistorial: async function(global = null, ultimo = false) {
@@ -1018,6 +1282,12 @@ window.AuxiliarLogic = {
                 };
             });
 
+            // Transformación exclusivamente visual para presentación contable.
+            // Los miembros originales del match permanecen intactos.
+            this.currentHistorialData.forEach(row => {
+                this._aplicarDebitoCreditoM4(row);
+            });
+
             this.historialMaster = this.currentHistorialData;
             this.poblarFiltrosHist(); // Los selects se llenan con lo que trae la propia información
             this.applyHistorialFilter(); // Filtros universales + búsqueda + dashboards, en modo normal y global
@@ -1047,17 +1317,8 @@ window.AuxiliarLogic = {
                 }
             },
             { title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center" },
-            { 
-                title: "Monto TSD", field: "MontoTSD", width: 130, hozAlign: "right", bottomCalc: "sum",
-                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
-                formatter: (cell) => {
-                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    const valor = val && 'valor' in val ? val.valor : val;
-                    const recibo = val && 'recibo' in val ? val.recibo : '';
-                    const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
-                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
-                }
-            },
+            // Los movimientos históricos TSD/Banco se muestran
+            // mediante las columnas contables Débito y Crédito.
             { 
                 title: "RESOLUCIÓN APLICADA", field: "TipoCruce", width: 180, hozAlign: "center",
                 cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-green-50/50 dark:bg-green-900/10 font-bold",
@@ -1087,9 +1348,61 @@ window.AuxiliarLogic = {
             },
             { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
             { title: "Auth Banco", field: "Banco_Auth", width: 90, cssClass: "font-mono", hozAlign: "center" },
-            { 
-                title: "Monto", field: "Banco_Monto", hozAlign: "right", formatter: "money", bottomCalc: "sum",
-                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`, cssClass: "font-bold" 
+            {
+                title: "Débito",
+                field: "Debito",
+                width: 125,
+                hozAlign: "right",
+                bottomCalc: "sum",
+                cssClass: "font-mono",
+                bottomCalcFormatter: (val) =>
+                    `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(Math.abs(val || 0))}</span>`,
+                formatter: (cell) => {
+                    const row = (typeof cell === 'object' && cell)
+                        ? (
+                            cell.getRow
+                                ? cell.getRow()
+                                : (
+                                    cell.getData
+                                        ? cell.getData()
+                                        : cell
+                                )
+                        )
+                        : cell;
+
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(
+                        row,
+                        'Debito'
+                    );
+                }
+            },
+            {
+                title: "Crédito",
+                field: "Credito",
+                width: 125,
+                hozAlign: "right",
+                bottomCalc: "sum",
+                cssClass: "font-mono",
+                bottomCalcFormatter: (val) =>
+                    `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(Math.abs(val || 0))}</span>`,
+                formatter: (cell) => {
+                    const row = (typeof cell === 'object' && cell)
+                        ? (
+                            cell.getRow
+                                ? cell.getRow()
+                                : (
+                                    cell.getData
+                                        ? cell.getData()
+                                        : cell
+                                )
+                        )
+                        : cell;
+
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(
+                        row,
+                        'Credito'
+                    );
+                }
             },
             { 
                 title: "Dif", field: "Diferencia", hozAlign: "right", bottomCalc: "sum",
@@ -2264,6 +2577,16 @@ window.AuxiliarLogic = {
         // Orden maestro (ajustes recientes, sugerencias y etiquetas) en un solo lugar
         this.currentLimboData = this._ordenarFilas(this.currentLimboData);
 
+        // Presentación contable:
+        // NO modifica los montos originales usados por el algoritmo.
+        this.currentSugData.forEach(row => {
+            this._aplicarDebitoCreditoM4(row);
+        });
+
+        this.currentLimboData.forEach(row => {
+            this._aplicarDebitoCreditoM4(row);
+        });
+
         // Aviso único: el ajuste recién editado encontró pareja por sí solo
         if (this._avisarSiCruza) {
             const idAviso = this._avisarSiCruza;
@@ -2367,25 +2690,8 @@ window.AuxiliarLogic = {
                     return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                 }
             },
-            { 
-                title: "Monto TSD / Detalle", field: "MontoTSD", width: 150, hozAlign: "right", bottomCalc: "sum",
-                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
-                formatter: (cell) => {
-                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
-                    if (row._isMulti) return renderMulti(row, true, 'MontoTSD');
-
-                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    const valor = typeof val === 'object' && val !== null && 'valor' in val ? val.valor : val;
-                    const recibo = typeof val === 'object' && val !== null && 'recibo' in val ? val.recibo : '';
-                    
-                    const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
-                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
-                },
-                headerFilterFunc: (term, val) => {
-                    const strVal = typeof val === 'object' && val !== null ? `${val.valor} ${val.recibo}` : String(val);
-                    return String(strVal).toLowerCase().includes(String(term).toLowerCase());
-                }
-            },
+            // Los montos TSD y Banco se muestran conjuntamente más adelante
+            // mediante las columnas contables Débito y Crédito.
             { 
                 title: "ESTADO AUX", field: "EstadoMatch", width: 180, hozAlign: "center",
                 cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold",
@@ -2446,13 +2752,60 @@ window.AuxiliarLogic = {
                     return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                 }
             },
-            { 
-                title: "Monto", field: "Banco_Monto", hozAlign: "right", bottomCalc: "sum",
-                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
+            {
+                title: "Débito",
+                field: "Debito",
+                width: 125,
+                hozAlign: "right",
+                bottomCalc: "sum",
+                cssClass: "font-mono",
+                bottomCalcFormatter: (val) =>
+                    `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(Math.abs(val || 0))}</span>`,
                 formatter: (cell) => {
-                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
-                    if (row._isMulti) return renderMulti(row, false, 'Banco_Monto');
-                    return fmtMoney(typeof cell === 'object' && cell.getValue ? cell.getValue() : cell);
+                    const row = (typeof cell === 'object' && cell)
+                        ? (
+                            cell.getRow
+                                ? cell.getRow()
+                                : (
+                                    cell.getData
+                                        ? cell.getData()
+                                        : cell
+                                )
+                        )
+                        : cell;
+
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(
+                        row,
+                        'Debito'
+                    );
+                }
+            },
+            {
+                title: "Crédito",
+                field: "Credito",
+                width: 125,
+                hozAlign: "right",
+                bottomCalc: "sum",
+                cssClass: "font-mono",
+                bottomCalcFormatter: (val) =>
+                    `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(Math.abs(val || 0))}</span>`,
+                formatter: (cell) => {
+                    const row = (typeof cell === 'object' && cell)
+                        ? (
+                            cell.getRow
+                                ? cell.getRow()
+                                : (
+                                    cell.getData
+                                        ? cell.getData()
+                                        : cell
+                                )
+                        )
+                        : cell;
+
+                    return window.AuxiliarLogic._formatearDebitoCreditoM4(
+                        row,
+                        'Credito'
+                    );
                 }
             },
             { title: "Dif", field: "Diferencia", hozAlign: "right", formatter: "money", cssClass: "font-bold text-red-500" },
@@ -2479,6 +2832,16 @@ window.AuxiliarLogic = {
                 }
             }
         ];
+
+        // La pestaña Historial > Pendientes utiliza exactamente
+        // el mismo diseño y las mismas reglas visuales.
+        this._columnsM4Actuales = columns;
+
+        if (this.gridHistPendientes) {
+            this.gridHistPendientes.updateData(
+                this.currentLimboData
+            );
+        }
 
         if (this.gridSug) this.gridSug.updateData(this.currentSugData);
         else this.gridSug = new VanillaGrid("#table-sug-m4", this.currentSugData, columns, { searchInputId: "search-m4", onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r) });

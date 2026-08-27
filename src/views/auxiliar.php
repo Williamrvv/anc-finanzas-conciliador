@@ -115,6 +115,75 @@
 
     <!-- VISTA 2: HISTORIAL DE APROBADOS (Oculta por defecto) -->
     <div id="m4-view-historial" class="hidden flex-col w-full gap-2 animate-fade-in-up">
+
+        <!-- SUB-PESTAÑAS DEL HISTÓRICO -->
+        <div class="flex items-center justify-between mb-1">
+            <div class="flex gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+
+                <button
+                    id="tab-m4-hist-pendientes"
+                    onclick="window.AuxiliarLogic.switchHistorialSubTab('pendientes')"
+                    class="px-4 py-1.5 text-xs font-black rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all"
+                >
+                    ⏳ Pendientes
+                </button>
+
+                <button
+                    id="tab-m4-hist-conciliado"
+                    onclick="window.AuxiliarLogic.switchHistorialSubTab('conciliado')"
+                    class="px-4 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all"
+                >
+                    ✅ Conciliado del día
+                </button>
+
+            </div>
+        </div>
+
+        <!-- ===================================================== -->
+        <!-- SUB-TAB 1: PENDIENTES                                 -->
+        <!-- ===================================================== -->
+        <div
+            id="m4-hist-pendientes-panel"
+            class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+        >
+            <div class="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center justify-between shrink-0">
+
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">⏳</span>
+                    <h3 class="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                        Pendientes actuales del Auxiliar
+                    </h3>
+                </div>
+
+                <div class="relative">
+                    <input
+                        type="text"
+                        id="search-m4-hist-pendientes"
+                        placeholder="Filtrar pendientes..."
+                        class="pl-8 pr-4 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg outline-none focus:ring-2 focus:ring-orange-500 w-72 text-slate-700 dark:text-white"
+                    >
+
+                    <svg class="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+            </div>
+
+            <div
+                id="table-hist-pendientes-m4"
+                style="height: 600px;"
+                class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"
+            ></div>
+        </div>
+
+        <!-- ===================================================== -->
+        <!-- SUB-TAB 2: CONCILIADO DEL DÍA                        -->
+        <!-- ===================================================== -->
+        <div
+            id="m4-hist-conciliado-panel"
+            class="hidden flex-col gap-2"
+        >
+
         <div class="flex justify-between items-center shrink-0">
             <!-- Selector Rango -->
             <div class="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -186,6 +255,8 @@
             </div>
             <div id="table-historial-m4" style="height: 600px;" class="w-full relative border-none bg-slate-50 dark:bg-slate-900/20"></div>
         </div>
+
+        </div> <!-- FIN SUB-TAB: CONCILIADO DEL DÍA -->
 
         <!-- TABLA CONCILIADOS BAC — OCULTA temporalmente hasta verificar los datos.
              Para volver a mostrarla: quitar la clase "hidden" de la línea siguiente. -->

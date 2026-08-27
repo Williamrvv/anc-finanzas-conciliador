@@ -267,26 +267,77 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             <div id="grid-historico" class="w-full hidden relative overflow-y-auto">
                 <div class="w-full flex flex-col gap-3 pb-4">
 
-                    <section class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-amber-200 dark:border-amber-900">
-                        <div class="px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-900 flex items-center justify-between shrink-0">
-                            <div>
-                                <h3 class="text-sm font-black text-amber-800 dark:text-amber-300">Pendientes al cierre</h3>
-                                <p class="text-[10px] text-slate-500 dark:text-slate-400">Transacciones que permanecían abiertas al finalizar el día seleccionado.</p>
-                            </div>
-                            <span id="historico-count-pendientes" class="px-2.5 py-1 text-xs font-black rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">0</span>
+                    <!-- Subpestañas exclusivas de Histórico Auxiliar -->
+                    <div class="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-1 rounded-lg w-fit border border-slate-300 dark:border-slate-700">
+
+                        <button
+                            id="historico-subtab-pendientes"
+                            type="button"
+                            onclick="switchHistoricoSubTab('pendientes')"
+                            class="px-4 py-2 text-xs font-black rounded-md bg-white dark:bg-slate-700 shadow text-amber-700 dark:text-amber-300 transition-all flex items-center gap-2"
+                        >
+                            ⏳ Pendientes de conciliar
+                            <span
+                                id="historico-count-pendientes"
+                                class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300"
+                            >0</span>
+                        </button>
+
+                        <button
+                            id="historico-subtab-conciliados"
+                            type="button"
+                            onclick="switchHistoricoSubTab('conciliados')"
+                            class="px-4 py-2 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2"
+                        >
+                            ✅ Conciliados ese día
+                            <span
+                                id="historico-count-conciliados"
+                                class="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                            >0</span>
+                        </button>
+
+                    </div>
+
+                    <!-- TAB: PENDIENTES -->
+                    <section
+                        id="historico-panel-pendientes"
+                        class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-amber-200 dark:border-amber-900"
+                    >
+                        <div class="px-4 py-2.5 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-900 shrink-0">
+                            <h3 class="text-sm font-black text-amber-800 dark:text-amber-300">
+                                Pendientes de conciliar
+                            </h3>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                Transacciones que permanecían abiertas al finalizar la fecha seleccionada.
+                            </p>
                         </div>
-                        <div id="grid-historico-pendientes" class="w-full" style="height: 60vh;"></div>
+
+                        <div
+                            id="grid-historico-pendientes"
+                            class="w-full"
+                            style="height: 60vh;"
+                        ></div>
                     </section>
 
-                    <section class="flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-900">
-                        <div class="px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-900 flex items-center justify-between shrink-0">
-                            <div>
-                                <h3 class="text-sm font-black text-emerald-800 dark:text-emerald-300">Conciliados ese día</h3>
-                                <p class="text-[10px] text-slate-500 dark:text-slate-400">Cruces registrados contablemente en la fecha seleccionada.</p>
-                            </div>
-                            <span id="historico-count-conciliados" class="px-2.5 py-1 text-xs font-black rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">0</span>
+                    <!-- TAB: CONCILIADOS -->
+                    <section
+                        id="historico-panel-conciliados"
+                        class="hidden flex-col bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-900"
+                    >
+                        <div class="px-4 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-200 dark:border-emerald-900 shrink-0">
+                            <h3 class="text-sm font-black text-emerald-800 dark:text-emerald-300">
+                                Conciliados ese día
+                            </h3>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                Cruces registrados contablemente durante la fecha seleccionada.
+                            </p>
                         </div>
-                        <div id="grid-historico-conciliados" class="w-full" style="height: 26vh;"></div>
+
+                        <div
+                            id="grid-historico-conciliados"
+                            class="w-full"
+                            style="height: 60vh;"
+                        ></div>
                     </section>
 
                 </div>
@@ -323,6 +374,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         let dbrAbortController = null;
         let dbrConsultaSeq = 0;
         let currentActiveTab = 'bac'; // Empezamos en BAC porque es el primero en cargar
+        let historicoSubTabActivo = 'pendientes';
 
         function autoGenerateColumns(data) {
             if (!data || data.length === 0) return [];
@@ -943,6 +995,68 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             return montoBanco < 0 ? -gap : gap;
         }
 
+        function historicoDebitoCredito(rows) {
+            let debito = 0;
+            let credito = 0;
+
+            const detalleDebito = [];
+            const detalleCredito = [];
+
+            (rows || []).forEach(row => {
+                const monto = parseFloat(row.MontoBruto) || 0;
+
+                if (monto === 0) return;
+
+                const esTSD =
+                    String(row.Banco || '').toUpperCase() === 'TSD';
+
+                // Regla contable del Auxiliar:
+                //
+                // BANCO negativo  -> DÉBITO
+                // BANCO positivo  -> CRÉDITO
+                //
+                // TSD positivo    -> DÉBITO
+                // TSD negativo    -> CRÉDITO
+                const vaDebito = esTSD
+                    ? monto > 0
+                    : monto < 0;
+
+                const valor = Math.abs(monto);
+
+                if (vaDebito) {
+                    debito += valor;
+
+                    if (esTSD && row.ReciboDetalleTSD) {
+                        detalleDebito.push(
+                            String(row.ReciboDetalleTSD)
+                        );
+                    }
+
+                } else {
+                    credito += valor;
+
+                    if (esTSD && row.ReciboDetalleTSD) {
+                        detalleCredito.push(
+                            String(row.ReciboDetalleTSD)
+                        );
+                    }
+                }
+            });
+
+            return {
+                Debito: Number(debito.toFixed(2)),
+                Credito: Number(credito.toFixed(2)),
+
+                DetalleDebito: [
+                    ...new Set(detalleDebito.filter(Boolean))
+                ].join(' · '),
+
+                DetalleCredito: [
+                    ...new Set(detalleCredito.filter(Boolean))
+                ].join(' · ')
+            };
+        }
+
         function historicoValoresUnicos(rows, getter, fallback = '-') {
             const values = rows
                 .map(getter)
@@ -963,6 +1077,9 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     const montoTSD = esTSD ? (parseFloat(row.MontoBruto) || 0) : 0;
                     const montoBanco = esTSD ? 0 : (parseFloat(row.MontoBruto) || 0);
 
+                    const movimiento =
+                        historicoDebitoCredito([row]);
+
                     return {
                         _rowClass: 'bg-amber-50/30 dark:bg-amber-900/10',
                         Contrato: esTSD ? (row.ContratoTSD || row.Afiliado_MerID || '-') : 'Solo Banco',
@@ -979,6 +1096,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         Banco_Nombre: esTSD ? '-' : (row.Banco || '-'),
                         Banco_Auth: esTSD ? '-' : (row.Autorizacion || '-'),
                         Banco_Monto: montoBanco,
+
+                        Debito: movimiento.Debito,
+                        Credito: movimiento.Credito,
+                        DetalleDebito: movimiento.DetalleDebito,
+                        DetalleCredito: movimiento.DetalleCredito,
+
                         Diferencia: historicoDiferencia(montoTSD, montoBanco),
                         Antiguedad: row.DiasAntiguedadAlCorte !== null ? row.DiasAntiguedadAlCorte : '-'
                     };
@@ -1002,6 +1125,11 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 
                 const montoTSD = historicoSumarMontos(tsdRows);
                 const montoBanco = historicoSumarMontos(bancoRows);
+
+                // Débito/Crédito se calcula sobre CADA movimiento original,
+                // no sobre el resultado neto del grupo.
+                const movimiento =
+                    historicoDebitoCredito(grupo);
 
                 const antiguedades = grupo
                     .map(row => parseInt(row.DiasAntiguedadAlCorte, 10))
@@ -1037,6 +1165,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     Banco_Nombre: historicoValoresUnicos(bancoRows, row => row.Banco, '-'),
                     Banco_Auth: historicoValoresUnicos(bancoRows, row => row.Autorizacion, '-'),
                     Banco_Monto: montoBanco,
+
+                    Debito: movimiento.Debito,
+                    Credito: movimiento.Credito,
+                    DetalleDebito: movimiento.DetalleDebito,
+                    DetalleCredito: movimiento.DetalleCredito,
+
                     Diferencia: historicoDiferencia(montoTSD, montoBanco),
                     Antiguedad: antiguedades.length ? Math.max(...antiguedades) : '-'
                 };
@@ -1047,7 +1181,57 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const fmtMoney = value => new Intl.NumberFormat('es-CR', {
                 style: 'currency',
                 currency: 'CRC'
-            }).format(parseFloat(value) || 0).replace(/\./g, ' ');
+            }).format(Math.abs(parseFloat(value) || 0)).replace(/\./g, ' ');
+
+            const fmtMovimiento = (cell, campo) => {
+                const row = (typeof cell === 'object' && cell)
+                    ? (
+                        cell.getRow
+                            ? cell.getRow()
+                            : (
+                                cell.getData
+                                    ? cell.getData()
+                                    : cell
+                            )
+                    )
+                    : cell;
+
+                const valor =
+                    Math.abs(parseFloat(row?.[campo]) || 0);
+
+                if (valor === 0) {
+                    return `
+                        <span class="text-slate-300 dark:text-slate-600">
+                            —
+                        </span>
+                    `;
+                }
+
+                const detalle =
+                    campo === 'Debito'
+                        ? row?.DetalleDebito
+                        : row?.DetalleCredito;
+
+                const detalleHtml = detalle
+                    ? `
+                        <div
+                            class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5"
+                            title="${detalle}"
+                        >
+                            ${detalle}
+                        </div>
+                    `
+                    : '';
+
+                return `
+                    <div class="flex flex-col justify-center items-end h-full">
+                        <span class="font-bold text-slate-800 dark:text-slate-200">
+                            ${fmtMoney(valor)}
+                        </span>
+                        ${detalleHtml}
+                    </div>
+                `;
+            };
 
             return [
                 {
@@ -1084,22 +1268,16 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "Monto TSD / Detalle",
-                    field: "MontoTSD",
-                    width: 150,
+                    title: "Débito",
+                    field: "Debito",
+                    width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
-                    bottomCalcFormatter: "money",
-                    formatter: (cell) => {
-                        const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                        const valor = val && typeof val === 'object' && 'valor' in val ? val.valor : val;
-                        const recibo = val && typeof val === 'object' && 'recibo' in val ? val.recibo : '';
-                        const recHtml = recibo
-                            ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>`
-                            : '';
-
-                        return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
-                    }
+                    bottomCalcFormatter: value =>
+                        `<span class="font-black">${fmtMoney(value)}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'Debito'),
+                    cssClass: "font-mono"
                 },
                 {
                     title: "ESTADO AUX",
@@ -1123,13 +1301,16 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "Monto",
-                    field: "Banco_Monto",
-                    width: 130,
+                    title: "Crédito",
+                    field: "Credito",
+                    width: 145,
                     hozAlign: "right",
-                    formatter: "money",
                     bottomCalc: "sum",
-                    cssClass: "font-bold"
+                    bottomCalcFormatter: value =>
+                        `<span class="font-black">${fmtMoney(value)}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'Credito'),
+                    cssClass: "font-mono"
                 },
                 {
                     title: "Dif",
@@ -1145,37 +1326,41 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         function renderHistoricoGrids() {
-            const pendientes = rawData.historicoPendientes || [];
-            const conciliados = rawData.historicoConciliados || [];
-            const columns = historicoColumns();
+            if (rawData.historico === null) return;
 
-            if (grids.historicoPendientes) {
-                grids.historicoPendientes.updateData(pendientes);
+            const esPendientes =
+                historicoSubTabActivo === 'pendientes';
+
+            const data = esPendientes
+                ? (rawData.historicoPendientes || [])
+                : (rawData.historicoConciliados || []);
+
+            const gridKey = esPendientes
+                ? 'historicoPendientes'
+                : 'historicoConciliados';
+
+            const contenedorId = esPendientes
+                ? 'grid-historico-pendientes'
+                : 'grid-historico-conciliados';
+
+            if (grids[gridKey]) {
+                grids[gridKey].updateData(data);
             } else {
-                grids.historicoPendientes = new VanillaGrid(
-                    '#grid-historico-pendientes',
-                    pendientes,
-                    columns,
-                    {
-                        threshold: 0,
-                        // Sin 'resize: false' el grid muestra la barra de arrastre
-                        // inferior y se puede estirar, igual que en el auxiliar.
-                        searchInputId: 'search-historico'
-                    }
-                );
-            }
+                const contenedor =
+                    document.getElementById(contenedorId);
 
-            if (grids.historicoConciliados) {
-                grids.historicoConciliados.updateData(conciliados);
-            } else {
-                // La altura elegida por el usuario debe sobrevivir al cambio de fecha:
-                // VanillaGrid se reconstruye en cada carga y perdería el ajuste.
-                const altoPend = document.getElementById('grid-historico-pendientes');
-                if (altoPend && altoPend.dataset.altoUsuario) altoPend.style.height = altoPend.dataset.altoUsuario;
+                // Recupera la altura que el usuario hubiera dejado.
+                if (
+                    contenedor &&
+                    contenedor.dataset.altoUsuario
+                ) {
+                    contenedor.style.height =
+                        contenedor.dataset.altoUsuario;
+                }
 
-                grids.historicoConciliados = new VanillaGrid(
-                    '#grid-historico-conciliados',
-                    conciliados,
+                grids[gridKey] = new VanillaGrid(
+                    `#${contenedorId}`,
+                    data,
                     historicoColumns(),
                     {
                         threshold: 0,
@@ -1183,15 +1368,113 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     }
                 );
             }
-                            // Recuerda el alto que deja el usuario al arrastrar la barra inferior
-                ['grid-historico-pendientes', 'grid-historico-conciliados'].forEach(function (id) {
-                    const el = document.getElementById(id);
-                    if (!el || el._obsAlto) return;
-                    el._obsAlto = new ResizeObserver(function () {
-                        if (el.style.height) el.dataset.altoUsuario = el.style.height;
-                    });
-                    el._obsAlto.observe(el);
+
+            const el =
+                document.getElementById(contenedorId);
+
+            if (el && !el._obsAlto) {
+                el._obsAlto = new ResizeObserver(() => {
+                    if (el.style.height) {
+                        el.dataset.altoUsuario =
+                            el.style.height;
+                    }
                 });
+
+                el._obsAlto.observe(el);
+            }
+        }
+
+        function switchHistoricoSubTab(tab) {
+            if (
+                tab !== 'pendientes' &&
+                tab !== 'conciliados'
+            ) {
+                return;
+            }
+
+            historicoSubTabActivo = tab;
+
+            const esPendientes =
+                tab === 'pendientes';
+
+            const btnPendientes =
+                document.getElementById(
+                    'historico-subtab-pendientes'
+                );
+
+            const btnConciliados =
+                document.getElementById(
+                    'historico-subtab-conciliados'
+                );
+
+            const panelPendientes =
+                document.getElementById(
+                    'historico-panel-pendientes'
+                );
+
+            const panelConciliados =
+                document.getElementById(
+                    'historico-panel-conciliados'
+                );
+
+            if (btnPendientes) {
+                btnPendientes.className = esPendientes
+                    ? "px-4 py-2 text-xs font-black rounded-md bg-white dark:bg-slate-700 shadow text-amber-700 dark:text-amber-300 transition-all flex items-center gap-2"
+                    : "px-4 py-2 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2";
+            }
+
+            if (btnConciliados) {
+                btnConciliados.className = !esPendientes
+                    ? "px-4 py-2 text-xs font-black rounded-md bg-white dark:bg-slate-700 shadow text-emerald-700 dark:text-emerald-300 transition-all flex items-center gap-2"
+                    : "px-4 py-2 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2";
+            }
+
+            if (panelPendientes) {
+                panelPendientes.classList.toggle(
+                    'hidden',
+                    !esPendientes
+                );
+
+                panelPendientes.classList.toggle(
+                    'flex',
+                    esPendientes
+                );
+            }
+
+            if (panelConciliados) {
+                panelConciliados.classList.toggle(
+                    'hidden',
+                    esPendientes
+                );
+
+                panelConciliados.classList.toggle(
+                    'flex',
+                    !esPendientes
+                );
+            }
+
+            // El grid se construye sólo cuando su panel ya está visible.
+            // Esto evita cálculos incorrectos de ancho de VanillaGrid
+            // dentro de un elemento display:none.
+            renderHistoricoGrids();
+
+            // Reaplicar la búsqueda actual al grid recién abierto.
+            const globalSearch =
+                document.getElementById('global-search');
+
+            const hiddenSearch =
+                document.getElementById('search-historico');
+
+            if (globalSearch && hiddenSearch) {
+                hiddenSearch.value = globalSearch.value;
+
+                hiddenSearch.dispatchEvent(
+                    new Event(
+                        'input',
+                        { bubbles: true }
+                    )
+                );
+            }
         }
 
         async function loadHistorico(fecha) {
