@@ -1312,27 +1312,27 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "Banco Débito",
-                    field: "Banco_Debito",
+                    title: "TSD Débito",
+                    field: "TSD_Debito",
                     width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
                     bottomCalcFormatter: value =>
                         `<span class="font-black">${fmtMoney(value)}</span>`,
                     formatter: cell =>
-                        fmtMovimiento(cell, 'Banco_Debito'),
+                        fmtMovimiento(cell, 'TSD_Debito'),
                     cssClass: "font-mono"
                 },
                 {
-                    title: "Banco Crédito",
-                    field: "Banco_Credito",
+                    title: "TSD Crédito",
+                    field: "TSD_Credito",
                     width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
                     bottomCalcFormatter: value =>
                         `<span class="font-black">${fmtMoney(value)}</span>`,
                     formatter: cell =>
-                        fmtMovimiento(cell, 'Banco_Credito'),
+                        fmtMovimiento(cell, 'TSD_Credito'),
                     cssClass: "font-mono"
                 },
                 {
