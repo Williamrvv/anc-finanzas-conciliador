@@ -90,7 +90,14 @@ try {
         (
             -- Estado histórico normal: sólo registros que ya existían al corte.
             (
-                TM.FechaRegistro < DATEADD(DAY, 1, CONVERT(date, ?, 23))
+                -- Nunca puede aparecer antes de su propia transacción.
+                COALESCE(
+                    CONVERT(date, TM.FechaTransaccion),
+                    CONVERT(date, TM.FechaRegistro)
+                ) <= CONVERT(date, ?, 23)
+
+                AND TM.FechaRegistro < DATEADD(DAY, 1, CONVERT(date, ?, 23))
+
                 AND (
                     TM.FechaConciliacion IS NULL
                     OR TM.FechaConciliacion > CONVERT(date, ?, 23)
@@ -100,11 +107,14 @@ try {
             -- CONCILIADO ESE DÍA
             OR TM.FechaConciliacion = CONVERT(date, ?, 23)
 
-            -- En el último día contable disponible también mostramos todos
-            -- los pendientes actuales, aunque hayan sido registrados después.
+            -- Último día: pendientes actuales, pero nunca movimientos futuros.
             OR (
                 ? = 1
                 AND TM.FechaConciliacion IS NULL
+                AND COALESCE(
+                    CONVERT(date, TM.FechaTransaccion),
+                    CONVERT(date, TM.FechaRegistro)
+                ) <= CONVERT(date, ?, 23)
             )
         )
             ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
