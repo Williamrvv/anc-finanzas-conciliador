@@ -1220,6 +1220,185 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         function historicoColumns() {
+            const fmtMoney = value =>
+                new Intl.NumberFormat('es-CR', {
+                    style: 'currency',
+                    currency: 'CRC'
+                }).format(value || 0).replace(/\./g, ' ');
+
+            const fmtMovimiento = (cell, campo) => {
+                const row = (typeof cell === 'object' && cell)
+                    ? (
+                        cell.getRow
+                            ? cell.getRow()
+                            : (cell.getData ? cell.getData() : cell)
+                    )
+                    : cell;
+
+                const valor =
+                    Math.abs(parseFloat(row?.[campo]) || 0);
+
+                if (valor === 0) {
+                    return '<span class="text-slate-300 dark:text-slate-600">-</span>';
+                }
+
+                const detalle =
+                    campo === 'TSD_Debito'
+                        ? row?.DetalleTSDDebito
+                        : campo === 'TSD_Credito'
+                            ? row?.DetalleTSDCredito
+                            : '';
+
+                return `
+                    <div class="flex flex-col items-end">
+                        <span class="font-bold">
+                            ${fmtMoney(valor)}
+                        </span>
+                        ${detalle ? `
+                            <div class="text-[9px] text-orange-600 truncate w-full text-right"
+                                 title="${detalle}">
+                                ${detalle}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            };
+
+            return [
+                {
+                    title: "Contrato",
+                    field: "Contrato",
+                    width: 150,
+                    cssClass: "font-mono font-bold"
+                },
+                {
+                    title: "Cliente / Notas",
+                    field: "Cliente",
+                    width: 180,
+                    cssClass: "text-[10px]"
+                },
+                {
+                    title: "Auth TSD",
+                    field: "Autorizacion",
+                    width: 90,
+                    cssClass: "font-mono",
+                    hozAlign: "center"
+                },
+                {
+                    title: "TSD Débito",
+                    field: "TSD_Debito",
+                    width: 125,
+                    hozAlign: "right",
+                    bottomCalc: "sum",
+                    cssClass: "font-mono",
+                    bottomCalcFormatter: val =>
+                        `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'TSD_Debito')
+                },
+                {
+                    title: "TSD Crédito",
+                    field: "TSD_Credito",
+                    width: 125,
+                    hozAlign: "right",
+                    bottomCalc: "sum",
+                    cssClass: "font-mono",
+                    bottomCalcFormatter: val =>
+                        `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'TSD_Credito')
+                },
+                {
+                    title: "ESTADO AUX",
+                    field: "EstadoMatch",
+                    width: 180,
+                    hozAlign: "center",
+                    cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold",
+                    formatter: cell => {
+                        const val = String(
+                            typeof cell === 'object' && cell.getValue
+                                ? cell.getValue()
+                                : cell
+                        );
+
+                        if (val === 'Pendiente') {
+                            return '<span class="text-slate-500 font-bold">⏳ Pendiente</span>';
+                        }
+
+                        if (val.includes('Ajuste Menor')) {
+                            return `<span class="text-purple-600 dark:text-purple-400">✂️ ${val}</span>`;
+                        }
+
+                        if (val.includes('Ajuste Interno')) {
+                            return `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val}</span>`;
+                        }
+
+                        return `<span class="text-green-700 dark:text-green-400">✅ ${val}</span>`;
+                    }
+                },
+                {
+                    title: "Banco",
+                    field: "Banco_Nombre",
+                    width: 90,
+                    hozAlign: "center",
+                    cssClass: "text-blue-600 font-bold"
+                },
+                {
+                    title: "Auth Banco",
+                    field: "Banco_Auth",
+                    width: 90,
+                    cssClass: "font-mono",
+                    hozAlign: "center"
+                },
+                {
+                    title: "Banco Débito",
+                    field: "Banco_Debito",
+                    width: 125,
+                    hozAlign: "right",
+                    bottomCalc: "sum",
+                    cssClass: "font-mono",
+                    bottomCalcFormatter: val =>
+                        `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'Banco_Debito')
+                },
+                {
+                    title: "Banco Crédito",
+                    field: "Banco_Credito",
+                    width: 125,
+                    hozAlign: "right",
+                    bottomCalc: "sum",
+                    cssClass: "font-mono",
+                    bottomCalcFormatter: val =>
+                        `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'Banco_Credito')
+                },
+                {
+                    title: "Dif",
+                    field: "Diferencia",
+                    hozAlign: "right",
+                    formatter: "money",
+                    cssClass: "font-bold text-red-500"
+                },
+                {
+                    title: "📝 Nota",
+                    field: "NotaUsuario",
+                    width: 200,
+                    cssClass: "text-[10px]",
+                    formatter: cell => {
+                        const val =
+                            typeof cell === 'object' && cell.getValue
+                                ? cell.getValue()
+                                : cell;
+
+                        return val
+                            ? `<div class="italic font-medium">${val}</div>`
+                            : '<span class="text-slate-400">-</span>';
+                    }
+                }
+            ];
+        }
             const fmtMoney = value => new Intl.NumberFormat('es-CR', {
                 style: 'currency',
                 currency: 'CRC'
