@@ -1039,63 +1039,58 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         function historicoDebitoCredito(rows) {
-            let debito = 0;
-            let credito = 0;
+            let tsdDebito = 0;
+            let tsdCredito = 0;
+            let bancoDebito = 0;
+            let bancoCredito = 0;
 
-            const detalleDebito = [];
-            const detalleCredito = [];
+            const detalleTSDDebito = [];
+            const detalleTSDCredito = [];
 
             (rows || []).forEach(row => {
                 const monto = parseFloat(row.MontoBruto) || 0;
-
                 if (monto === 0) return;
 
                 const esTSD =
                     String(row.Banco || '').toUpperCase() === 'TSD';
 
-                // Regla contable del Auxiliar:
-                //
-                // BANCO negativo  -> DÉBITO
-                // BANCO positivo  -> CRÉDITO
-                //
-                // TSD positivo    -> DÉBITO
-                // TSD negativo    -> CRÉDITO
-                const vaDebito = esTSD
-                    ? monto > 0
-                    : monto < 0;
-
                 const valor = Math.abs(monto);
 
-                if (vaDebito) {
-                    debito += valor;
+                if (esTSD) {
+                    if (monto > 0) {
+                        tsdDebito += valor;
 
-                    if (esTSD && row.ReciboDetalleTSD) {
-                        detalleDebito.push(
-                            String(row.ReciboDetalleTSD)
-                        );
+                        if (row.ReciboDetalleTSD) {
+                            detalleTSDDebito.push(String(row.ReciboDetalleTSD));
+                        }
+                    } else {
+                        tsdCredito += valor;
+
+                        if (row.ReciboDetalleTSD) {
+                            detalleTSDCredito.push(String(row.ReciboDetalleTSD));
+                        }
                     }
-
                 } else {
-                    credito += valor;
-
-                    if (esTSD && row.ReciboDetalleTSD) {
-                        detalleCredito.push(
-                            String(row.ReciboDetalleTSD)
-                        );
+                    if (monto < 0) {
+                        bancoDebito += valor;
+                    } else {
+                        bancoCredito += valor;
                     }
                 }
             });
 
             return {
-                Debito: Number(debito.toFixed(2)),
-                Credito: Number(credito.toFixed(2)),
+                TSD_Debito: Number(tsdDebito.toFixed(2)),
+                TSD_Credito: Number(tsdCredito.toFixed(2)),
+                Banco_Debito: Number(bancoDebito.toFixed(2)),
+                Banco_Credito: Number(bancoCredito.toFixed(2)),
 
-                DetalleDebito: [
-                    ...new Set(detalleDebito.filter(Boolean))
+                DetalleTSDDebito: [
+                    ...new Set(detalleTSDDebito.filter(Boolean))
                 ].join(' · '),
 
-                DetalleCredito: [
-                    ...new Set(detalleCredito.filter(Boolean))
+                DetalleTSDCredito: [
+                    ...new Set(detalleTSDCredito.filter(Boolean))
                 ].join(' · ')
             };
         }
@@ -1140,10 +1135,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         Banco_Auth: esTSD ? '-' : (row.Autorizacion || '-'),
                         Banco_Monto: montoBanco,
 
-                        Debito: movimiento.Debito,
-                        Credito: movimiento.Credito,
-                        DetalleDebito: movimiento.DetalleDebito,
-                        DetalleCredito: movimiento.DetalleCredito,
+                        TSD_Debito: movimiento.TSD_Debito,
+                        TSD_Credito: movimiento.TSD_Credito,
+                        Banco_Debito: movimiento.Banco_Debito,
+                        Banco_Credito: movimiento.Banco_Credito,
+                        DetalleTSDDebito: movimiento.DetalleTSDDebito,
+                        DetalleTSDCredito: movimiento.DetalleTSDCredito,
 
                         Diferencia: historicoDiferencia(montoTSD, montoBanco),
                         Antiguedad: row.DiasAntiguedadAlCorte !== null ? row.DiasAntiguedadAlCorte : '-'
@@ -1209,10 +1206,12 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     Banco_Auth: historicoValoresUnicos(bancoRows, row => row.Autorizacion, '-'),
                     Banco_Monto: montoBanco,
 
-                    Debito: movimiento.Debito,
-                    Credito: movimiento.Credito,
-                    DetalleDebito: movimiento.DetalleDebito,
-                    DetalleCredito: movimiento.DetalleCredito,
+                    TSD_Debito: movimiento.TSD_Debito,
+                    TSD_Credito: movimiento.TSD_Credito,
+                    Banco_Debito: movimiento.Banco_Debito,
+                    Banco_Credito: movimiento.Banco_Credito,
+                    DetalleTSDDebito: movimiento.DetalleTSDDebito,
+                    DetalleTSDCredito: movimiento.DetalleTSDCredito,
 
                     Diferencia: historicoDiferencia(montoTSD, montoBanco),
                     Antiguedad: antiguedades.length ? Math.max(...antiguedades) : '-'
@@ -1251,9 +1250,11 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 }
 
                 const detalle =
-                    campo === 'Debito'
-                        ? row?.DetalleDebito
-                        : row?.DetalleCredito;
+                    campo === 'TSD_Debito'
+                        ? row?.DetalleTSDDebito
+                        : campo === 'TSD_Credito'
+                            ? row?.DetalleTSDCredito
+                            : '';
 
                 const detalleHtml = detalle
                     ? `
@@ -1311,15 +1312,27 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     hozAlign: "center"
                 },
                 {
-                    title: "Débito",
-                    field: "Debito",
+                    title: "TSD Débito",
+                    field: "TSD_Debito",
                     width: 145,
                     hozAlign: "right",
                     bottomCalc: "sum",
                     bottomCalcFormatter: value =>
                         `<span class="font-black">${fmtMoney(value)}</span>`,
                     formatter: cell =>
-                        fmtMovimiento(cell, 'Debito'),
+                        fmtMovimiento(cell, 'TSD_Debito'),
+                    cssClass: "font-mono"
+                },
+                {
+                    title: "TSD Crédito",
+                    field: "TSD_Credito",
+                    width: 145,
+                    hozAlign: "right",
+                    bottomCalc: "sum",
+                    bottomCalcFormatter: value =>
+                        `<span class="font-black">${fmtMoney(value)}</span>`,
+                    formatter: cell =>
+                        fmtMovimiento(cell, 'TSD_Credito'),
                     cssClass: "font-mono"
                 },
                 {
@@ -1801,25 +1814,56 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 return;
             }
 
-            // La tabla ya existe: solo se le cambian los datos y conserva
-            // filtros, orden y scroll del usuario.
-            if (rawData[tab] && grids[tab]) {
-                grids[tab].updateData(rawData[tab]);
+            const dataActual =
+                Array.isArray(rawData[tab])
+                    ? rawData[tab]
+                    : [];
+
+            // Si el grid ya existe, puede recibir incluso un array vacío.
+            if (grids[tab]) {
+                grids[tab].updateData(dataActual);
                 return;
             }
 
-            if (rawData[tab] && !grids[tab]) {
-                const waitScreen = document.getElementById(`wait-${tab}`);
-                if(waitScreen) waitScreen.style.display = 'none';
-                
-                requestAnimationFrame(() => {
-                    grids[tab] = new VanillaGrid(`#grid-${tab}`, rawData[tab], autoGenerateColumns(rawData[tab]), { 
-                        threshold: 0,
-                        // Barra de arrastre inferior activa, igual que en el auxiliar
-                        searchInputId: `search-${tab}` // Cada grid escucha a su propio input oculto
-                    });
-                });
+            // NUNCA crear VanillaGrid sin columnas.
+            // Cuando posteriormente lleguen datos reales,
+            // renderGrid() podrá construirlo correctamente.
+            if (dataActual.length === 0) {
+                return;
             }
+
+            const waitScreen =
+                document.getElementById(`wait-${tab}`);
+
+            if (waitScreen) {
+                waitScreen.style.display = 'none';
+            }
+
+            requestAnimationFrame(() => {
+                const dataFinal =
+                    Array.isArray(rawData[tab])
+                        ? rawData[tab]
+                        : [];
+
+                if (dataFinal.length === 0) return;
+
+                // Otro render pudo haber creado el grid mientras
+                // esperábamos el siguiente frame.
+                if (grids[tab]) {
+                    grids[tab].updateData(dataFinal);
+                    return;
+                }
+
+                grids[tab] = new VanillaGrid(
+                    `#grid-${tab}`,
+                    dataFinal,
+                    autoGenerateColumns(dataFinal),
+                    {
+                        threshold: 0,
+                        searchInputId: `search-${tab}`
+                    }
+                );
+            });
         }
 
         function switchTab(tab) {

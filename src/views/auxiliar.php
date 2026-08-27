@@ -15,7 +15,6 @@
         <div id="m4-action-bar" class="flex items-center mt-2 md:mt-0 transition-opacity">
 
             <button id="btn-save-m4" onclick="window.AuxiliarLogic.saveAprobaciones()" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-black text-xs transition-all shadow-md shadow-green-500/30 flex items-center gap-2 shrink-0 hover:scale-105">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
                 APROBAR Y GUARDAR AJUSTES
             </button>
 
