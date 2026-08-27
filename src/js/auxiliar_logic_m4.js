@@ -1,8 +1,7 @@
 window.AuxiliarLogic = {
     lastTSD: [], lastBancos: [], blacklist: [], manualMatches: [], customTags: [],
-    gridSug: null, gridLimbo: null, gridHistorial: null, gridHistPendientes: null,
+    gridSug: null, gridLimbo: null, gridHistorial: null,
     currentSugData: [], currentLimboData: [], currentHistorialData: [],
-    _columnsM4Actuales: null,
 
     // Estado temporal compartido del Auxiliar.
     // Nunca guarda los datos fuente: únicamente decisiones manuales.
@@ -820,13 +819,6 @@ window.AuxiliarLogic = {
             this.gridHistorial = null;
         }
 
-        if(this.gridHistPendientes) {
-            if (typeof this.gridHistPendientes.destroy === 'function') this.gridHistPendientes.destroy();
-            this.gridHistPendientes = null;
-        }
-
-        this._columnsM4Actuales = null;
-
         this.stopAutoSaveBorradorM4();
 
         this.blacklist = [];
@@ -1029,133 +1021,17 @@ window.AuxiliarLogic = {
             viewH.classList.add('flex');
             actionBar.classList.add('hidden');
             
-            // Dentro del Histórico siempre entramos primero a Pendientes.
-            this.switchHistorialSubTab('pendientes');
-        }
-    },
-
-    switchHistorialSubTab: function(tabName) {
-        const btnPendientes =
-            document.getElementById('tab-m4-hist-pendientes');
-
-        const btnConciliado =
-            document.getElementById('tab-m4-hist-conciliado');
-
-        const panelPendientes =
-            document.getElementById('m4-hist-pendientes-panel');
-
-        const panelConciliado =
-            document.getElementById('m4-hist-conciliado-panel');
-
-        if (
-            !btnPendientes ||
-            !btnConciliado ||
-            !panelPendientes ||
-            !panelConciliado
-        ) {
-            return;
-        }
-
-        const active =
-            "px-4 py-1.5 text-xs font-black rounded-md bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 transition-all";
-
-        const inactive =
-            "px-4 py-1.5 text-xs font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all";
-
-        if (tabName === 'pendientes') {
-            btnPendientes.className = active;
-            btnConciliado.className = inactive;
-
-            panelPendientes.classList.remove('hidden');
-            panelPendientes.classList.add('flex');
-
-            panelConciliado.classList.remove('flex');
-            panelConciliado.classList.add('hidden');
-
-            this.renderHistPendientesGrid();
-            return;
-        }
-
-        btnPendientes.className = inactive;
-        btnConciliado.className = active;
-
-        panelPendientes.classList.remove('flex');
-        panelPendientes.classList.add('hidden');
-
-        panelConciliado.classList.remove('hidden');
-        panelConciliado.classList.add('flex');
-
-        // Al abrir "Conciliado del día" por primera vez,
-        // usar el día actual. Si el usuario ya seleccionó otra
-        // fecha/rango anteriormente, se respeta.
-        const input =
-            document.getElementById('m4-historial-date');
-
-        if (input && !input.value) {
-            const hoy =
-                new Date().toISOString().slice(0, 10);
-
-            if (input._flatpickr) {
-                input._flatpickr.setDate(
-                    [hoy, hoy],
-                    false
-                );
-            } else {
-                input.value = hoy;
+            // Al entrar por primera vez al Historial de conciliados,
+            // mostrar como cortesía el último registro conciliado disponible.
+            if (!this.gridHistorial || this.currentHistorialData.length === 0) {
+                this.fetchHistorial(null, true);
             }
         }
-
-        const fechaActual = input ? input.value : '';
-
-        if (
-            this.currentHistorialData.length === 0 ||
-            fechaActual !== this._lastDateQuery
-        ) {
-            this.fetchHistorial();
-        } else {
-            this.applyHistorialFilter();
-        }
     },
 
-    renderHistPendientesGrid: function() {
-        if (!this._columnsM4Actuales) {
-            this.renderGrid();
-        }
+    // El Historial de conciliados del M4 no utiliza subpestañas.
 
-        if (!this._columnsM4Actuales) return;
-
-        const columns =
-            this._columnsM4Actuales.map(col => ({ ...col }));
-
-        if (this.gridHistPendientes) {
-            this.gridHistPendientes.updateData(
-                this.currentLimboData
-            );
-            return;
-        }
-
-        this.gridHistPendientes = new VanillaGrid(
-            "#table-hist-pendientes-m4",
-            this.currentLimboData,
-            columns,
-            {
-                searchInputId: "search-m4-hist-pendientes",
-
-                onRowDblClick: (r) =>
-                    window.AuxiliarLogic.openTransactionModal(r),
-
-                onRowContextMenu: (r, e, menu) =>
-                    window.AuxiliarLogic.abrirMenuEtiquetas(
-                        r,
-                        e,
-                        menu
-                    ),
-
-                exportRowColor: (r) =>
-                    window.AuxiliarLogic.getColorExport(r)
-            }
-        );
-    },
+    // Los pendientes permanecen exclusivamente en la Bandeja principal del M4.
 
     fetchHistorial: async function(global = null, ultimo = false) {
         let url = 'api/get_historial_m4.php';
@@ -2832,16 +2708,6 @@ window.AuxiliarLogic = {
                 }
             }
         ];
-
-        // La pestaña Historial > Pendientes utiliza exactamente
-        // el mismo diseño y las mismas reglas visuales.
-        this._columnsM4Actuales = columns;
-
-        if (this.gridHistPendientes) {
-            this.gridHistPendientes.updateData(
-                this.currentLimboData
-            );
-        }
 
         if (this.gridSug) this.gridSug.updateData(this.currentSugData);
         else this.gridSug = new VanillaGrid("#table-sug-m4", this.currentSugData, columns, { searchInputId: "search-m4", onRowDblClick: (r) => window.AuxiliarLogic.openTransactionModal(r) });
