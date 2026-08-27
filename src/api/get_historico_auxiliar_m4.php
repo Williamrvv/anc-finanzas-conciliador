@@ -121,12 +121,14 @@ try {
         ");
 
     $stmt->execute([
-        $fecha,
-        $fecha,
-        $fecha,
-        $fecha,
-        $fecha,
-        $esUltimoDia ? 1 : 0
+        $fecha,                 // CASE EstadoHistorico
+        $fecha,                 // DiasAntiguedadAlCorte
+        $fecha,                 // FechaTransaccion <= corte
+        $fecha,                 // FechaRegistro <= corte
+        $fecha,                 // FechaConciliacion > corte
+        $fecha,                 // Conciliado ese día
+        $esUltimoDia ? 1 : 0,   // Último día contable
+        $fecha                  // Pendientes actuales <= corte
     ]);
 
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
