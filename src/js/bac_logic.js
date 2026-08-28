@@ -562,7 +562,7 @@ window.BACLogic = {
                         content += `<button onclick="window.ConciliacionLogic.undoManualMatch('${r._groupID}')" class="btn-deshacer ml-2 bg-red-100 hover:bg-red-200 text-red-600 px-1.5 py-0.5 rounded text-[9px] shadow-sm font-bold uppercase transition-colors" title="Eliminar ajuste y restaurar">Deshacer</button>`;
                     }
                     const hasAdj = (r.rowsDet && r.rowsDet.some(d => d._isAdjustment)) || (r.rowsPag && r.rowsPag.some(d => d._isAdjustment));
-                    if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene Fila Ficticia">🛠️</span>`;
+                    if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene ajuste manual">🛠️</span>`;
                     return content;
                 }
             },

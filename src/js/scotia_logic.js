@@ -875,7 +875,7 @@ window.ScotiaLogic = {
                         content += `<span class="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold align-middle bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-600" title="Link de pago (pasarela) — cobrado en dólares y convertido a colones">&#128279; LINK · ${tcTexto}</span>`;
                     }
                     const hasAdj = (r.rowsDet && r.rowsDet.some(d => d._isAdjustment)) || (r.rowsPag && r.rowsPag.some(d => d._isAdjustment));
-                    if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene Fila Ficticia">🛠️</span>`;
+                    if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene ajuste manual">🛠️</span>`;
                     return content;
                 }
             },
