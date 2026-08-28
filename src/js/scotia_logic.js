@@ -672,8 +672,6 @@ window.ScotiaLogic = {
             const hs = (this.data.headers && this.data.headers.scotia_pagado) || [];
             const iMonto = hs.findIndex(h => h && String(h).toLowerCase().includes('monto'));
             if (iMonto !== -1) p[String(iMonto)] = p._monto;
-
-            this.mostrarTipoCambio(tc);
         }
     },
 
