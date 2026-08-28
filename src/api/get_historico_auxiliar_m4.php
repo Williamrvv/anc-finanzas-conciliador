@@ -88,9 +88,11 @@ try {
         TM.Origen IN ('DETALLADO', 'AJUSTE')
         AND
         (
-            -- Estado histórico normal: sólo registros que ya existían al corte.
+            -- PENDIENTE AL CIERRE:
+            -- En fechas históricas sólo movimientos conciliados posteriormente.
+            -- FechaConciliacion NULL únicamente entra si consultamos
+            -- el último día contable disponible.
             (
-                -- Nunca puede aparecer antes de su propia transacción.
                 COALESCE(
                     CONVERT(date, TM.FechaTransaccion),
                     CONVERT(date, TM.FechaRegistro)
@@ -99,23 +101,17 @@ try {
                 AND TM.FechaRegistro < DATEADD(DAY, 1, CONVERT(date, ?, 23))
 
                 AND (
-                    TM.FechaConciliacion IS NULL
-                    OR TM.FechaConciliacion > CONVERT(date, ?, 23)
+                    TM.FechaConciliacion > CONVERT(date, ?, 23)
+
+                    OR (
+                        ? = 1
+                        AND TM.FechaConciliacion IS NULL
+                    )
                 )
             )
 
             -- CONCILIADO ESE DÍA
             OR TM.FechaConciliacion = CONVERT(date, ?, 23)
-
-            -- Último día: pendientes actuales, pero nunca movimientos futuros.
-            OR (
-                ? = 1
-                AND TM.FechaConciliacion IS NULL
-                AND COALESCE(
-                    CONVERT(date, TM.FechaTransaccion),
-                    CONVERT(date, TM.FechaRegistro)
-                ) <= CONVERT(date, ?, 23)
-            )
         )
             ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
         ");
@@ -126,9 +122,8 @@ try {
         $fecha,                 // FechaTransaccion <= corte
         $fecha,                 // FechaRegistro <= corte
         $fecha,                 // FechaConciliacion > corte
-        $fecha,                 // Conciliado ese día
-        $esUltimoDia ? 1 : 0,   // Último día contable
-        $fecha                  // Pendientes actuales <= corte
+        $esUltimoDia ? 1 : 0,   // NULL sólo en último día
+        $fecha                  // Conciliado ese día
     ]);
 
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);

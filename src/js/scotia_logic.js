@@ -62,6 +62,7 @@ window.ScotiaLogic = {
             iva: getCurrIdx('retención iva') !== -1 ? getCurrIdx('retención iva') : getCurrIdx('retencion iva'),
             isr: getCurrIdx('retención isr') !== -1 ? getCurrIdx('retención isr') : getCurrIdx('retencion is'),
             fecha: getCurrIdx('fecha'),
+            fechaPago: getCurrIdx('fecha pago'),
             moneda: getCurrIdx('moneda'),
             nombre: getCurrIdx('nombre'),
             transaccion: getCurrIdx('transacci'),
@@ -183,7 +184,13 @@ window.ScotiaLogic = {
                 _comision: vCom,
                 _iva: vIva,
                 _isr: vIsr,
-                _fecha: masterFechaIdx !== -1 ? mappedData[String(masterFechaIdx)] : "",
+                _fecha: masterFechaIdx !== -1 ?
+                    mappedData[String(masterFechaIdx)] : "",
+                // Fecha Pago real de la transacción (columna específica, no el
+                // primer "fecha" genérico). Es la que manda para consultar el
+                // tipo de cambio de cada link de pago.
+                _fechaPago: currCols.fechaPago !== -1 ?
+                    workingRow[currCols.fechaPago] : null,
                 _mode: currentMode,
                 _sourceFile: filename,
                 ...mappedData
@@ -532,11 +539,29 @@ window.ScotiaLogic = {
 
     // Normaliza cualquier fecha del Excel a YYYY-MM-DD
     _fechaISO: function(v) {
-        if (!v) return null;
-        if (v instanceof Date) return v.toISOString().slice(0, 10);
-        const t = String(v).trim();
-        let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+        if (v === null || v === undefined || v === '') return null;
+        if (v instanceof Date) {
+            return v.getFullYear() + '-' +
+                   String(v.getMonth() + 1).padStart(2, '0') + '-' +
+                   String(v.getDate()).padStart(2, '0');
+        }
+
+        const t = String(v).trim().split(' ')[0];   // descarta la hora si viniera
+
+        // XLSX.read sin cellDates entrega las fechas como número de serie de
+        // Excel (6/7/2026 llega como 46209). Antes esto no se contemplaba, se
+        // devolvía null y el llamador caía al tipo de cambio de HOY.
+        // Mismo criterio que ConciliacionLogic.formatDateCR.
+        if (t !== '' && !isNaN(t) && Number(t) > 10000 && Number(t) < 99999) {
+            const ms = (Number(t) - 25569) * 86400 * 1000;
+            const d = new Date(ms);
+            return d.getUTCFullYear() + '-' +
+                   String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+                   String(d.getUTCDate()).padStart(2, '0');
+        }
+
+        let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
         m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);   // dd/mm/yyyy
         if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
         return null;
@@ -551,36 +576,62 @@ window.ScotiaLogic = {
         const links = rows.filter(r => r._esLink && !r._tcAplicado);
         if (!links.length) return;
 
-        const fecha = this._fechaISO(links[0]._fecha) || new Date().toISOString().slice(0, 10);
-        const tc = await this.obtenerTipoCambio(fecha);
-        if (!tc) return;   // sin tipo de cambio se deja tal cual y ya se avisó
-
         const k = (idx) => (idx !== -1 && indexMap ? String(indexMap[idx]) : null);
         const kBruto = k(currCols.bruto), kNeto = k(currCols.neto), kCom = k(currCols.com);
         const kIva = k(currCols.iva), kIsr = k(currCols.isr), kOrig = k(currCols.orig);
 
+        // Agrupar por Fecha Pago real de cada fila: antes se tomaba la fecha de
+        // la PRIMERA transacción del lote y ese único tipo de cambio se
+        // aplicaba a todas, aunque el archivo trajera varios días distintos.
+        const grupos = {};
+        const sinFecha = [];
         links.forEach(r => {
-            const usdNeto = r._neto;
-            const brutoC = this._r2(r._bruto * tc);
-            const netoC  = this._r2(r._neto  * tc);
-            const ivaC   = this._r2(r._iva   * tc);
-            const isrC   = this._r2(r._isr   * tc);
-            const comC   = this._r2(brutoC - netoC - ivaC - isrC);   // absorbe el redondeo
-
-            r._montoDolar = usdNeto;      // lo que realmente se pagó, en dólares
-            r._tcAplicado = tc;
-            r._bruto = brutoC; r._neto = netoC; r._comision = comC; r._iva = ivaC; r._isr = isrC;
-
-            // Las celdas crudas también viajan convertidas a la base de datos
-            if (kBruto) r[kBruto] = brutoC;
-            if (kNeto)  r[kNeto]  = netoC;
-            if (kCom)   r[kCom]   = comC;
-            if (kIva)   r[kIva]   = ivaC;
-            if (kIsr)   r[kIsr]   = isrC;
-            if (kOrig)  r[kOrig]  = brutoC;
+            const fecha = this._fechaISO(r._fechaPago || r._fecha);
+            // Sin Fecha Pago legible NO se convierte: caer al día de hoy es
+            // exactamente el error que hacía que todo usara el TC del día.
+            if (!fecha) { sinFecha.push(r); return; }
+            (grupos[fecha] = grupos[fecha] || []).push(r);
         });
 
-        this.mostrarTipoCambio(tc);
+        if (sinFecha.length && window.SysUI) {
+            window.SysUI.alert(
+                sinFecha.length + ' link(s) de pago no traen una Fecha Pago legible.\n\n' +
+                'Esas filas quedaron SIN convertir (siguen en dólares). Revise la columna "Fecha Pago" del Excel.',
+                'Tipo de cambio', 'warning'
+            );
+        }
+
+        let ultimoTC = null;
+
+        for (const fecha of Object.keys(grupos)) {
+            const tc = await this.obtenerTipoCambio(fecha);
+            if (!tc) continue;   // sin tipo de cambio ese día: esas filas quedan sin convertir
+
+            ultimoTC = tc;
+
+            grupos[fecha].forEach(r => {
+                const usdNeto = r._neto;
+                const brutoC = this._r2(r._bruto * tc);
+                const netoC  = this._r2(r._neto  * tc);
+                const ivaC   = this._r2(r._iva   * tc);
+                const isrC   = this._r2(r._isr   * tc);
+                const comC   = this._r2(brutoC - netoC - ivaC - isrC);   // absorbe el redondeo
+
+                r._montoDolar = usdNeto;      // lo que realmente se pagó, en dólares
+                r._tcAplicado = tc;
+                r._bruto = brutoC; r._neto = netoC; r._comision = comC; r._iva = ivaC; r._isr = isrC;
+
+                // Las celdas crudas también viajan convertidas a la base de datos
+                if (kBruto) r[kBruto] = brutoC;
+                if (kNeto)  r[kNeto]  = netoC;
+                if (kCom)   r[kCom]   = comC;
+                if (kIva)   r[kIva]   = ivaC;
+                if (kIsr)   r[kIsr]   = isrC;
+                if (kOrig)  r[kOrig]  = brutoC;
+            });
+        }
+
+        if (ultimoTC) this.mostrarTipoCambio(ultimoTC);
     },
 
     // El PAGADO no dice en qué moneda viene: hereda la marca del DETALLE.
