@@ -601,13 +601,9 @@ window.ScotiaLogic = {
             );
         }
 
-        let ultimoTC = null;
-
         for (const fecha of Object.keys(grupos)) {
             const tc = await this.obtenerTipoCambio(fecha);
             if (!tc) continue;   // sin tipo de cambio ese día: esas filas quedan sin convertir
-
-            ultimoTC = tc;
 
             grupos[fecha].forEach(r => {
                 const usdNeto = r._neto;
@@ -630,8 +626,10 @@ window.ScotiaLogic = {
                 if (kOrig)  r[kOrig]  = brutoC;
             });
         }
-
-        if (ultimoTC) this.mostrarTipoCambio(ultimoTC);
+        // Deliberadamente NO se llama a mostrarTipoCambio aquí: el indicador
+        // "tc-indicador" (arriba, junto al botón de tema) es solo informativo
+        // del tipo de cambio del día en curso y no debe reflejar el TC
+        // histórico usado en una conversión de link de pago.
     },
 
     // El PAGADO no dice en qué moneda viene: hereda la marca del DETALLE.
@@ -865,7 +863,18 @@ window.ScotiaLogic = {
                     }
                     const esLinkGrupo = (r.rowsDet && r.rowsDet.some(d => d._esLink)) || (r.rowsPag && r.rowsPag.some(d => d._esLink));
                     if (esLinkGrupo) {
-                        content += `<span class="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold align-middle bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-600" title="Link de pago (pasarela) — cobrado en dólares y convertido a colones">&#128279; LINK</span>`;
+                        // TC realmente aplicado a las filas de ESTE grupo (no el
+                        // indicador superior, que es solo el TC del día en curso).
+                        const tcsLink = [...new Set(
+                            [...(r.rowsDet || []), ...(r.rowsPag || [])]
+                                .filter(d => d._esLink && d._tcAplicado)
+                                .map(d => Number(d._tcAplicado).toFixed(2))
+                        )];
+                        const tcTexto = tcsLink.length === 1
+                            ? `TC ${tcsLink[0]}`
+                            : (tcsLink.length > 1 ? `TC ${tcsLink.join(' / ')}` : 'TC pendiente');
+
+                        content += `<span class="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold align-middle bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-600" title="Link de pago (pasarela) — cobrado en dólares y convertido a colones">&#128279; LINK · ${tcTexto}</span>`;
                     }
                     const hasAdj = (r.rowsDet && r.rowsDet.some(d => d._isAdjustment)) || (r.rowsPag && r.rowsPag.some(d => d._isAdjustment));
                     if(hasAdj) content += `<span class="ml-1 text-yellow-600" title="Contiene Fila Ficticia">🛠️</span>`;
