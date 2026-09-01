@@ -2043,7 +2043,7 @@ window.BACLogic = {
                         }
                         // Asegurar que se vea
                         tt.classList.remove('opacity-0', 'hidden');
-                    });
+                    }); 
 
                     // Al salir del área del tooltip, destruir sin contemplación
                     tt.addEventListener('mouseleave', (e) => {
