@@ -23,134 +23,229 @@ if (!checkdate($mes, $dia, $anio)) {
 try {
     $pdo = Database::connect();
 
-    // Último día contable que tiene conciliaciones registradas.
-    // Si se consulta este día, también debemos mostrar todos los pendientes
-    // actuales cuya FechaConciliacion todavía sea NULL.
-    $stmtUltimaFecha = $pdo->query("
-        SELECT MAX(CAST(FechaConciliacion AS date))
-        FROM Tbl_Transacciones_Maestra
-        WHERE Origen IN ('DETALLADO', 'AJUSTE')
-          AND FechaConciliacion IS NOT NULL
+    // ============================================================
+    // 1. AUXILIAR COMPLETO GUARDADO PARA LA FECHA CONSULTADA
+    // ============================================================
+    $stmtCorte = $pdo->prepare("
+        SELECT TOP (1)
+            IdCorte,
+            CONVERT(varchar(10), FechaRegistro, 23) AS FechaRegistro,
+            CONVERT(varchar(23), FechaCapturaReal, 121) AS FechaCapturaReal,
+            OrigenCaptura,
+            UsuarioUltimo,
+            CantidadFilas,
+            CantidadTransacciones
+        FROM Tbl_Auxiliar_Cortes
+        WHERE FechaRegistro = CONVERT(date, ?, 23)
     ");
 
-    $ultimaFechaConRegistros = $stmtUltimaFecha->fetchColumn();
+    $stmtCorte->execute([$fecha]);
 
-    $esUltimoDia = (
-        $ultimaFechaConRegistros !== false
-        && $ultimaFechaConRegistros !== null
-        && $fecha === $ultimaFechaConRegistros
-    );
+    $corte = $stmtCorte->fetch(PDO::FETCH_ASSOC);
 
-    $stmt = $pdo->prepare("
+    if (!$corte) {
+        $corte = null;
+    }
+
+    $pendientes = [];
+
+    if ($corte) {
+        $stmtPendientes = $pdo->prepare("
+            SELECT
+                F.IdFilaCorte,
+                F.Seccion,
+                F.OrdenVisual,
+
+                COALESCE(NULLIF(F.Contrato, ''), '-') AS Contrato,
+                COALESCE(NULLIF(F.Cliente, ''), '-') AS Cliente,
+                COALESCE(NULLIF(F.AuthTSD, ''), '-') AS Autorizacion,
+
+                F.TSD_Debito,
+                F.TSD_Credito,
+
+                COALESCE(
+                    NULLIF(F.EstadoAux, ''),
+                    'Pendiente'
+                ) AS EstadoMatch,
+
+                COALESCE(NULLIF(F.Banco, ''), '-') AS Banco_Nombre,
+                COALESCE(NULLIF(F.AuthBanco, ''), '-') AS Banco_Auth,
+
+                F.Banco_Debito,
+                F.Banco_Credito,
+                F.Diferencia,
+
+                COALESCE(F.Nota, '') AS NotaUsuario,
+
+                F.CategoriaId,
+                F.IdEtiqueta,
+                F.NombreEtiqueta,
+                F.ColorCSS,
+
+                CAST(F.EsMultiple AS int) AS [_isMulti],
+                COALESCE(F.ClaseVisual, '') AS [_rowClass],
+
+                CAST('' AS nvarchar(1)) AS DetalleTSDDebito,
+                CAST('' AS nvarchar(1)) AS DetalleTSDCredito
+
+            FROM Tbl_Auxiliar_Corte_Filas F
+            WHERE F.IdCorte = ?
+
+            ORDER BY
+                CASE
+                    WHEN F.Seccion = 'APROBADA_MANUAL' THEN 0
+                    ELSE 1
+                END,
+                F.OrdenVisual
+        ");
+
+        $stmtPendientes->execute([
+            $corte['IdCorte']
+        ]);
+
+        $pendientes = $stmtPendientes->fetchAll(
+            PDO::FETCH_ASSOC
+        );
+    }
+
+    // ============================================================
+    // 2. CONCILIADOS EXACTAMENTE EN LA FECHA CONSULTADA
+    // ============================================================
+    $stmtConciliados = $pdo->prepare("
         SELECT
             TM.IdTransaccion,
             TM.Banco,
             TM.Origen,
-            CASE
-                WHEN TM.FechaConciliacion = CONVERT(date, ?, 23)
-                    THEN 'CONCILIADO ESE DÍA'
-                ELSE 'PENDIENTE AL CIERRE'
-            END AS EstadoHistorico,
+
+            CAST(
+                'CONCILIADO ESE DÍA'
+                AS varchar(30)
+            ) AS EstadoHistorico,
+
             TM.Estado AS EstadoActual,
-            CONVERT(varchar(10), TM.FechaTransaccion, 23) AS FechaTransaccion,
-            CONVERT(varchar(19), TM.FechaRegistro, 120) AS FechaRegistro,
-            CONVERT(varchar(10), TM.FechaConciliacion, 23) AS FechaConciliacion,
-            CONVERT(varchar(19), TM.FechaRealConciliacion, 120) AS FechaRealConciliacion,
-            DATEDIFF(DAY, TM.FechaTransaccion, CONVERT(date, ?, 23)) AS DiasAntiguedadAlCorte,
+
+            CONVERT(
+                varchar(10),
+                TM.FechaTransaccion,
+                23
+            ) AS FechaTransaccion,
+
+            CONVERT(
+                varchar(19),
+                TM.FechaRegistro,
+                120
+            ) AS FechaRegistro,
+
+            CONVERT(
+                varchar(10),
+                TM.FechaConciliacion,
+                23
+            ) AS FechaConciliacion,
+
+            CONVERT(
+                varchar(19),
+                TM.FechaRealConciliacion,
+                120
+            ) AS FechaRealConciliacion,
+
+            DATEDIFF(
+                DAY,
+                TM.FechaTransaccion,
+                TM.FechaConciliacion
+            ) AS DiasAntiguedadAlCorte,
+
             TM.Afiliado_MerID,
+
             COALESCE(
                 NULLIF(LTRIM(RTRIM(TM.Autorizacion)), ''),
                 NULLIF(LTRIM(RTRIM(DT.Autorizacion)), ''),
                 NULLIF(LTRIM(RTRIM(DB.AUTORIZACION)), ''),
                 NULLIF(LTRIM(RTRIM(DS.Numero_Autorizacion)), '')
             ) AS Autorizacion,
+
             TM.Tarjeta,
+
             DT.Contrato AS ContratoTSD,
             DT.Cliente AS ClienteTSD,
             DT.Recibo_Detalle AS ReciboDetalleTSD,
-            COALESCE(DT.CentroCosto, DB.CentroCosto, DS.CentroCosto) AS CentroCosto,
-            COALESCE(DT.SucursalNombre, DB.NOMBRECOMERCIO, DS.Nombre) AS Sucursal,
+
+            COALESCE(
+                DT.CentroCosto,
+                DB.CentroCosto,
+                DS.CentroCosto
+            ) AS CentroCosto,
+
+            COALESCE(
+                DT.SucursalNombre,
+                DB.NOMBRECOMERCIO,
+                DS.Nombre
+            ) AS Sucursal,
+
             TM.NotaUsuario,
             TM.MontoBruto,
             TM.MontoNeto,
             TM.IdMatch,
             TM.IdMatchTSD,
             TM.TipoCruceTSD
+
         FROM Tbl_Transacciones_Maestra TM
+
         LEFT JOIN Tbl_Detalle_TSD DT
-            ON DT.IdTransaccion = TM.IdTransaccion AND TM.Banco = 'TSD'
+            ON DT.IdTransaccion = TM.IdTransaccion
+           AND TM.Banco = 'TSD'
+
         LEFT JOIN Tbl_Detalle_BAC DB
-            ON DB.IdTransaccion = TM.IdTransaccion AND TM.Banco = 'BAC'
+            ON DB.IdTransaccion = TM.IdTransaccion
+           AND TM.Banco = 'BAC'
+
         LEFT JOIN Tbl_Detalle_Scotia DS
-            ON DS.IdTransaccion = TM.IdTransaccion AND TM.Banco = 'Davibank'
-        WHERE
-        -- Sólo lo que pertenece al auxiliar: los PAGADO nunca se cruzan con TSD.
-        TM.Origen IN ('DETALLADO', 'AJUSTE')
-        AND
-        (
-            -- PENDIENTE AL CIERRE:
-            -- En fechas históricas sólo movimientos conciliados posteriormente.
-            -- FechaConciliacion NULL únicamente entra si consultamos
-            -- el último día contable disponible.
-            (
-                COALESCE(
-                    CONVERT(date, TM.FechaTransaccion),
-                    CONVERT(date, TM.FechaRegistro)
-                ) <= CONVERT(date, ?, 23)
+            ON DS.IdTransaccion = TM.IdTransaccion
+           AND TM.Banco IN ('Davibank', 'SCOTIA')
 
-                AND TM.FechaRegistro < DATEADD(DAY, 1, CONVERT(date, ?, 23))
+        WHERE TM.Origen IN ('DETALLADO', 'AJUSTE')
+          AND TM.FechaConciliacion = CONVERT(date, ?, 23)
 
-                AND (
-                    TM.FechaConciliacion > CONVERT(date, ?, 23)
+        ORDER BY
+            COALESCE(
+                TM.IdMatchTSD,
+                TM.IdTransaccion
+            ),
+            TM.Banco,
+            TM.IdTransaccion
+    ");
 
-                    OR (
-                        ? = 1
-                        AND TM.FechaConciliacion IS NULL
-                    )
-                )
-            )
+    $stmtConciliados->execute([$fecha]);
 
-            -- CONCILIADO ESE DÍA
-            OR TM.FechaConciliacion = CONVERT(date, ?, 23)
-        )
-            ORDER BY EstadoHistorico DESC, TM.Banco, TM.FechaTransaccion, TM.IdTransaccion
-        ");
+    $conciliados = $stmtConciliados->fetchAll(
+        PDO::FETCH_ASSOC
+    );
 
-    $stmt->execute([
-        $fecha,                 // CASE EstadoHistorico
-        $fecha,                 // DiasAntiguedadAlCorte
-        $fecha,                 // FechaTransaccion <= corte
-        $fecha,                 // FechaRegistro <= corte
-        $fecha,                 // FechaConciliacion > corte
-        $esUltimoDia ? 1 : 0,   // NULL sólo en último día
-        $fecha                  // Conciliado ese día
-    ]);
-
-    $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $pendientes = 0;
-    $conciliados = 0;
     $montoPendiente = 0;
 
-    foreach ($data as $row) {
-        if ($row['EstadoHistorico'] === 'PENDIENTE AL CIERRE') {
-            $pendientes++;
-            $montoPendiente += (float)($row['MontoBruto'] ?? 0);
-        } elseif ($row['EstadoHistorico'] === 'CONCILIADO ESE DÍA') {
-            $conciliados++;
-        }
+    foreach ($pendientes as $fila) {
+        $montoPendiente += (float)(
+            $fila['Diferencia'] ?? 0
+        );
     }
 
     echo json_encode([
         'success' => true,
         'fecha' => $fecha,
+        'corte' => $corte,
+
         'summary' => [
-            'pendientes' => $pendientes,
-            'conciliados' => $conciliados,
-            'montoPendiente' => $montoPendiente
+            'pendientes' => count($pendientes),
+            'conciliados' => count($conciliados),
+            'montoPendiente' => round(
+                $montoPendiente,
+                2
+            )
         ],
-        'data' => $data
-    ]);
+
+        'pendientes' => $pendientes,
+        'conciliados' => $conciliados
+
+    ], JSON_UNESCAPED_UNICODE);
 
 } catch (PDOException $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);

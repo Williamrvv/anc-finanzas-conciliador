@@ -468,19 +468,139 @@
                 };
             };
 
-            const filas = [];
+            // Las sugerencias automáticas se guardan separadas:
+            // una fila histórica por cada transacción TSD o bancaria.
+            const separarSugerencia = (row) => {
+                const estado =
+                    String(row.EstadoMatch || '');
 
-            (this.currentLimboData || []).forEach(
-                (row, indice) => {
+                if (!estado.startsWith('Sugerencia:')) {
+                    return [row];
+                }
+
+                const separadas = [];
+
+                toArray(row._tsdRaw).forEach(item => {
+                    const monto =
+                        Number(item.MontoCRC) || 0;
+
+                    separadas.push({
+                        ...row,
+
+                        _tsdRaw: item,
+                        _bancoRaw: null,
+                        _isMulti: false,
+
+                        _dbId:
+                            item.ID_Transaccion ??
+                            item.IdTransaccion ??
+                            row._dbId,
+
+                        Contrato:
+                            item.Contrato || 'S/D',
+
+                        Cliente:
+                            item.Cliente || '-',
+
+                        Autorizacion:
+                            item.Autorizacion || '-',
+
+                        Banco_Nombre: '-',
+                        Banco_Auth: '-',
+
+                        TSD_Debito:
+                            monto > 0
+                                ? Number(Math.abs(monto).toFixed(2))
+                                : 0,
+
+                        TSD_Credito:
+                            monto < 0
+                                ? Number(Math.abs(monto).toFixed(2))
+                                : 0,
+
+                        Banco_Debito: 0,
+                        Banco_Credito: 0,
+
+                        Diferencia:
+                            Number(monto.toFixed(2))
+                    });
+                });
+
+                toArray(row._bancoRaw).forEach(item => {
+                    const monto = Number(
+                        item.Monto_Venta_Original ??
+                        item.MontoCRC ??
+                        0
+                    ) || 0;
+
+                    separadas.push({
+                        ...row,
+
+                        _tsdRaw: null,
+                        _bancoRaw: item,
+                        _isMulti: false,
+
+                        _dbId:
+                            item.IdTransaccion ??
+                            item.ID_Transaccion ??
+                            row._dbId,
+
+                        Contrato: 'Solo Banco',
+
+                        Cliente:
+                            item.Nombre_Sucursal_Comercio ||
+                            item.Nombre ||
+                            '-',
+
+                        Autorizacion: '-',
+
+                        Banco_Nombre:
+                            item.Banco ||
+                            row.Banco_Nombre ||
+                            '-',
+
+                        Banco_Auth:
+                            item.Numero_Autorizacion ||
+                            item.Autorizacion ||
+                            '-',
+
+                        TSD_Debito: 0,
+                        TSD_Credito: 0,
+
+                        Banco_Debito:
+                            monto < 0
+                                ? Number(Math.abs(monto).toFixed(2))
+                                : 0,
+
+                        Banco_Credito:
+                            monto > 0
+                                ? Number(Math.abs(monto).toFixed(2))
+                                : 0,
+
+                        Diferencia:
+                            Number((-monto).toFixed(2))
+                    });
+                });
+
+                return separadas.length
+                    ? separadas
+                    : [row];
+            };
+
+            const filas = [];
+            let ordenBandeja = 1;
+
+            (this.currentLimboData || []).forEach(row => {
+                separarSugerencia(row).forEach(fila => {
                     filas.push(
                         serializarFila(
-                            row,
+                            fila,
                             'BANDEJA',
-                            indice + 1
+                            ordenBandeja++
                         )
                     );
-                }
-            );
+                });
+            });
 
             (this.currentSugData || []).forEach(
                 (row, indice) => {

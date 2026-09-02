@@ -8,11 +8,16 @@ $ctx = $_GET['ctx'] ?? 'm3'; // 'm3' = TSD en vivo | 'm4' = TSD desde base de da
 $historicoDefault = date('Y-m-d');
 
 if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
-    $fechaBase = DateTime::createFromFormat('!Y-m-d', $end);
+    $fechaBase = DateTime::createFromFormat(
+        '!Y-m-d',
+        $end
+    );
 
-    if ($fechaBase && $fechaBase->format('Y-m-d') === $end) {
-        $fechaBase->modify('+1 day');
-        $historicoDefault = $fechaBase->format('Y-m-d');
+    if (
+        $fechaBase &&
+        $fechaBase->format('Y-m-d') === $end
+    ) {
+        $historicoDefault = $end;
     }
 }
 ?>
@@ -364,7 +369,6 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             tsd: null,
             dbr: null,
             softland: null,
-            historico: null,
             historicoPendientes: null,
             historicoConciliados: null
         };
@@ -1106,47 +1110,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             return unique.length ? unique.join(', ') : fallback;
         }
 
-        function construirHistoricoPendientes(data) {
-            return data
-                .filter(row => row.EstadoHistorico === 'PENDIENTE AL CIERRE')
-                .map(row => {
-                    const esTSD = String(row.Banco || '').toUpperCase() === 'TSD';
-
-                    const montoTSD = esTSD ? (parseFloat(row.MontoBruto) || 0) : 0;
-                    const montoBanco = esTSD ? 0 : (parseFloat(row.MontoBruto) || 0);
-
-                    const movimiento =
-                        historicoDebitoCredito([row]);
-
-                    return {
-                        _rowClass: 'bg-amber-50/30 dark:bg-amber-900/10',
-                        Contrato: esTSD ? (row.ContratoTSD || row.Afiliado_MerID || '-') : 'Solo Banco',
-                        Cliente: esTSD ? (row.ClienteTSD || '-') : (row.Sucursal || '-'),
-                        NotaUsuario: row.NotaUsuario || '',
-                        Autorizacion: esTSD ? (row.Autorizacion || '-') : '-',
-                        MontoTSD: {
-                            valor: montoTSD,
-                            recibo: esTSD ? (row.ReciboDetalleTSD || '') : '',
-                            valueOf: function() { return this.valor; },
-                            toString: function() { return this.valor.toString(); }
-                        },
-                        EstadoMatch: 'Pendiente',
-                        Banco_Nombre: esTSD ? '-' : (row.Banco || '-'),
-                        Banco_Auth: esTSD ? '-' : (row.Autorizacion || '-'),
-                        Banco_Monto: montoBanco,
-
-                        TSD_Debito: movimiento.TSD_Debito,
-                        TSD_Credito: movimiento.TSD_Credito,
-                        Banco_Debito: movimiento.Banco_Debito,
-                        Banco_Credito: movimiento.Banco_Credito,
-                        DetalleTSDDebito: movimiento.DetalleTSDDebito,
-                        DetalleTSDCredito: movimiento.DetalleTSDCredito,
-
-                        Diferencia: historicoDiferencia(montoTSD, montoBanco),
-                        Antiguedad: row.DiasAntiguedadAlCorte !== null ? row.DiasAntiguedadAlCorte : '-'
-                    };
-                });
-        }
+        // Los pendientes ya llegan completos desde
+        // Tbl_Auxiliar_Corte_Filas.
 
         function construirHistoricoConciliados(data) {
             const rows = data.filter(row => row.EstadoHistorico === 'CONCILIADO ESE DÍA');
@@ -1307,34 +1272,6 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         `<span class="font-black">${fmtMoney(Math.abs(val || 0))}</span>`,
                     formatter: cell =>
                         fmtMovimiento(cell, 'TSD_Credito')
-                },
-                {
-                    title: "ESTADO AUX",
-                    field: "EstadoMatch",
-                    width: 180,
-                    hozAlign: "center",
-                    cssClass: "border-l-2 border-r-2 border-slate-300 dark:border-slate-600 bg-white/30 dark:bg-black/20 font-bold",
-                    formatter: cell => {
-                        const val = String(
-                            typeof cell === 'object' && cell.getValue
-                                ? cell.getValue()
-                                : cell
-                        );
-
-                        if (val === 'Pendiente') {
-                            return '<span class="text-slate-500 font-bold">⏳ Pendiente</span>';
-                        }
-
-                        if (val.includes('Ajuste Menor')) {
-                            return `<span class="text-purple-600 dark:text-purple-400">✂️ ${val}</span>`;
-                        }
-
-                        if (val.includes('Ajuste Interno')) {
-                            return `<span class="text-cyan-600 dark:text-cyan-400">🔄 ${val}</span>`;
-                        }
-
-                        return `<span class="text-green-700 dark:text-green-400">✅ ${val}</span>`;
-                    }
                 },
                 {
                     title: "Banco",
@@ -1555,40 +1492,95 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         async function loadHistorico(fecha) {
             if (!fecha) return;
 
-            const spinner = document.getElementById('spin-historico');
-            if (spinner) spinner.classList.remove('hidden');
+            const spinner =
+                document.getElementById(
+                    'spin-historico'
+                );
+
+            if (spinner) {
+                spinner.classList.remove('hidden');
+            }
 
             try {
-                const res = await fetch(`api/get_historico_auxiliar_m4.php?fecha=${encodeURIComponent(fecha)}`);
+                const res = await fetch(
+                    `api/get_historico_auxiliar_m4.php?fecha=${encodeURIComponent(fecha)}`,
+                    { cache: 'no-store' }
+                );
+
                 const json = await res.json();
 
-                if (!json.success) throw new Error(json.error);
+                if (!res.ok || !json.success) {
+                    throw new Error(
+                        json.error ||
+                        `Error HTTP ${res.status}`
+                    );
+                }
 
-                rawData.historico = json.data;
-                rawData.historicoPendientes = construirHistoricoPendientes(json.data);
-                rawData.historicoConciliados = construirHistoricoConciliados(json.data);
+                rawData.historico = {
+                    fecha: json.fecha,
+                    corte: json.corte || null
+                };
 
-                const countPendientes = document.getElementById('historico-count-pendientes');
-                const countConciliados = document.getElementById('historico-count-conciliados');
+                // Ya llegan exactamente como fueron guardados.
+                rawData.historicoPendientes =
+                    Array.isArray(json.pendientes)
+                        ? json.pendientes
+                        : [];
+
+                // Maestra todavía se agrupa por IdMatchTSD.
+                rawData.historicoConciliados =
+                    construirHistoricoConciliados(
+                        Array.isArray(json.conciliados)
+                            ? json.conciliados
+                            : []
+                    );
+
+                const countPendientes =
+                    document.getElementById(
+                        'historico-count-pendientes'
+                    );
+
+                const countConciliados =
+                    document.getElementById(
+                        'historico-count-conciliados'
+                    );
 
                 if (countPendientes) {
-                    countPendientes.textContent = rawData.historicoPendientes.length;
+                    countPendientes.textContent =
+                        rawData.historicoPendientes.length;
                 }
 
                 if (countConciliados) {
-                    countConciliados.textContent = rawData.historicoConciliados.length;
+                    countConciliados.textContent =
+                        rawData.historicoConciliados.length;
                 }
 
-                const monto = new Intl.NumberFormat('es-CR', {
-                    style: 'currency',
-                    currency: 'CRC',
-                    maximumFractionDigits: 0
-                }).format(json.summary.montoPendiente || 0);
+                const monto =
+                    new Intl.NumberFormat(
+                        'es-CR',
+                        {
+                            style: 'currency',
+                            currency: 'CRC',
+                            maximumFractionDigits: 0
+                        }
+                    ).format(
+                        json.summary?.montoPendiente || 0
+                    );
 
-                const resumen = document.getElementById('historico-resumen');
+                const resumen =
+                    document.getElementById(
+                        'historico-resumen'
+                    );
 
                 if (resumen) {
-                    resumen.textContent = `${rawData.historicoPendientes.length} pendientes · ${rawData.historicoConciliados.length} conciliaciones · ${monto}`;
+                    const corteTexto = json.corte
+                        ? ` · corte ${json.corte.OrigenCaptura} ${json.corte.FechaCapturaReal}`
+                        : ' · sin corte guardado';
+
+                    resumen.textContent =
+                        `${rawData.historicoPendientes.length} pendientes · ` +
+                        `${rawData.historicoConciliados.length} conciliaciones · ` +
+                        `${monto}${corteTexto}`;
                 }
 
                 if (currentActiveTab === 'historico') {
@@ -1596,9 +1588,15 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 }
 
             } catch (e) {
-                alert('Error en HISTÓRICO AUXILIAR: ' + e.message);
+                alert(
+                    'Error en HISTÓRICO AUXILIAR: ' +
+                    e.message
+                );
+
             } finally {
-                if (spinner) spinner.classList.add('hidden');
+                if (spinner) {
+                    spinner.classList.add('hidden');
+                }
             }
         }
 
@@ -1748,21 +1746,23 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             }, 500);
         }
 
-        // Cortesía de lectura: el corte del histórico va siempre un día por delante
-        // del rango de bancos y TSD, para que incluya lo conciliado de ese último día.
+        // El histórico usa exactamente la fecha del corte diario.
         function sincronizarHistorico(finRango) {
-            const inputHist = document.getElementById('historico-fecha');
+            const inputHist =
+                document.getElementById(
+                    'historico-fecha'
+                );
+
             if (!inputHist || !finRango) return;
 
-            const dia = new Date(`${finRango}T00:00:00`);
-            dia.setDate(dia.getDate() + 1);
-            const siguiente = dia.toISOString().slice(0, 10);
+            if (inputHist.value === finRango) return;
 
-            if (inputHist.value === siguiente) return;
-            inputHist.value = siguiente;
-
+            inputHist.value = finRango;
             rawData.historico = null;
-            if (currentActiveTab === 'historico') loadHistorico(siguiente);
+
+            if (currentActiveTab === 'historico') {
+                loadHistorico(finRango);
+            }
         }
 
         async function startSequentialLoading() {
