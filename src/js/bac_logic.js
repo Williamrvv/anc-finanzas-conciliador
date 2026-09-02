@@ -1450,7 +1450,7 @@ window.BACLogic = {
                                 <div>
                                     <div class="text-[9px] text-slate-500 uppercase font-bold mb-0.5">Justificación:</div>
                                     <div class="text-[10px] text-slate-700 dark:text-slate-300 italic break-words whitespace-normal bg-white dark:bg-slate-700/30 p-1.5 rounded border-l-2 border-slate-400 dark:border-slate-500 shadow-sm">\${justificacion}</div>
-                                    \${row._adjEvidence ? '<div class="text-[10px] text-blue-600 dark:text-blue-400 mt-2 font-bold flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg> Incluye Evidencia Visual</div>' : ''}
+                                    \${row._adjEvidence ? \`<button type="button" onclick="showAdjEvidence('\${row._uid}', \${isVenta})" class="mt-2 w-full flex items-center justify-center gap-1.5 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1.5 rounded-md shadow-sm transition-colors"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg> Ver evidencia</button>\` : ''}
                                 </div>
                             </div>
                         \`;
@@ -2030,7 +2030,97 @@ window.BACLogic = {
                 <!-- CONTENEDOR TOOLTIP FLOTANTE GLOBAL (Anti-Clipping) -->
                 <div id="global-float-tooltip" class="fixed hidden bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 p-3 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-600 z-[99999] transform transition-opacity duration-200 opacity-0"></div>
 
+                <!-- VISOR DE EVIDENCIA DEL AJUSTE -->
+                <div id="adj-evidence-modal" class="fixed inset-0 z-[999999] hidden opacity-0 transition-opacity duration-200 bg-slate-900/95 backdrop-blur-sm flex-col">
+                    <div class="flex justify-between items-center gap-4 px-5 py-3 bg-slate-800 border-b border-slate-700 shrink-0">
+                        <div class="flex flex-col min-w-0">
+                            <h3 class="text-white font-bold text-sm">Evidencia del ajuste</h3>
+                            <span id="adj-evidence-caption" class="text-[11px] text-slate-400 truncate"></span>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button type="button" onclick="adjEvidenceZoom(-0.25)" title="Alejar" class="w-8 h-8 rounded-md bg-slate-700 hover:bg-slate-600 text-white font-bold text-lg leading-none transition-colors">&minus;</button>
+                            <span id="adj-evidence-level" class="text-[11px] text-slate-300 font-mono w-12 text-center select-none">100%</span>
+                            <button type="button" onclick="adjEvidenceZoom(0.25)" title="Acercar" class="w-8 h-8 rounded-md bg-slate-700 hover:bg-slate-600 text-white font-bold text-lg leading-none transition-colors">+</button>
+                            <button type="button" onclick="adjEvidenceZoom(0)" class="px-3 h-8 rounded-md bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-bold transition-colors">Ajustar</button>
+                            <a id="adj-evidence-download" download="evidencia-ajuste.png" class="px-3 h-8 flex items-center rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold transition-colors">Descargar</a>
+                            <button type="button" onclick="hideAdjEvidence()" title="Cerrar (Esc)" class="w-8 h-8 rounded-md bg-slate-700 hover:bg-red-600 text-white transition-colors">&#10005;</button>
+                        </div>
+                    </div>
+                    <div id="adj-evidence-scroll" class="flex-1 overflow-auto p-6 flex items-start justify-center">
+                        <img id="adj-evidence-img" src="" alt="Evidencia del ajuste" class="max-w-full origin-top transition-transform duration-150 rounded shadow-2xl bg-white">
+                    </div>
+                    <div class="px-5 py-2 bg-slate-800 border-t border-slate-700 text-[10px] text-slate-500 text-center shrink-0 select-none">
+                        Esc para cerrar &middot; rueda del mouse con Ctrl para acercar
+                    </div>
+                </div>
+
                 <script>
+                    // Visor de evidencia a pantalla completa. La imagen no viaja
+                    // dentro del tooltip: se busca por _uid al abrir, para no
+                    // duplicar el base64 en cada fila de la tabla.
+                    let adjZoom = 1;
+
+                    window.showAdjEvidence = function(uid, isVenta) {
+                        const arr = isVenta ? rawVentas : rawBanco;
+                        const row = (arr || []).find(r => r._uid === uid);
+                        if (!row || !row._adjEvidence) return;
+
+                        if (window.hideGlobalTooltip) window.hideGlobalTooltip(true);
+
+                        const raw = String(row._adjEvidence);
+                        const src = raw.indexOf('data:') === 0 ? raw : 'data:image/png;base64,' + raw;
+
+                        const img = document.getElementById('adj-evidence-img');
+                        img.src = src;
+                        document.getElementById('adj-evidence-download').href = src;
+                        document.getElementById('adj-evidence-caption').innerText =
+                            (row._adjType || 'Ajuste manual') + ' — ' + (row._adjReason || 'Sin justificación');
+
+                        adjZoom = 1;
+                        img.style.transform = 'scale(1)';
+                        document.getElementById('adj-evidence-level').innerText = '100%';
+
+                        const modal = document.getElementById('adj-evidence-modal');
+                        modal.classList.remove('hidden');
+                        modal.classList.add('flex');
+                        requestAnimationFrame(() => modal.classList.remove('opacity-0'));
+                    };
+
+                    window.hideAdjEvidence = function() {
+                        const modal = document.getElementById('adj-evidence-modal');
+                        modal.classList.add('opacity-0');
+                        setTimeout(() => {
+                            modal.classList.add('hidden');
+                            modal.classList.remove('flex');
+                            document.getElementById('adj-evidence-img').src = '';
+                        }, 200);
+                    };
+
+                    window.adjEvidenceZoom = function(delta) {
+                        adjZoom = delta === 0 ? 1 : Math.min(6, Math.max(0.25, adjZoom + delta));
+                        document.getElementById('adj-evidence-img').style.transform = 'scale(' + adjZoom + ')';
+                        document.getElementById('adj-evidence-level').innerText = Math.round(adjZoom * 100) + '%';
+                    };
+
+                    document.addEventListener('keydown', (e) => {
+                        const modal = document.getElementById('adj-evidence-modal');
+                        if (!modal || modal.classList.contains('hidden')) return;
+                        if (e.key === 'Escape') window.hideAdjEvidence();
+                        if (e.key === '+' || e.key === '=') window.adjEvidenceZoom(0.25);
+                        if (e.key === '-') window.adjEvidenceZoom(-0.25);
+                        if (e.key === '0') window.adjEvidenceZoom(0);
+                    });
+
+                    document.getElementById('adj-evidence-scroll').addEventListener('wheel', (e) => {
+                        if (!e.ctrlKey) return;
+                        e.preventDefault();
+                        window.adjEvidenceZoom(e.deltaY < 0 ? 0.25 : -0.25);
+                    }, { passive: false });
+
+                    document.getElementById('adj-evidence-scroll').addEventListener('click', (e) => {
+                        if (e.target.id === 'adj-evidence-scroll') window.hideAdjEvidence();
+                    });
+
                     // Motor de Tooltip Global Interactivo
                     let hideTimeout = null;
                     const tt = document.getElementById('global-float-tooltip');

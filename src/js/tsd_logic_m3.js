@@ -2517,15 +2517,16 @@ window.TSDLogic = {
 
         if (!confirmado) return;
 
-            body: JSON.stringify({
-                folios: foliosArray,
-                matches: payloadMatched,
-                pendientes: payloadPending,
-                fechaConciliacion: fechaConciliacion,
-                fechaRegistro: fechaRegistro,
-                rangoInicio: this._rangoBorradorM3?.start || '',
-                rangoFin: this._rangoBorradorM3?.end || ''
-            })
+        const fechasCierre =
+            await this.pedirFechasCierreM3();
+
+        if (!fechasCierre) return;
+
+        const fechaConciliacion =
+            fechasCierre.fechaConciliacion;
+
+        const fechaRegistro =
+            fechasCierre.fechaRegistro;
 
         // --- 1. BLOQUE A: Extraer Folios a Sellar ---
         // Buscamos todos los IdCierre (Folios) únicos de los bancos que están en la memoria RAM
@@ -2644,6 +2645,7 @@ window.TSDLogic = {
                     matches: payloadMatched,
                     pendientes: payloadPending,
                     fechaConciliacion: fechaConciliacion,
+                    fechaRegistro: fechaRegistro,
                     rangoInicio: this._rangoBorradorM3?.start || '',
                     rangoFin: this._rangoBorradorM3?.end || ''
                 })
@@ -2686,6 +2688,47 @@ window.TSDLogic = {
 
             if (!data.success) throw new Error(data.error);
 
+            /*
+             * save_tsd_m3.php ya hizo COMMIT.
+             * Ahora reconstruimos el M4 completo con:
+             * - todos los pendientes existentes;
+             * - los registros nuevos de esta carga;
+             * - el borrador manual compartido;
+             * - el mismo algoritmo real del Auxiliar.
+             */
+            let corteAuxiliarGuardado = false;
+            let errorCorteAuxiliar = '';
+
+            try {
+                if (
+                    !window.AuxiliarLogic ||
+                    typeof window.AuxiliarLogic
+                        .generarYGuardarCorteDiarioM4 !==
+                        'function'
+                ) {
+                    throw new Error(
+                        'El motor de cortes diarios no está disponible.'
+                    );
+                }
+
+                await window.AuxiliarLogic
+                    .generarYGuardarCorteDiarioM4(
+                        fechaRegistro,
+                        'M3'
+                    );
+
+                corteAuxiliarGuardado = true;
+
+            } catch (errorCorte) {
+                errorCorteAuxiliar =
+                    errorCorte.message;
+
+                console.error(
+                    'No se pudo guardar el corte diario desde M3:',
+                    errorCorte
+                );
+            }
+
             // El backend elimina el borrador después del COMMIT.
             // Este segundo intento sólo actúa como respaldo.
             if (!data.borradorEliminado) {
@@ -2722,8 +2765,23 @@ window.TSDLogic = {
             setTimeout(() => loader.classList.add('hidden'), 300);
 
             // Limpieza y alerta final
-            const folioMsg = data.folio ? `\n\n📁 Folio del cierre: ${data.folio}` : '';
-            await window.SysUI.alert(`Consolidado TSD archivado con éxito. Este folio es su referencia para auditoría y búsquedas futuras.${folioMsg}`, "Bóveda Actualizada", "success");
+            const folioMsg = data.folio
+                ? `\n\n📁 Folio del cierre: ${data.folio}`
+                : '';
+
+            const corteMsg = corteAuxiliarGuardado
+                ? `\n\nEl auxiliar completo del ${fechaRegistro} quedó actualizado.`
+                : `\n\nAdvertencia: el Consolidado TSD sí quedó guardado, pero no fue posible actualizar el corte diario del Auxiliar.\n${errorCorteAuxiliar}`;
+
+            await window.SysUI.alert(
+                `Consolidado TSD archivado con éxito. Este folio es su referencia para auditoría y búsquedas futuras.${folioMsg}${corteMsg}`,
+                corteAuxiliarGuardado
+                    ? "Bóveda Actualizada"
+                    : "Guardado con advertencia",
+                corteAuxiliarGuardado
+                    ? "success"
+                    : "warning"
+            );
             
             this.lastTSD = [];
             this.lastBancos = [];

@@ -431,6 +431,7 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script src="js/scotia_logic.js"></script>
     <script src="js/tsd_logic_m3.js"></script>
     <script src="js/auxiliar_logic_m4.js"></script>
+    <script src="js/auxiliar_corte_diario.js"></script>
     <!-- Módulo Usuarios -->
     <script src="js/usuarios_logic.js"></script>
     <!-- Lógica Módulo Cierre de Caja -->

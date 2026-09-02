@@ -3357,8 +3357,16 @@ window.AuxiliarLogic = {
 
         if (!confirmado) return;
 
-        const fechaConciliacion = await this.pedirFechaConciliacion();
-        if (!fechaConciliacion) return;
+        const fechas =
+            await this.pedirFechasCorteM4();
+
+        if (!fechas) return;
+
+        const fechaConciliacion =
+            fechas.fechaConciliacion;
+
+        const fechaRegistro =
+            fechas.fechaRegistro;
 
         // Construcción del Payload (Solo los aprobados)
         const payloadAprobados = [];
@@ -3431,11 +3439,49 @@ window.AuxiliarLogic = {
 
             if (!data.success) throw new Error(data.error);
 
-            await window.SysUI.alert("Las conciliaciones han sido aprobadas y guardadas exitosamente en el historial contable.", "Operación Exitosa", "success");
-            
-            // Recargar desde BD. Los registros recién conciliados dejarán de
-            // venir como pendientes y el borrador se compactará automáticamente.
-            await this.fetchPendientes();
+            // Primero reconstruimos el estado POSTERIOR al guardado.
+            const auxiliarRecargado =
+                await this.fetchPendientes();
+
+            let corteGuardado = false;
+            let errorCorte = '';
+
+            if (auxiliarRecargado) {
+                try {
+                    await this.guardarCorteDiarioActualM4(
+                        fechaRegistro,
+                        'M4'
+                    );
+
+                    corteGuardado = true;
+
+                } catch (error) {
+                    errorCorte = error.message;
+
+                    console.error(
+                        'No se pudo guardar el corte diario M4:',
+                        error
+                    );
+                }
+            } else {
+                errorCorte =
+                    'No fue posible reconstruir el Auxiliar después del guardado.';
+            }
+
+            const mensajeCorte = corteGuardado
+                ? `\n\nEl auxiliar completo del ${fechaRegistro} quedó actualizado.`
+                : `\n\nAdvertencia: las conciliaciones sí fueron guardadas, pero no se pudo actualizar el corte diario.\n${errorCorte}`;
+
+            await window.SysUI.alert(
+                "Las conciliaciones han sido aprobadas y guardadas exitosamente en el historial contable." +
+                mensajeCorte,
+                corteGuardado
+                    ? "Operación Exitosa"
+                    : "Guardado con advertencia",
+                corteGuardado
+                    ? "success"
+                    : "warning"
+            );
 
         } catch (error) {
             window.SysUI.alert("Hubo un error al conectar con la Base de Datos:\n\n" + error.message, "Fallo Crítico", "error");
