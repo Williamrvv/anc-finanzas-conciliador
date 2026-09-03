@@ -1774,6 +1774,13 @@ window.BACLogic = {
                             // Si el usuario cambia el Neto, el Checkbox ACI o el Tipo de Ajuste, recalculamos
                             if (!e || e.target === elNeto || e.target === chkAci || e.target === elType) {
                                 
+                                // El banco cobra los porcentajes sobre la VENTA BRUTA, no sobre
+                                // el neto. Antes se hacía neto * 0.0195, lo que daba una comisión
+                                // efectiva de 1.95/1.0944 = 1.78% del bruto. Se despeja el bruto
+                                // primero y de ahí salen las deducciones.
+                                const tCom = 0.0195, tRetV = 0.0531, tRetR = 0.0176, tAci = 0.0042;
+                                const rAci = isAci ? tAci : 0;
+
                                 if (tipo === 'Mantenimiento') {
                                     // 0% Comisiones
                                     elCom.value = '0.00';
@@ -1781,17 +1788,19 @@ window.BACLogic = {
                                     elRetR.value = '0.00';
                                     elAci.value = '0.00';
                                 } else if (tipo === 'Contracargo' || tipo === 'Devolución') {
-                                    // Cálculo Directo sobre el Monto Neto: Solo aplica 1.95% y el ACI (si lo marcó)
-                                    elCom.value = (neto * 0.0195).toFixed(2);
+                                    // Solo aplica 1.95% y el ACI (si lo marcó)
+                                    const bruto = neto / (1 - tCom - rAci);
+                                    elCom.value = (bruto * tCom).toFixed(2);
                                     elRetV.value = '0.00'; // Forzado a cero
                                     elRetR.value = '0.00'; // Forzado a cero
-                                    elAci.value = isAci ? (neto * 0.0042).toFixed(2) : '0.00';
+                                    elAci.value = isAci ? (bruto * tAci).toFixed(2) : '0.00';
                                 } else {
-                                    // Cálculo Directo sobre el Monto Neto: Aplica TODOS los porcentajes
-                                    elCom.value = (neto * 0.0195).toFixed(2);
-                                    elRetV.value = (neto * 0.0531).toFixed(2);
-                                    elRetR.value = (neto * 0.0176).toFixed(2);
-                                    elAci.value = isAci ? (neto * 0.0042).toFixed(2) : '0.00';
+                                    // Aplica TODOS los porcentajes
+                                    const bruto = neto / (1 - tCom - tRetV - tRetR - rAci);
+                                    elCom.value = (bruto * tCom).toFixed(2);
+                                    elRetV.value = (bruto * tRetV).toFixed(2);
+                                    elRetR.value = (bruto * tRetR).toFixed(2);
+                                    elAci.value = isAci ? (bruto * tAci).toFixed(2) : '0.00';
                                 }
                             }
 
