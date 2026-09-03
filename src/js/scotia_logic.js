@@ -241,11 +241,11 @@ window.ScotiaLogic = {
             const isActivo = r._enabled || r._manualMatch !== undefined;
             if(isActivo) {
                 s.count++;
-                if (r._isAdjustment) {
-                    s.adj++;
-                } else {
-                    s.v += (r._bruto || 0);
-                }
+                if (r._isAdjustment) s.adj++;
+                // El bruto del ajuste SÍ suma a Ventas Totales: sus deducciones
+                // y su neto ya se acumulaban abajo, así que excluirlo rompía la
+                // identidad v - c - iva - isr = n.
+                s.v += (r._bruto || 0);
                 s.c += (r._comision || 0);
                 s.iva += (r._iva || 0);
                 s.isr += (r._isr || 0);
