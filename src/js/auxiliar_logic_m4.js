@@ -2030,8 +2030,16 @@ window.AuxiliarLogic = {
 
             const isMulti = tsdArr.length > 1 || bancoArr.length > 1;
             
-            // En M4, a menos que sea manual, todo es Sugerencia
-            let finalMatchType = reason === 'Manual' ? (justificacion ? `Manual|${justificacion}` : 'Manual') : `Sugerencia: ${reason}`;
+            // En M4, a menos que sea manual, todo es Sugerencia.
+            // La Fase 0 manda etiquetas expandidas ('Manual (Monto Menor)',
+            // 'Manual (Devolución Datáfono)', 'Manual (Ajuste Interno Bancos)').
+            // Antes se comparaba con === 'Manual' y esas tres caían al else como
+            // "Sugerencia: Manual (...)", así que se quedaban en la tabla de
+            // pendientes y el botón de conciliar nunca las tomaba.
+            const esManual = String(reason).startsWith('Manual');
+            let finalMatchType = esManual
+                ? (justificacion ? `${reason}|${justificacion}` : reason)
+                : `Sugerencia: ${reason}`;
 
             // Colocar primero los datos en orden de mayor a menor (por magnitud) para sumar correctamente positivos y negativos
             const montoTSD = tsdArr
@@ -3376,7 +3384,11 @@ window.AuxiliarLogic = {
             
             let justif = null;
             const strStatus = String(row.EstadoMatch);
-            if (strStatus.startsWith('Manual|')) { justif = strStatus.split('|')[1]; }
+            // Las etiquetas manuales expandidas también traen justificación
+            // después del '|' ('Manual (Monto Menor)|texto'), no sólo 'Manual|texto'.
+            if (strStatus.startsWith('Manual') && strStatus.includes('|')) {
+                justif = strStatus.split('|').slice(1).join('|');
+            }
 
             // ¿Este grupo salió de un motivo declarado (banco solo)? Se busca por sus IDs.
             const idsB = arrB.filter(Boolean).map(b => String(b.IdTransaccion));
