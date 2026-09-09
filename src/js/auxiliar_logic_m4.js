@@ -2738,7 +2738,12 @@ window.AuxiliarLogic = {
         const bRaw = row._bancoRaw ? (Array.isArray(row._bancoRaw) ? [...row._bancoRaw] : [row._bancoRaw]) : [];
         
         let justTexto = '';
-        if (String(row.EstadoMatch).startsWith('Manual|')) justTexto = row.EstadoMatch.split('|')[1] || '';
+        // Las etiquetas expandidas ('Manual (Monto Menor)|texto') también traen
+        // justificación. Con el chequeo anterior de 'Manual|' se perdía al reabrir.
+        const estadoRow = String(row.EstadoMatch);
+        if (estadoRow.startsWith('Manual') && estadoRow.includes('|')) {
+            justTexto = estadoRow.split('|').slice(1).join('|');
+        }
         
         this.ws = {
             tsd: [...tRaw], bancos: [...bRaw],
@@ -3365,16 +3370,10 @@ window.AuxiliarLogic = {
 
         if (!confirmado) return;
 
-        const fechas =
-            await this.pedirFechasCorteM4();
-
-        if (!fechas) return;
-
         const fechaConciliacion =
-            fechas.fechaConciliacion;
+            await this.pedirFechaConciliacion();
 
-        const fechaRegistro =
-            fechas.fechaRegistro;
+        if (!fechaConciliacion) return;
 
         // Construcción del Payload (Solo los aprobados)
         const payloadAprobados = [];
@@ -3461,7 +3460,7 @@ window.AuxiliarLogic = {
             if (auxiliarRecargado) {
                 try {
                     await this.guardarCorteDiarioActualM4(
-                        fechaRegistro,
+                        fechaConciliacion,
                         'M4'
                     );
 
@@ -3481,7 +3480,7 @@ window.AuxiliarLogic = {
             }
 
             const mensajeCorte = corteGuardado
-                ? `\n\nEl auxiliar completo del ${fechaRegistro} quedó actualizado.`
+                ? `\n\nEl auxiliar completo del ${fechaConciliacion} quedó actualizado.`
                 : `\n\nAdvertencia: las conciliaciones sí fueron guardadas, pero no se pudo actualizar el corte diario.\n${errorCorte}`;
 
             await window.SysUI.alert(
@@ -4631,8 +4630,48 @@ window.AuxiliarLogic = {
             const overlay = form ? form.closest('.fixed') : null;
             if (overlay) overlay.remove();
 
-            await window.SysUI.alert(`Ajuste registrado como <b>${data.id}</b>.\n\nYa está en la bandeja esperando su pareja de TSD.`, 'Ajuste creado', 'success');
-            this.fetchPendientes();
+            // Primero reconstruir el Auxiliar con el ajuste recién creado.
+            const auxiliarRecargado =
+                await this.fetchPendientes();
+
+            let corteGuardado = false;
+            let errorCorte = '';
+
+            if (auxiliarRecargado) {
+                try {
+                    await this.guardarCorteDiarioActualM4(
+                        payload.fecha,
+                        'M4'
+                    );
+
+                    corteGuardado = true;
+
+                } catch (error) {
+                    errorCorte = error.message;
+
+                    console.error(
+                        'No se pudo actualizar el corte después del ajuste manual:',
+                        error
+                    );
+                }
+            } else {
+                errorCorte =
+                    'No fue posible reconstruir el Auxiliar después de crear el ajuste.';
+            }
+
+            const mensajeCorte = corteGuardado
+                ? `\n\nEl auxiliar completo del ${payload.fecha} quedó actualizado.`
+                : `\n\nAdvertencia: el ajuste fue creado, pero no se pudo actualizar el corte diario.\n${errorCorte}`;
+
+            await window.SysUI.alert(
+                `Ajuste registrado como <b>${data.id}</b>.\n\nYa está en la bandeja esperando su pareja de TSD.${mensajeCorte}`,
+                corteGuardado
+                    ? 'Ajuste creado'
+                    : 'Ajuste creado con advertencia',
+                corteGuardado
+                    ? 'success'
+                    : 'warning'
+            );
         } catch (e) {
             restaurarBtn();
             mostrarError('Error de conexión: ' + e.message);

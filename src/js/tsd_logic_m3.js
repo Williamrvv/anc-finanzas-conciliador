@@ -2713,7 +2713,7 @@ window.TSDLogic = {
 
                 await window.AuxiliarLogic
                     .generarYGuardarCorteDiarioM4(
-                        fechaRegistro,
+                        fechaConciliacion,
                         'M3'
                     );
 
@@ -2770,7 +2770,7 @@ window.TSDLogic = {
                 : '';
 
             const corteMsg = corteAuxiliarGuardado
-                ? `\n\nEl auxiliar completo del ${fechaRegistro} quedó actualizado.`
+                ? `\n\nEl auxiliar completo del ${fechaConciliacion} quedó actualizado.`
                 : `\n\nAdvertencia: el Consolidado TSD sí quedó guardado, pero no fue posible actualizar el corte diario del Auxiliar.\n${errorCorteAuxiliar}`;
 
             await window.SysUI.alert(
