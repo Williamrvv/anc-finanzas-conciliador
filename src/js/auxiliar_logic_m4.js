@@ -1155,6 +1155,15 @@ window.AuxiliarLogic = {
                     TipoCruce: { tipo: g.TipoCruce, justificacion: g.Justificacion, evidencia: g.EvidenciaB64, valueOf: function(){return this.tipo;} },
                     Banco_Nombre: isMulti ? (bancoArr.length > 1 ? `Múltiples Bancos` : (b0.Banco || '-')) : (b0.Banco || 'Solo TSD'),
                     Banco_Auth: b0.Autorizacion || '-',
+                    // Afiliado: sólo del lado bancario. En el historial las filas
+                    // bancarias viven en _bancoArr (no en _bancoRaw).
+                    Banco_Afiliado: (() => {
+                        const vals = (bancoArr || [])
+                            .map(b => String(b && b.Afiliado_MerID ? b.Afiliado_MerID : '').trim())
+                            .filter(v => v !== '');
+                        const unicos = [...new Set(vals)];
+                        return unicos.length === 0 ? '-' : unicos.join(', ');
+                    })(),
                     Banco_Monto: sumB,
                     Diferencia: diffReal,
                     Folio: g.Folio,
@@ -1197,6 +1206,13 @@ window.AuxiliarLogic = {
                 }
             },
             { title: "Auth TSD", field: "Autorizacion", width: 90, cssClass: "font-mono", hozAlign: "center" },
+            { title: "Afiliado", field: "Banco_Afiliado", width: 110, cssClass: "font-mono text-[10px]", hozAlign: "center",
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val || val === '-') return `<span class="text-slate-300 dark:text-slate-600">-</span>`;
+                    return `<div class="truncate" title="${val}">${val}</div>`;
+                }
+            },
             // Los movimientos históricos TSD/Banco se muestran
             // mediante las columnas contables Débito y Crédito.
             { 
