@@ -23,6 +23,57 @@ window.TSDLogic = {
     _salidaLocalM3Bound: false,
 
     // --------------------------------------------------------
+    // Pide el ID de asiento y la fecha que gobierna TODO el cargador.
+    // Antes la Hoja "Asiento" se forzaba al día actual y la Hoja "Desglose"
+    // usaba el inicio del rango: dos fechas distintas en un mismo documento.
+    // Ahora una sola fecha manda en ambas hojas.
+    // Se presenta preseleccionada el último día del rango + 1, porque el
+    // proceso normalmente se ejecuta al día siguiente del corte.
+    // --------------------------------------------------------
+    pedirAsientoYFecha: async function(titulo, ejemplo, prefijo, endDate) {
+        // endDate llega como YYYY-MM-DD. Se construye en horario local para
+        // que no haya corrimiento de un día por zona horaria.
+        let sugerida = '';
+        if (endDate && endDate.split('-').length === 3) {
+            const [a, m, d] = endDate.split('-').map(Number);
+            const f = new Date(a, m - 1, d);
+            f.setDate(f.getDate() + 1);
+            sugerida = f.getFullYear() + '-' +
+                       String(f.getMonth() + 1).padStart(2, '0') + '-' +
+                       String(f.getDate()).padStart(2, '0');
+        }
+
+        const html = `
+        <div class="space-y-4 text-left whitespace-normal" id="caf-form">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wide">ID del Asiento Contable</label>
+                <input id="caf-asiento" type="text" value="${prefijo}" placeholder="${ejemplo}"
+                    class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 font-mono focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wide">Fecha del cargador</label>
+                <input id="caf-fecha" type="date" value="${sugerida}"
+                    class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                    Esta fecha se usa en la hoja <b>Asiento</b> y en la columna <b>Fuente</b> de la hoja <b>Desglose</b>.
+                </p>
+            </div>
+            <p id="caf-error" class="hidden text-xs font-bold text-red-600 dark:text-red-400"></p>
+        </div>`;
+
+        const ok = await window.SysUI.confirm(html, titulo, 'info');
+        if (!ok) return null;
+
+        const asiento = (document.getElementById('caf-asiento')?.value || '').trim();
+        const fecha = (document.getElementById('caf-fecha')?.value || '').trim();
+
+        if (!asiento) { await window.SysUI.alert('Debe indicar el ID del asiento contable.', 'Dato requerido', 'warning'); return null; }
+        if (!fecha)   { await window.SysUI.alert('Debe indicar la fecha del cargador.', 'Dato requerido', 'warning'); return null; }
+
+        return { asientoId: asiento, fecha: fecha };
+    },
+
+    // --------------------------------------------------------
     // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
     // --------------------------------------------------------
     exportSoftland: async function(tipo) {
@@ -37,9 +88,11 @@ window.TSDLogic = {
             return this.generateCargadorMaestroTarjetas();
         }
 
-        // 2. Pedir Asiento al Usuario (Asíncrono)
-        const asientoId = await window.SysUI.prompt("Ingrese el ID del Asiento Contable (Ej: CB12345):", "Cargador Softland", "CB");
-        if (!asientoId) return; // El usuario canceló
+        // 2. Pedir Asiento y Fecha al Usuario (Asíncrono)
+        const datosCarg = await this.pedirAsientoYFecha("Cargador Softland", "CB12345", "CB", end);
+        if (!datosCarg) return; // El usuario canceló
+        const asientoId = datosCarg.asientoId;
+        const fechaCargador = datosCarg.fecha;
 
         // Bloquear UI temporalmente
         document.body.classList.add('cursor-wait');
@@ -63,7 +116,7 @@ window.TSDLogic = {
             }
 
             // 4. Invocar Motor Creador de Excel
-            this.generateSoftlandExcel(tipo, asientoId, start, json.tc_promedio, json.data);
+            this.generateSoftlandExcel(tipo, asientoId, fechaCargador, json.tc_promedio, json.data);
             
             window.SysUI.alert("El archivo Excel ha sido generado y descargado con éxito.", "Cargador Creado", "success");
         } catch (error) {
@@ -82,13 +135,16 @@ window.TSDLogic = {
         if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
         const startDate = dateVal.includes(' a ') ? dateVal.split(' a ')[0] : dateVal;
 
-        const asientoId = await window.SysUI.prompt("Ingrese el ID del Asiento Contable (Ej: IN12345678):", "Cargador Maestro Tarjetas", "IN");
-        if (!asientoId) return;
+        const endDate = dateVal.includes(' a ') ? dateVal.split(' a ')[1] : dateVal;
+        const datosCarg = await this.pedirAsientoYFecha("Cargador Maestro Tarjetas", "IN12345678", "IN", endDate);
+        if (!datosCarg) return;
+        const asientoId = datosCarg.asientoId;
+        const fechaCargador = datosCarg.fecha;
 
         document.body.classList.add('cursor-wait');
 
         try {
-                        // 1. CÁLCULO DEL TIPO DE CAMBIO (Promedio de TSD)
+            // 1. CÁLCULO DEL TIPO DE CAMBIO (Promedio de TSD)
             // El promedio se redondea a 2 decimales ANTES de utilizarlo
             // para convertir los montos de colones a dólares.
             const validTCs = this.lastTSD.filter(t => t.TC > 0).map(t => parseFloat(t.TC));
@@ -493,14 +549,18 @@ window.TSDLogic = {
 
         const cfg = configs[tipo];
         
-        // Parseo Inteligente para "Fuente" (Hoja 2) -> Sigue usando la fecha del filtro original
-        const dPart = startDate.split('-');
+        // UNA SOLA FECHA gobierna todo el documento: la que indicó el usuario.
+        // Antes la Hoja 2 usaba el inicio del rango y la Hoja 1 se forzaba a hoy.
+        const dPart = String(startDate).split('-');
+
+        // Hoja 2 "Fuente" -> DDMMYYYY
         const fechaFuente = dPart.length === 3 ? `${dPart[2]}${dPart[1]}${dPart[0]}` : startDate;
 
-        // Generar Fecha Actual Pura (Hoja 1) -> Obligatorio para Softland (Formato DD/M/YYYY)
-        // Fecha NATIVA de Excel (medianoche local para evitar corrimiento por zona horaria)
-        const hoy = new Date();
-        const fechaAsiento = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        // Hoja 1 "Fecha" -> fecha NATIVA de Excel a medianoche local
+        // (evita el corrimiento de un día por zona horaria)
+        const fechaAsiento = dPart.length === 3
+            ? new Date(Number(dPart[0]), Number(dPart[1]) - 1, Number(dPart[2]))
+            : new Date();
 
         // Helper: número JS puro redondeado a 2 decimales (celda tipo Número real en Excel)
         const num2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
