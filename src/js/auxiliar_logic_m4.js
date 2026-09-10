@@ -2571,7 +2571,7 @@ window.AuxiliarLogic = {
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
                     const cleanVal = val || '-';
-                    
+
                     let textClass = 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-600';
                     if (row._colorEtiq) {
                         const tObj = window.AuxiliarLogic.customTags.find(t => t.IdEtiqueta.toString() === row._colorEtiq.toString());
