@@ -1898,6 +1898,53 @@ window.TSDLogic = {
     },
 
 
+    // Reparto contable Débito/Crédito, mismo criterio que el Auxiliar (M4):
+    //   TSD:   positivo = DÉBITO  | negativo = CRÉDITO
+    //   BANCO: negativo = DÉBITO  | positivo = CRÉDITO
+    // Se calcula movimiento por movimiento (no sobre el neto del grupo) y se
+    // guarda en valor absoluto. Los campos MontoTSD y Banco_Monto originales
+    // NO se tocan: los siguen usando Diferencia, el guardado y los cargadores.
+    _aplicarDebitoCreditoM3: function(row) {
+        const toArray = (valor) => {
+            if (valor === undefined || valor === null) return [];
+            return Array.isArray(valor) ? valor.filter(Boolean) : [valor];
+        };
+
+        const tsdArr = toArray(row._tsdRaw);
+        const bancoArr = toArray(row._bancoRaw);
+
+        let tsdDebito = 0, tsdCredito = 0, bancoDebito = 0, bancoCredito = 0;
+        const detalleDebito = [], detalleCredito = [];
+
+        tsdArr.forEach(t => {
+            const monto = Number(t.MontoCRC) || 0;
+            if (monto > 0) {
+                tsdDebito += Math.abs(monto);
+                if (t.Recibo_Detalle) detalleDebito.push(String(t.Recibo_Detalle));
+            } else if (monto < 0) {
+                tsdCredito += Math.abs(monto);
+                if (t.Recibo_Detalle) detalleCredito.push(String(t.Recibo_Detalle));
+            }
+        });
+
+        bancoArr.forEach(b => {
+            let valorBanco = b.Monto_Venta_Original;
+            if (valorBanco === undefined || valorBanco === null || valorBanco === '') {
+                valorBanco = b.MontoCRC;
+            }
+            const monto = Number(valorBanco) || 0;
+            if (monto < 0) bancoDebito += Math.abs(monto);
+            else if (monto > 0) bancoCredito += Math.abs(monto);
+        });
+
+        row.TSD_Debito = Number(tsdDebito.toFixed(2));
+        row.TSD_Credito = Number(tsdCredito.toFixed(2));
+        row.Banco_Debito = Number(bancoDebito.toFixed(2));
+        row.Banco_Credito = Number(bancoCredito.toFixed(2));
+        row.DetalleTSDDebito = detalleDebito.join(' | ');
+        row.DetalleTSDCredito = detalleCredito.join(' | ');
+    },
+
     renderGrid: function(data) {
         // Regla de Negocio: Las "Sugerencias" se consideran Excepciones hasta que un humano las valide manualmente
         const matchedData = data.filter(r => 
@@ -1911,6 +1958,11 @@ window.TSDLogic = {
             r.EstadoMatch === 'Sobrante' || 
             r.EstadoMatch === 'Sugerencia (Monto)'
         );
+
+        // Transformación exclusivamente visual para presentación contable.
+        // Los miembros originales del match permanecen intactos.
+        matchedData.forEach(r => this._aplicarDebitoCreditoM3(r));
+        pendingData.forEach(r => this._aplicarDebitoCreditoM3(r));
 
         // Guardamos las matrices en la RAM global para el empaquetador del botón "Guardar"
         this.currentMatchedData = matchedData;
@@ -1932,6 +1984,22 @@ window.TSDLogic = {
                 else if (field === 'Banco_Nombre') val = t.Banco || '-';
                 else if (field === 'Banco_Auth') val = t.Numero_Autorizacion || '-';
                 else if (field === 'Banco_Monto') val = `<div class="w-full text-right">${fmtMoney(parseFloat(t.Monto_Venta_Original) || 0)}</div>`;
+                else if (field === 'TSD_Debito' || field === 'TSD_Credito') {
+                    const m = Number(t.MontoCRC) || 0;
+                    const va = (field === 'TSD_Debito') ? (m > 0) : (m < 0);
+                    val = va
+                        ? `<div class="flex flex-col items-end w-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(Math.abs(m))}</span>${t.Recibo_Detalle ? `<div class="text-[9px] text-orange-600 truncate mt-0.5 w-full text-right" title="${t.Recibo_Detalle}">${t.Recibo_Detalle}</div>` : ''}</div>`
+                        : `<div class="w-full text-right text-slate-300 dark:text-slate-600">-</div>`;
+                }
+                else if (field === 'Banco_Debito' || field === 'Banco_Credito') {
+                    let vb = t.Monto_Venta_Original;
+                    if (vb === undefined || vb === null || vb === '') vb = t.MontoCRC;
+                    const m = Number(vb) || 0;
+                    const va = (field === 'Banco_Debito') ? (m < 0) : (m > 0);
+                    val = va
+                        ? `<div class="w-full text-right">${fmtMoney(Math.abs(m))}</div>`
+                        : `<div class="w-full text-right text-slate-300 dark:text-slate-600">-</div>`;
+                }
                 
                 return `<div class="flex-1 flex flex-col justify-center border-b border-slate-200/50 dark:border-slate-700/50 last:border-0 py-1.5 min-h-[36px]">${val}</div>`;
             }).join('') + '</div>';
@@ -1973,22 +2041,29 @@ window.TSDLogic = {
                 }
             },
             { 
-                title: "Monto TSD / Detalle", field: "MontoTSD", headerFilter: true, width: 150, hozAlign: "right", bottomCalc: "sum", 
+                title: "TSD Débito", field: "TSD_Debito", width: 150, hozAlign: "right", bottomCalc: "sum", 
                 bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
                 formatter: (cell) => {
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
-                    if (row._isMulti) return renderMulti(row, true, 'MontoTSD');
-                    
+                    if (row._isMulti) return renderMulti(row, true, 'TSD_Debito');
                     const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    const valor = typeof val === 'object' && val !== null && 'valor' in val ? val.valor : val;
-                    const recibo = typeof val === 'object' && val !== null && 'recibo' in val ? val.recibo : '';
-                    
-                    const recHtml = recibo ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${recibo}">${recibo}</div>` : '';
-                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(valor)}</span>${recHtml}</div>`;
-                },
-                headerFilterFunc: (term, val) => {
-                    const strVal = typeof val === 'object' && val !== null ? `${val.valor} ${val.recibo}` : String(val);
-                    return String(strVal).toLowerCase().includes(String(term).toLowerCase());
+                    if (!val) return `<div class="w-full text-right text-slate-300 dark:text-slate-600">-</div>`;
+                    const det = row.DetalleTSDDebito;
+                    const recHtml = det ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${det}">${det}</div>` : '';
+                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(val)}</span>${recHtml}</div>`;
+                }
+            },
+            { 
+                title: "TSD Crédito", field: "TSD_Credito", width: 150, hozAlign: "right", bottomCalc: "sum", 
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`,
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, true, 'TSD_Credito');
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val) return `<div class="w-full text-right text-slate-300 dark:text-slate-600">-</div>`;
+                    const det = row.DetalleTSDCredito;
+                    const recHtml = det ? `<div class="text-[9px] text-orange-600 dark:text-orange-400 italic truncate font-medium mt-0.5" title="${det}">${det}</div>` : '';
+                    return `<div class="flex flex-col justify-center items-end h-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(val)}</span>${recHtml}</div>`;
                 }
             },
             
@@ -2033,12 +2108,25 @@ window.TSDLogic = {
                 }
             },
             { 
-                title: "Monto", field: "Banco_Monto", hozAlign: "right", bottomCalc: "sum", 
+                title: "Banco Débito", field: "Banco_Debito", hozAlign: "right", bottomCalc: "sum", width: 145,
                 bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`, cssClass: "font-bold",
                 formatter: (cell) => {
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
-                    if (row._isMulti) return renderMulti(row, false, 'Banco_Monto');
-                    return fmtMoney(typeof cell === 'object' && cell.getValue ? cell.getValue() : cell);
+                    if (row._isMulti) return renderMulti(row, false, 'Banco_Debito');
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val) return `<div class="w-full text-right text-slate-300 dark:text-slate-600">-</div>`;
+                    return fmtMoney(val);
+                }
+            },
+            { 
+                title: "Banco Crédito", field: "Banco_Credito", hozAlign: "right", bottomCalc: "sum", width: 145,
+                bottomCalcFormatter: (val) => `<span class="font-black text-[13px] text-slate-800 dark:text-white">${fmtMoney(val)}</span>`, cssClass: "font-bold",
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, false, 'Banco_Credito');
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val) return `<div class="w-full text-right text-slate-300 dark:text-slate-600">-</div>`;
+                    return fmtMoney(val);
                 }
             },
             { 
