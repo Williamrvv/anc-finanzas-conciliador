@@ -61,14 +61,33 @@ window.TSDLogic = {
             <p id="caf-error" class="hidden text-xs font-bold text-red-600 dark:text-red-400"></p>
         </div>`;
 
+        // SysUI._createModal hace overlay.remove() ANTES de resolver la promesa,
+        // así que leer el DOM después del await devuelve null. Los valores se
+        // capturan en vivo con listeners mientras el modal existe.
+        let asiento = prefijo;
+        let fecha = sugerida;
+
+        setTimeout(() => {
+            const iA = document.getElementById('caf-asiento');
+            const iF = document.getElementById('caf-fecha');
+            if (iA) { iA.addEventListener('input', () => { asiento = iA.value; }); iA.focus(); iA.select(); }
+            if (iF) { iF.addEventListener('input', () => { fecha = iF.value; }); }
+        }, 120);
+
         const ok = await window.SysUI.confirm(html, titulo, 'info');
         if (!ok) return null;
 
-        const asiento = (document.getElementById('caf-asiento')?.value || '').trim();
-        const fecha = (document.getElementById('caf-fecha')?.value || '').trim();
+        asiento = String(asiento || '').trim();
+        fecha = String(fecha || '').trim();
 
-        if (!asiento) { await window.SysUI.alert('Debe indicar el ID del asiento contable.', 'Dato requerido', 'warning'); return null; }
-        if (!fecha)   { await window.SysUI.alert('Debe indicar la fecha del cargador.', 'Dato requerido', 'warning'); return null; }
+        if (!asiento || asiento === prefijo) {
+            await window.SysUI.alert('Debe indicar el ID del asiento contable.', 'Dato requerido', 'warning');
+            return null;
+        }
+        if (!fecha) {
+            await window.SysUI.alert('Debe indicar la fecha del cargador.', 'Dato requerido', 'warning');
+            return null;
+        }
 
         return { asientoId: asiento, fecha: fecha };
     },
@@ -133,8 +152,6 @@ window.TSDLogic = {
 
         const dateVal = document.getElementById('tsd-date-picker').value;
         if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas.");
-        const startDate = dateVal.includes(' a ') ? dateVal.split(' a ')[0] : dateVal;
-
         const endDate = dateVal.includes(' a ') ? dateVal.split(' a ')[1] : dateVal;
         const datosCarg = await this.pedirAsientoYFecha("Cargador Maestro Tarjetas", "IN12345678", "IN", endDate);
         if (!datosCarg) return;
@@ -200,8 +217,10 @@ window.TSDLogic = {
             // 3. CONSTRUCTOR DE FILAS SOFTLAND
             // Número JS puro a 2 decimales (celda tipo Número real en Excel)
             const num2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
-            const dParts = startDate.split('-'); 
-            // Fecha NATIVA de Excel desde el filtro (medianoche local, sin corrimiento de zona)
+            // UNA SOLA FECHA gobierna todo el documento: la que indicó el usuario
+            // en el modal. Antes ambas salían de startDate (inicio del rango).
+            const dParts = String(fechaCargador).split('-');
+            // Fecha NATIVA de Excel a medianoche local (evita corrimiento por zona horaria)
             const fechaAsiento = new Date(parseInt(dParts[0]), parseInt(dParts[1]) - 1, parseInt(dParts[2]));
             const fuenteVal = `T${dParts[2]}${dParts[1]}${dParts[0]}`;
 
