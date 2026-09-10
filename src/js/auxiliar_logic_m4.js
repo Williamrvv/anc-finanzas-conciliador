@@ -2396,7 +2396,7 @@ window.AuxiliarLogic = {
                     _categoriaId: catId, _dbId: tsdRow.ID_Transaccion, _colorEtiq: tsdRow.ColorEtiqueta, _notaEtiq: tsdRow.NotaUsuario,
                     Contrato: tsdRow.Contrato, Cliente: tsdRow.Cliente, TarjetaTSD: getCard(tsdRow.Tarjeta_Ultimos4) ? `****${getCard(tsdRow.Tarjeta_Ultimos4)}` : 'S/D',
                     Autorizacion: tsdRow.Autorizacion, MontoTSD: { valor: montoTSD, recibo: tsdRow.Recibo_Detalle || '', valueOf: function(){return this.valor;}, toString: function(){return this.valor.toString();} },
-                    EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
+                    EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Afiliado: '-', Banco_Monto: 0, Diferencia: montoTSD
                 });
             }
         });
@@ -2423,7 +2423,10 @@ window.AuxiliarLogic = {
                     _categoriaId: catId, _dbId: b.IdTransaccion, _colorEtiq: b.ColorEtiqueta, _notaEtiq: b.NotaUsuario,
                     _rowClass: bgClass, Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
                     TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D', Autorizacion: '-', MontoTSD: { valor: 0, recibo: '', valueOf: function(){return this.valor;} },
-                    EstadoMatch: 'Pendiente', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
+                    EstadoMatch: 'Pendiente', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion,
+                    // Los huérfanos NO pasan por processMatch: el afiliado se asigna aquí.
+                    Banco_Afiliado: String(b.Afiliado_MerID || '').trim() || '-',
+                    Banco_Monto: m, Diferencia: 0 - m
                 });
             }
         });
