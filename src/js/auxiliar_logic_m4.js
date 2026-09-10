@@ -1243,14 +1243,7 @@ window.AuxiliarLogic = {
                 }
             },
             { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
-            { title: "Afiliado", field: "Banco_Afiliado", width: 110, headerFilter: true, cssClass: "font-mono text-[10px]", hozAlign: "center",
-                formatter: (cell) => {
-                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
-                    if (!val || val === '-') return `<span class="text-slate-300 dark:text-slate-600">-</span>`;
-                    return `<div class="truncate" title="${val}">${val}</div>`;
-                }
-            },
-            { title: "Auth Banco", field: "Banco_Auth", width: 100, cssClass: "font-mono", hozAlign: "center", },
+            { title: "Auth Banco", field: "Banco_Auth", width: 100, cssClass: "font-mono", hozAlign: "center" },
             {
                 title: "Débito",
                 field: "Debito",
@@ -2536,6 +2529,7 @@ window.AuxiliarLogic = {
                 else if (field === 'MontoTSD') val = `<div class="flex flex-col items-end w-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(parseFloat(t.MontoCRC) || 0)}</span>${t.Recibo_Detalle ? `<div class="text-[9px] text-orange-600 truncate mt-0.5 w-full text-right" title="${t.Recibo_Detalle}">${t.Recibo_Detalle}</div>` : ''}</div>`;
                 else if (field === 'Banco_Nombre') val = t.Banco || '-';
                 else if (field === 'Banco_Auth') val = t.Numero_Autorizacion || '-';
+                else if (field === 'Banco_Afiliado') val = t.Afiliado_MerID || '-';
                 else if (field === 'Banco_Monto') val = `<div class="w-full text-right">${fmtMoney(parseFloat(t.Monto_Venta_Original) || 0)}</div>`;
                 
                 return `<div class="flex-1 flex flex-col justify-center border-b border-slate-200/50 dark:border-slate-700/50 last:border-0 py-1.5 min-h-[36px]">${val}</div>`;
@@ -2688,6 +2682,16 @@ window.AuxiliarLogic = {
                     const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
                     if (row._isMulti) return renderMulti(row, false, 'Banco_Nombre');
                     return typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                }
+            },
+            { 
+                title: "Afiliado", field: "Banco_Afiliado", width: 110, headerFilter: true, cssClass: "font-mono text-[10px]", hozAlign: "center",
+                formatter: (cell) => {
+                    const row = typeof cell === 'object' && cell.getData ? cell.getData() : cell;
+                    if (row._isMulti) return renderMulti(row, false, 'Banco_Afiliado');
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val || val === '-') return `<span class="text-slate-300 dark:text-slate-600">-</span>`;
+                    return `<div class="truncate" title="${val}">${val}</div>`;
                 }
             },
             { 
