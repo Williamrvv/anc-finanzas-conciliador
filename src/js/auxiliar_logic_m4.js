@@ -1227,7 +1227,14 @@ window.AuxiliarLogic = {
                 }
             },
             { title: "Banco", field: "Banco_Nombre", width: 100, hozAlign: "center", cssClass: "text-blue-600 font-bold" },
-            { title: "Auth Banco", field: "Banco_Auth", width: 90, cssClass: "font-mono", hozAlign: "center" },
+            { title: "Afiliado", field: "Banco_Afiliado", width: 110, headerFilter: true, cssClass: "font-mono text-[10px]", hozAlign: "center",
+                formatter: (cell) => {
+                    const val = typeof cell === 'object' && cell.getValue ? cell.getValue() : cell;
+                    if (!val || val === '-') return `<span class="text-slate-300 dark:text-slate-600">-</span>`;
+                    return `<div class="truncate" title="${val}">${val}</div>`;
+                }
+            },
+            { title: "Auth Banco", field: "Banco_Auth", width: 100, cssClass: "font-mono", hozAlign: "center", },
             {
                 title: "Débito",
                 field: "Debito",
@@ -2128,6 +2135,15 @@ window.AuxiliarLogic = {
                 Contrato: contratoRep, Cliente: clienteRep, TarjetaTSD: tarjetaRep, Autorizacion: authTSDRep,
                 MontoTSD: { valor: montoTSD, recibo: isMulti ? '' : (t0.Recibo_Detalle || ''), valueOf: function() { return this.valor; }, toString: function() { return this.valor.toString(); } }, 
                 EstadoMatch: finalMatchType, Banco_Nombre: bancoRep, Banco_Auth: authBancoRep, Banco_Monto: montoBanco, 
+                // Afiliado: dato exclusivo del lado bancario (BAC = NUMERO_AFILIADO, Davibank = MerID).
+                // Si el grupo trae varios bancos se listan los distintos, sin repetir.
+                Banco_Afiliado: (() => {
+                    const vals = bancoArr
+                        .map(b => String(b && b.Afiliado_MerID ? b.Afiliado_MerID : '').trim())
+                        .filter(v => v !== '');
+                    const unicos = [...new Set(vals)];
+                    return unicos.length === 0 ? '-' : unicos.join(', ');
+                })(),
                 Diferencia: diffReal
             });
         };
