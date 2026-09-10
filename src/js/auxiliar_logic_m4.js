@@ -2503,7 +2503,6 @@ window.AuxiliarLogic = {
                 else if (field === 'Autorizacion') val = t.Autorizacion || '-';
                 else if (field === 'MontoTSD') val = `<div class="flex flex-col items-end w-full"><span class="font-bold text-slate-800 dark:text-slate-200">${fmtMoney(parseFloat(t.MontoCRC) || 0)}</span>${t.Recibo_Detalle ? `<div class="text-[9px] text-orange-600 truncate mt-0.5 w-full text-right" title="${t.Recibo_Detalle}">${t.Recibo_Detalle}</div>` : ''}</div>`;
                 else if (field === 'Banco_Nombre') val = t.Banco || '-';
-                else if (field === 'Banco_Afiliado') val = t.Afiliado_MerID || '-';
                 else if (field === 'Banco_Auth') val = t.Numero_Autorizacion || '-';
                 else if (field === 'Banco_Monto') val = `<div class="w-full text-right">${fmtMoney(parseFloat(t.Monto_Venta_Original) || 0)}</div>`;
                 
