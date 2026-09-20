@@ -147,7 +147,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     <?php echo $ctx === 'm4' ? 'TSD (Base Datos)' : 'Sist. TSD'; ?> <svg id="spin-tsd" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </button>
                 <button onclick="switchTab('dbr')" id="tab-dbr" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
-                    DBR Tarjetas <svg id="spin-dbr" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    Interfase (Tarjetas) <svg id="spin-dbr" class="animate-spin h-3 w-3 hidden" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
                 </button>
 
                 <button onclick="switchTab('softland')" id="tab-softland" class="px-5 py-1.5 text-sm font-bold rounded-md text-slate-500 hover:text-slate-800 dark:hover:text-white transition-all flex items-center gap-2">
@@ -199,7 +199,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 
                     <div class="shrink-0 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-purple-200 dark:border-purple-900 flex items-center justify-between">
                         <div>
-                            <h3 class="text-sm font-black text-purple-700 dark:text-purple-300">Interfase DBR · Tarjetas</h3>
+                            <h3 class="text-sm font-black text-purple-700 dark:text-purple-300">Interfase · (Tarjetas)</h3>
                             <p class="text-[10px] text-slate-500 dark:text-slate-400">
                                 Solo se muestran registros que contienen tarjeta.
                             </p>
@@ -795,7 +795,9 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const spinner = document.getElementById('spin-dbr');
             const resumen = document.getElementById('dbr-resumen');
 
-            const endpoint = 'https://intanc.com/CRM/API/V1/NOTIFICADBR/interfase.php';
+            // Se consulta vía proxy PHP propio: el certificado de intanc.com no
+            // lo valida Chrome y el navegador no permite ignorarlo por código.
+            const endpoint = 'api/get_interfase_tarjetas.php';
 
             const resultados = [];
             const errores = [];
