@@ -1040,6 +1040,9 @@ window.CierreCajasLogic = {
             total_escaneadas: selected.length,
             total_transacciones: this.transacciones.length,
             transacciones: this.transacciones.map(t => ({
+                // ID único de TSD: es la llave real de la transacción.
+                // El borrador ya lo usaba; el cierre lo descartaba.
+                id_tsd: t.ID_Transaccion,
                 contrato: t.Numero_Contrato,
                 nombre: `${t.Nombre} ${t.Apellido}`.trim(),
                 tarjeta: t.Tipo_Tarjeta,
@@ -1074,6 +1077,71 @@ window.CierreCajasLogic = {
         // Frena el temporizador de inmediato para evitar Race Conditions (Borradores Zombie)
         this.detenerAutoGuardado();
 
+        // --- MODAL DE CARGA (mismo patrón que el Consolidado TSD, en índigo) ---
+        const loaderId = 'global-save-loader';
+        let loader = document.getElementById(loaderId);
+        if (!loader) {
+            loader = document.createElement('div');
+            loader.id = loaderId;
+            loader.className = 'fixed inset-0 z-[999999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white transition-opacity duration-300 opacity-0 select-none hidden';
+            loader.innerHTML = `
+                <div class="bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 transform scale-95 transition-transform duration-300" id="loader-card">
+                    <div class="relative w-16 h-16 mb-6">
+                        <svg id="loader-spinner" class="animate-spin text-indigo-500 w-full h-full" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-black mb-2 text-center">Registrando Cierre de Caja</h3>
+                    <p id="loader-text" class="text-slate-400 text-xs text-center mb-6 h-8">Preparando paquete de datos...</p>
+                    <div class="w-full bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                        <div id="loader-bar" class="h-2.5 rounded-full transition-all duration-300 ease-out bg-indigo-500" style="width:0%"></div>
+                    </div>
+                    <span id="loader-pct" class="text-xs font-mono text-slate-400 mt-2">0%</span>
+                </div>`;
+            document.body.appendChild(loader);
+        }
+
+        const elBar = document.getElementById('loader-bar');
+        const elPct = document.getElementById('loader-pct');
+        const elTxt = document.getElementById('loader-text');
+        const spinner = document.getElementById('loader-spinner');
+
+        elBar.className = "h-2.5 rounded-full transition-all duration-300 ease-out bg-indigo-500";
+        elBar.style.width = '0%';
+        elPct.innerText = '0%';
+        elTxt.innerText = "Preparando paquete de datos...";
+        elTxt.className = "text-slate-400 text-xs text-center mb-6 h-8";
+        spinner.className = "animate-spin text-indigo-500 w-full h-full";
+
+        requestAnimationFrame(() => {
+            loader.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                loader.classList.remove('opacity-0');
+                document.getElementById('loader-card').classList.remove('scale-95');
+            });
+        });
+
+        let pct = 0;
+        const progressInterval = setInterval(() => {
+            if (pct < 95) {
+                pct += Math.floor(Math.random() * 10) + 2;
+                if (pct > 95) pct = 95;
+                elBar.style.width = pct + '%';
+                elPct.innerText = pct + '%';
+                if (pct > 15) elTxt.innerText = "Validando ICDs en TSD...";
+                if (pct > 35) elTxt.innerText = "Guardando transacciones...";
+                if (pct > 60) elTxt.innerText = "Generando tickets pendientes...";
+                if (pct > 80) elTxt.innerText = "Verificando integridad de la información...";
+            }
+        }, 300);
+
+        const cerrarLoader = () => {
+            clearInterval(progressInterval);
+            loader.classList.add('opacity-0');
+            setTimeout(() => loader.classList.add('hidden'), 300);
+        };
+
         try {
             const res = await fetch('api/save_cierre_caja.php', {
                 method: 'POST',
@@ -1083,6 +1151,19 @@ window.CierreCajasLogic = {
             const data = await res.json();
 
             if (data.success) {
+                // El servidor ya verificó la integridad antes del COMMIT
+                clearInterval(progressInterval);
+                elBar.style.width = '100%';
+                elPct.innerText = '100%';
+                elBar.classList.replace('bg-indigo-500', 'bg-green-500');
+                spinner.classList.replace('text-indigo-500', 'text-green-500');
+                spinner.classList.remove('animate-spin');
+                elTxt.innerText = "Verificación completa. Cierre registrado.";
+                elTxt.classList.replace('text-slate-400', 'text-green-400');
+
+                await new Promise(r => setTimeout(r, 800));
+                cerrarLoader();
+
                 // 🚨 LIMPIEZA DE BORRADOR 🚨 (El cierre oficial mata el borrador temporal)
                 this.limpiarBorrador();
 
