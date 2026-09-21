@@ -6,6 +6,8 @@ error_reporting(E_ALL);
 date_default_timezone_set('America/Costa_Rica');
 
 session_start();
+require_once __DIR__ . '/bitacora_lib.php';
+Bitacora::observar('CIERRE_CAJA', 'FACTURACION_CARGAR', ['globales' => ['esGlobal']]);
 header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['user'])) {

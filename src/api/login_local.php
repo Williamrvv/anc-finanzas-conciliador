@@ -1,5 +1,7 @@
 <?php
 session_start();
+require_once __DIR__ . '/bitacora_lib.php';
+Bitacora::observar('LOGIN', 'LOGIN_LOCAL', ['emailIntento' => $_POST['email'] ?? null, 'globales' => ['requiereCambio']]);
 require_once __DIR__ . '/../db.php';
 
 header('Content-Type: application/json');

@@ -438,6 +438,8 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script src="js/cierre_cajas_logic.js?v=<?php echo time(); ?>"></script>
     <!-- JS SPA -->
     <script src="js/app.js"></script>
+    <!-- Bitácora (Login y Cierre de Caja) -->
+    <script src="js/bitacora.js?v=<?php echo time(); ?>"></script>
     <!-- Chart.js para Dashboards Animados -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>

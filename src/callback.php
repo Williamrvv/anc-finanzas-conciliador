@@ -1,5 +1,7 @@
 <?php
 session_start();
+require_once __DIR__ . '/api/bitacora_lib.php';
+Bitacora::observar('LOGIN', 'LOGIN_SSO', ['emailGlobal' => 'email', 'globales' => ['email', 'jobTitle', 'finalRole'], 'exitoSiHaySesion' => true]);
 require_once __DIR__ . '/db.php'; // Agregamos la BD
 
 if (!isset($_GET['code'])) {
