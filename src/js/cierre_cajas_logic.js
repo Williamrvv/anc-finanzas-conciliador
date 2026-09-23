@@ -180,6 +180,42 @@ window.CierreCajasLogic = {
             .replace(/'/g, '&#39;');
     },
 
+    // =====================================================================
+    // AVISOS DE CAMBIO DE PROCEDIMIENTO (una vez por usuario, en BD)
+    // =====================================================================
+    AVISO_ICD: 'ICD_OBLIGATORIO_2026_09',
+
+    textoAvisoIcd: function() {
+        return `<div class="text-left space-y-3">
+            <p class="font-bold text-base text-slate-800 dark:text-slate-100">Cambio en el procedimiento de Cierre de Caja</p>
+            <p>A partir de ahora el sistema <b>exige que exista un ICD creado en TSD</b>.</p>
+            <div class="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-3 space-y-2">
+                <p><b>Para cargar la facturación:</b> todos los contratos pendientes deben tener ICD. Si aunque sea uno no lo tiene, no se carga nada y el sistema le indicará cuáles son.</p>
+                <p><b>Para guardar el cierre:</b> todos los ICD deben estar <b>cerrados</b> en TSD. Un ICD abierto impide guardar, porque afecta el registro contable.</p>
+            </div>
+            <p>Si le aparece un bloqueo: vaya a TSD, cree o cierre el ICD, y vuelva a cargar la facturación.</p>
+        </div>`;
+    },
+
+    mostrarAvisoIcd: async function(forzar = false) {
+        try {
+            if (!forzar) {
+                const res = await fetch(`api/avisos_cc.php?accion=check&clave=${this.AVISO_ICD}`);
+                const data = await res.json();
+                if (!data.success || data.leido) return;
+            }
+
+            const ok = await SysUI.confirmCierre(this.textoAvisoIcd(), "Nuevo procedimiento: ICD obligatorio");
+            if (!ok || forzar) return;
+
+            await fetch(`api/avisos_cc.php?accion=confirmar&clave=${this.AVISO_ICD}`);
+
+        } catch (e) {
+            // Nunca bloquear el módulo por culpa del aviso
+            console.error('Aviso ICD:', e);
+        }
+    },
+
     // Lista legible de pagos sin ICD (máximo 25) para los avisos de carga
     listaPagosSinIcd: function(pagos) {
         const filas = pagos.slice(0, 25).map(p =>
@@ -612,6 +648,26 @@ window.CierreCajasLogic = {
         localStorage.removeItem(this.getDraftKey());
     },
 
+    // Respaldo de cortesía cuando el guardado del cierre falla.
+    // No muestra alertas ni burbuja: el usuario ya está viendo el error.
+    guardarBorradorSilencioso: function() {
+        try {
+            if (!this.transacciones || this.transacciones.length === 0) return false;
+            const escaneados = this.transacciones.filter(t => t._selected).map(t => t.ID_Transaccion);
+            if (escaneados.length === 0) return false;
+
+            localStorage.setItem(this.getDraftKey(), JSON.stringify({
+                fecha: new Date().toLocaleString(),
+                version: 2,
+                ids_listos: escaneados
+            }));
+            return true;
+        } catch (e) {
+            console.error('No se pudo guardar el borrador de respaldo:', e);
+            return false;
+        }
+    },
+
     aplicarAutoMatchBorrador: async function() {
         const draftStr = localStorage.getItem(this.getDraftKey());
         if (!draftStr) return false;
@@ -744,15 +800,6 @@ window.CierreCajasLogic = {
             if (data.icds_abiertos && data.icds_abiertos.length > 0) {
                 const msg = `⚠️ Hay ICDs sin cerrar en TSD:\n\n${data.icds_abiertos.join(', ')}\n\nPuede continuar conciliando el dinero, pero el sistema NO LE PERMITIRÁ GUARDAR EL CIERRE hasta que vaya a TSD y cierre estos ICDs oficialmente.`;
                 await SysUI.alert(msg, "Alerta de Cierre TSD", "warning");
-            }
-
-            // Pagos que todavía no tienen ICD: pertenecen al próximo ICD de TSD
-            if (Array.isArray(data.pagos_sin_icd) && data.pagos_sin_icd.length > 0) {
-                await SysUI.alert(
-                    `${data.pagos_sin_icd.length} pago(s) todavía no tienen ICD en TSD y NO se incluyeron en este cierre.\n` +
-                    `Aparecerán en el próximo, cuando se cree su ICD:\n\n${this.listaPagosSinIcd(data.pagos_sin_icd)}`,
-                    "Pagos pendientes de ICD", "info"
-                );
             }
 
             // Adaptamos _selected o matched dependiendo de cómo lo use tu renderTransacciones
@@ -1202,11 +1249,28 @@ window.CierreCajasLogic = {
                 // Recargar bandeja local al terminar un cierre para que aparezcan los nuevos errores
                 this.loadBandejaPendientes();
             } else {
-                throw new Error(data.error);
+                throw new Error(data.error || 'El servidor rechazó el cierre sin indicar el motivo.');
             }
         } catch (e) {
             console.error(e);
-            SysUI.alert("Ocurrió un error: " + e.message, "Error Crítico", "error");
+
+            // Se detiene la barra ANTES de mostrar el mensaje: antes sólo se
+            // cerraba en la rama de éxito y el loader quedaba clavado en 95%.
+            cerrarLoader();
+
+            // Respaldo de cortesía: el cierre NO se guardó, así que el avance
+            // del escaneo se conserva para que no haya que repetirlo.
+            const respaldo = this.guardarBorradorSilencioso();
+
+            const detalle = e && e.message ? e.message : 'Error desconocido.';
+            const nota = respaldo
+                ? '\n\nSu avance quedó guardado como borrador. Corrija lo indicado y vuelva a intentarlo.'
+                : '';
+
+            await SysUI.alert(detalle + nota, "No se guardó el cierre", "error");
+
+            // La pantalla queda tal cual estaba, lista para reintentar
+            this.iniciarAutoGuardado();
         } finally {
             btn.disabled = false;
             btn.innerHTML = originalText;

@@ -226,43 +226,22 @@ try {
         }
     }
 
-    $huecos = [];
-    $pagosSinIcd = [];
+    $conIcd = [];
+    $sinIcd = [];
+    $ultimoConIcdPorSuc = [];
 
-    foreach ($sinIcd as $t) {
+    foreach ($transacciones as $t) {
+        $t['ICD'] = $normIcd($t['ICD'] ?? '');
         $suc = trim((string)($t['Sucursal'] ?? ''));
-        // Un pago sin ICD más viejo que uno con ICD en la misma sucursal
-        // contradice la regla de TSD: se bloquea para revisión.
-        if (isset($ultimoConIcdPorSuc[$suc]) && (string)($t['Pay_Date'] ?? '') <= $ultimoConIcdPorSuc[$suc]) {
-            $huecos[] = $filaAviso($t);
-        } else {
-            $pagosSinIcd[] = $filaAviso($t);
+
+        if ($t['ICD'] === '') { $sinIcd[] = $t; continue; }
+
+        $conIcd[] = $t;
+        $pd = (string)($t['Pay_Date'] ?? '');
+        if (!isset($ultimoConIcdPorSuc[$suc]) || $pd > $ultimoConIcdPorSuc[$suc]) {
+            $ultimoConIcdPorSuc[$suc] = $pd;
         }
     }
-
-    if (count($huecos) > 0) {
-        echo json_encode([
-            'success'       => false,
-            'bloqueoIcd'    => 'HUECO',
-            'pagos_sin_icd' => $huecos,
-            'error'         => "Hay pagos SIN ICD más antiguos que otros que sí tienen ICD en la misma sucursal.\n\n"
-                             . "Según las reglas de TSD esto no debería ocurrir. Revise estos pagos en TSD antes de continuar:"
-        ]);
-        exit;
-    }
-
-    if (count($conIcd) === 0 && count($pagosSinIcd) > 0) {
-        echo json_encode([
-            'success'       => false,
-            'bloqueoIcd'    => 'SIN_ICD',
-            'pagos_sin_icd' => $pagosSinIcd,
-            'error'         => "Ningún pago pendiente tiene un ICD creado en TSD.\n\n"
-                             . "Cree el ICD en TSD y vuelva a cargar la facturación. Pagos pendientes:"
-        ]);
-        exit;
-    }
-
-    $transacciones = $conIcd;
 
     // 5B. Analizar los ICDs involucrados para validar si están cerrados (POST_FLAG)
     $icdsInvolucrados = array_unique(array_filter(array_column($transacciones, 'ICD')));
@@ -302,7 +281,6 @@ try {
         'metadatos' => $infoMetadatos,
         'icds_info' => implode(', ', $icdsInfo), 
         'icds_abiertos' => $icdsAbiertos,
-        'pagos_sin_icd' => $pagosSinIcd,
         'transacciones' => array_values($transacciones)
     ]);
 
