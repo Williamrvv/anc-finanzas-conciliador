@@ -194,6 +194,9 @@ window.CierreCajasLogic = {
                 <p><b>Para guardar el cierre:</b> todos los ICD deben estar <b>cerrados</b> en TSD. Un ICD abierto impide guardar, porque afecta el registro contable.</p>
             </div>
             <p>Si le aparece un bloqueo: vaya a TSD, cree o cierre el ICD, y vuelva a cargar la facturación.</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-2">
+                Mientras concilia no recargue la facturación: el sistema trabaja con la foto que tomó al cargar. Si su sesión expira y debe volver a cargar, los cobros nuevos aparecerán y necesitarán su propio ICD.
+            </p>
         </div>`;
     },
 
@@ -247,6 +250,12 @@ window.CierreCajasLogic = {
         if (document.getElementById('tab-workspace')) {
             this.switchTab('workspace');
             this.loadBandejaPendientes();
+
+            // Aviso único por usuario sobre el nuevo procedimiento de ICD.
+            // Sin await: el módulo termina de cargar mientras el aviso se resuelve.
+            // Sólo aquí, no para usuarios exclusivos de Servicio al Cliente,
+            // que no cargan facturación ni crean ICDs.
+            this.mostrarAvisoIcd();
         } else if (document.getElementById('tab-sc_workspace')) {
             // Si no existe lo anterior, pero sí el de SC (Usuario SC exclusivo)
             this.switchTab('sc_workspace');
