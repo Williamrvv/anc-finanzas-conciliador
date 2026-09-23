@@ -16,7 +16,7 @@ require_once '../db.php';
 // Cargar la conexión TSD solo si existe para evitar fatal errors
 if (file_exists('tsd_db.php')) {
     require_once 'tsd_db.php'; 
-}
+} 
 
 $inputJSON = file_get_contents('php://input');
 $data = json_decode($inputJSON, true);
