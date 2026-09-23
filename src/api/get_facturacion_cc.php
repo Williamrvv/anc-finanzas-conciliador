@@ -188,7 +188,83 @@ try {
         }
     }
 
-    // 5. Analizar los ICDs involucrados para validar si están cerrados (POST_FLAG)
+    // ==============================================================
+    // 5A. REGLA DE ICD
+    // En TSD cada ICD nuevo abarca todos los pagos anteriores sin ICD.
+    // Por eso un pago sin ICD pertenece al PRÓXIMO ICD: no se carga,
+    // se informa, y vuelve a aparecer cuando su ICD exista.
+    // Como siempre son los pagos más recientes, el punto de corte no
+    // los pierde.
+    // ==============================================================
+    $normIcd = function ($v) {
+        $s = trim((string)$v);
+        return ($s === '' || $s === '0') ? '' : $s;
+    };
+    $filaAviso = function ($t) {
+        return [
+            'contrato' => $t['Numero_Contrato'] ?? '',
+            'sucursal' => trim((string)($t['Sucursal'] ?? '')),
+            'fecha'    => substr((string)($t['Pay_Date'] ?? ''), 0, 16),
+            'monto'    => floatval($t['Monto_Pago'] ?? 0),
+        ];
+    };
+
+    $conIcd = [];
+    $sinIcd = [];
+    $ultimoConIcdPorSuc = [];
+
+    foreach ($transacciones as $t) {
+        $t['ICD'] = $normIcd($t['ICD'] ?? '');
+        $suc = trim((string)($t['Sucursal'] ?? ''));
+
+        if ($t['ICD'] === '') { $sinIcd[] = $t; continue; }
+
+        $conIcd[] = $t;
+        $pd = (string)($t['Pay_Date'] ?? '');
+        if (!isset($ultimoConIcdPorSuc[$suc]) || $pd > $ultimoConIcdPorSuc[$suc]) {
+            $ultimoConIcdPorSuc[$suc] = $pd;
+        }
+    }
+
+    $huecos = [];
+    $pagosSinIcd = [];
+
+    foreach ($sinIcd as $t) {
+        $suc = trim((string)($t['Sucursal'] ?? ''));
+        // Un pago sin ICD más viejo que uno con ICD en la misma sucursal
+        // contradice la regla de TSD: se bloquea para revisión.
+        if (isset($ultimoConIcdPorSuc[$suc]) && (string)($t['Pay_Date'] ?? '') <= $ultimoConIcdPorSuc[$suc]) {
+            $huecos[] = $filaAviso($t);
+        } else {
+            $pagosSinIcd[] = $filaAviso($t);
+        }
+    }
+
+    if (count($huecos) > 0) {
+        echo json_encode([
+            'success'       => false,
+            'bloqueoIcd'    => 'HUECO',
+            'pagos_sin_icd' => $huecos,
+            'error'         => "Hay pagos SIN ICD más antiguos que otros que sí tienen ICD en la misma sucursal.\n\n"
+                             . "Según las reglas de TSD esto no debería ocurrir. Revise estos pagos en TSD antes de continuar:"
+        ]);
+        exit;
+    }
+
+    if (count($conIcd) === 0 && count($pagosSinIcd) > 0) {
+        echo json_encode([
+            'success'       => false,
+            'bloqueoIcd'    => 'SIN_ICD',
+            'pagos_sin_icd' => $pagosSinIcd,
+            'error'         => "Ningún pago pendiente tiene un ICD creado en TSD.\n\n"
+                             . "Cree el ICD en TSD y vuelva a cargar la facturación. Pagos pendientes:"
+        ]);
+        exit;
+    }
+
+    $transacciones = $conIcd;
+
+    // 5B. Analizar los ICDs involucrados para validar si están cerrados (POST_FLAG)
     $icdsInvolucrados = array_unique(array_filter(array_column($transacciones, 'ICD')));
     $icdsAbiertos = [];
     $icdsInfo = [];
@@ -199,11 +275,24 @@ try {
         $stmtDBR->execute(array_values($icdsInvolucrados));
         $dbrResults = $stmtDBR->fetchAll(PDO::FETCH_ASSOC);
 
+        $icdsEncontrados = [];
         foreach ($dbrResults as $row) {
+            $icdsEncontrados[] = trim((string)$row['DBRNum']);
             $icdsInfo[] = $row['DBRNum'] . " (" . $row['EMP_CODE'] . ")";
             if (empty($row['POST_FLAG']) || $row['POST_FLAG'] == '0') {
                 $icdsAbiertos[] = $row['DBRNum'];
             }
+        }
+
+        // Un pago que apunta a un ICD que TSD no tiene registrado no se carga
+        $icdsInexistentes = array_values(array_diff(array_map('strval', $icdsInvolucrados), $icdsEncontrados));
+        if (count($icdsInexistentes) > 0) {
+            echo json_encode([
+                'success' => false,
+                'error'   => "Los siguientes ICD no existen en TSD:\n\n" . implode(', ', $icdsInexistentes)
+                           . "\n\nVerifique en TSD antes de cargar la facturación."
+            ]);
+            exit;
         }
     }
 
@@ -213,7 +302,8 @@ try {
         'metadatos' => $infoMetadatos,
         'icds_info' => implode(', ', $icdsInfo), 
         'icds_abiertos' => $icdsAbiertos,
-        'transacciones' => $transacciones
+        'pagos_sin_icd' => $pagosSinIcd,
+        'transacciones' => array_values($transacciones)
     ]);
 
 } catch (Throwable $e) { // ATRAPAMOS TODO

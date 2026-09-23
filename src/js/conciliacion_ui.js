@@ -632,10 +632,11 @@ window.ConciliacionLogic = {
 
         if (window.SysUI) {
             window.SysUI.alert(
-                "Su sesión expiró por inactividad en el servidor.\n\n" +
-                "<b>Su trabajo sigue en pantalla y no se ha perdido.</b>\n\n" +
-                "Para conservarlo: abra el sistema en otra pestaña, inicie sesión de nuevo, " +
-                "vuelva a esta pestaña y presione <b>Conservar Borrador</b>.",
+                "Su sesión expiró por inactividad en el servidor." +
+                "<div class=\"mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300\">" +
+                "💡 <b>Consejo:</b> para no perder su progreso, no cierre esta pestaña. " +
+                "Inicie sesión en otra pestaña, regrese aquí y presione <b>Conservar Borrador</b>." +
+                "</div>",
                 "Sesión expirada", "warning"
             );
         }

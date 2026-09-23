@@ -180,6 +180,15 @@ window.CierreCajasLogic = {
             .replace(/'/g, '&#39;');
     },
 
+    // Lista legible de pagos sin ICD (máximo 25) para los avisos de carga
+    listaPagosSinIcd: function(pagos) {
+        const filas = pagos.slice(0, 25).map(p =>
+            `• ${this.escapeHtml(p.sucursal)} · Contrato ${this.escapeHtml(p.contrato)} · ${this.escapeHtml(p.fecha)} · $${Number(p.monto || 0).toFixed(2)}`
+        );
+        if (pagos.length > 25) filas.push(`… y ${pagos.length - 25} más`);
+        return filas.join('\n');
+    },
+
     // Función global para copiar contratos al portapapeles
     copiarContrato: function(contrato, element) {
         navigator.clipboard.writeText(contrato).then(() => {
@@ -700,6 +709,9 @@ window.CierreCajasLogic = {
                 }
                 document.getElementById('cc-search-section').classList.remove('hidden');
                 document.getElementById('cc-home-view').classList.remove('hidden');
+                if (data.bloqueoIcd && Array.isArray(data.pagos_sin_icd)) {
+                    return SysUI.alert(`${data.error}\n\n${this.listaPagosSinIcd(data.pagos_sin_icd)}`, "ICD requerido en TSD", "warning");
+                }
                 return SysUI.alert(data.error, "Atención", "warning");
             }
 
@@ -732,6 +744,15 @@ window.CierreCajasLogic = {
             if (data.icds_abiertos && data.icds_abiertos.length > 0) {
                 const msg = `⚠️ Hay ICDs sin cerrar en TSD:\n\n${data.icds_abiertos.join(', ')}\n\nPuede continuar conciliando el dinero, pero el sistema NO LE PERMITIRÁ GUARDAR EL CIERRE hasta que vaya a TSD y cierre estos ICDs oficialmente.`;
                 await SysUI.alert(msg, "Alerta de Cierre TSD", "warning");
+            }
+
+            // Pagos que todavía no tienen ICD: pertenecen al próximo ICD de TSD
+            if (Array.isArray(data.pagos_sin_icd) && data.pagos_sin_icd.length > 0) {
+                await SysUI.alert(
+                    `${data.pagos_sin_icd.length} pago(s) todavía no tienen ICD en TSD y NO se incluyeron en este cierre.\n` +
+                    `Aparecerán en el próximo, cuando se cree su ICD:\n\n${this.listaPagosSinIcd(data.pagos_sin_icd)}`,
+                    "Pagos pendientes de ICD", "info"
+                );
             }
 
             // Adaptamos _selected o matched dependiendo de cómo lo use tu renderTransacciones

@@ -3,8 +3,6 @@ ini_set('display_errors', 0); // Prohíbe a PHP escupir HTML
 error_reporting(E_ALL);
 
 session_start();
-require_once __DIR__ . '/bitacora_lib.php';
-Bitacora::observar('CIERRE_CAJA', 'CIERRE_GUARDAR', ['globales' => ['idCierre']]);
 header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['user'])) {
@@ -26,7 +24,6 @@ if (!$data || empty($data['transacciones'])) {
     exit;
 }
 
-$icdsRaw = $data['icds_involucrados'] ?? ''; // Ahora recibimos un string: "ICD1, ICD2"
 $sucursalesRaw = $data['sucursales'] ?? '';
 $emailUsuario = $_SESSION['user']['email'] ?? null;
 
@@ -36,31 +33,100 @@ if (!$emailUsuario) {
 }
 
 try {
-    // 1. VALIDACIÓN JUST-IN-TIME EN TSD (Múltiples ICDs)
-    $icdsArray = array_filter(array_map('trim', explode(',', preg_replace('/\(.*?\)/', '', $icdsRaw)))); // Limpiamos los nombres de usuario entre paréntesis
-    
-    if (class_exists('TSDDatabase') && count($icdsArray) > 0) {
-        $pdoTsd = TSDDatabase::connect();
-        $inClause = str_repeat('?,', count($icdsArray) - 1) . '?';
-        $stmtTsd = $pdoTsd->prepare("SELECT DBRNum, POST_FLAG FROM dbo.DBR WHERE DBRNum IN ($inClause)");
-        $stmtTsd->execute($icdsArray);
-        $resultadosTSD = $stmtTsd->fetchAll(PDO::FETCH_ASSOC);
+    // ==============================================================
+    // 1. VALIDACIÓN DE ICD EN TSD, PAGO POR PAGO
+    // Antes se validaba la lista de ICD que mandaba el navegador, y sólo
+    // los ICD existentes: un pago SIN ICD pasaba sin revisión.
+    // Ahora el servidor consulta TSD con el ID de cada pago y exige:
+    //   a) que tenga ICD  b) que el ICD exista  c) que esté cerrado.
+    // IRI sólo LEE TSD; nunca escribe en él.
+    // ==============================================================
+    if (!class_exists('TSDDatabase')) {
+        echo json_encode(['success' => false, 'error' => "No hay conexión con TSD para validar los ICD.\n\nNo se guardó nada. Intente de nuevo en unos minutos."]);
+        exit;
+    }
 
-        $abiertos = [];
-        foreach ($resultadosTSD as $row) {
-            if (empty($row['POST_FLAG']) || $row['POST_FLAG'] == '0') {
-                $abiertos[] = $row['DBRNum'];
-            }
-        }
+    $contratoPorId = [];
+    $sinIdTsd = [];
+    foreach ($data['transacciones'] as $t) {
+        $id = trim((string)($t['id_tsd'] ?? ''));
+        if ($id === '') { $sinIdTsd[] = $t['contrato'] ?? '?'; continue; }
+        $contratoPorId[$id] = $t['contrato'] ?? '?';
+    }
 
-        if (!empty($abiertos)) {
-            echo json_encode([
-                'success' => false, 
-                'error' => "⚠️ Cierre Incompleto en TSD.\n\nLos siguientes ICDs aún se encuentran abiertos: " . implode(', ', $abiertos) . "\nFinalice el proceso en TSD antes de guardar en IRI."
-            ]);
-            exit;
+    if (count($sinIdTsd) > 0) {
+        echo json_encode(['success' => false, 'error' => "Hay transacciones sin identificador de TSD ("
+            . implode(', ', array_slice($sinIdTsd, 0, 10)) . ").\n\nRecargue la facturación antes de guardar."]);
+        exit;
+    }
+
+    $pdoTsd = TSDDatabase::connect();
+    $mapaIcd = [];
+
+    foreach (array_chunk(array_keys($contratoPorId), 1000) as $lote) {
+        $in = str_repeat('?,', count($lote) - 1) . '?';
+        $stmtIcd = $pdoTsd->prepare("
+            SELECT CAST(P.ID AS varchar(50))                                   AS IdTsd,
+                   LTRIM(RTRIM(CAST(P.dbr AS varchar(50))))                    AS ICD,
+                   D.DBRNum,
+                   D.POST_FLAG,
+                   CONVERT(varchar(19), TRY_CONVERT(datetime, D.POST_DATE), 120) AS PostDate
+            FROM dbo.Cpay P
+            LEFT JOIN dbo.DBR D ON D.DBRNum = P.dbr
+            WHERE P.ID IN ($in)
+        ");
+        $stmtIcd->execute(array_map('strval', $lote));
+        foreach ($stmtIcd->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $mapaIcd[trim((string)$r['IdTsd'])] = $r;
         }
     }
+
+    $noEncontrados = [];
+    $sinIcd = [];
+    $inexistentes = [];
+    $abiertos = [];
+
+    foreach ($contratoPorId as $id => $contrato) {
+        $r = $mapaIcd[(string)$id] ?? null;
+        if (!$r) { $noEncontrados[] = $contrato; continue; }
+
+        $icd = (string)($r['ICD'] ?? '');
+        if ($icd === '' || $icd === '0') { $sinIcd[] = $contrato; continue; }
+        if (empty($r['DBRNum']))         { $inexistentes[$icd] = true; continue; }
+        if (empty($r['POST_FLAG']) || $r['POST_FLAG'] == '0') { $abiertos[$icd] = true; }
+    }
+
+    $lista = function (array $v) {
+        $v = array_values(array_unique($v));
+        $txt = implode(', ', array_slice($v, 0, 15));
+        return count($v) > 15 ? $txt . ' y ' . (count($v) - 15) . ' más' : $txt;
+    };
+
+    $problemas = [];
+    if ($sinIcd)        $problemas[] = "• Pagos SIN ICD en TSD (contratos): " . $lista($sinIcd) . "\n  Cree en TSD el ICD que los incluya.";
+    if ($inexistentes)  $problemas[] = "• ICD que no existen en TSD: " . $lista(array_keys($inexistentes));
+    if ($abiertos)      $problemas[] = "• ICD aún ABIERTOS en TSD: " . $lista(array_keys($abiertos)) . "\n  Ciérrelos en TSD antes de guardar.";
+    if ($noEncontrados) $problemas[] = "• Pagos que ya no aparecen en TSD (contratos): " . $lista($noEncontrados) . "\n  Recargue la facturación.";
+
+    if (count($problemas) > 0) {
+        echo json_encode([
+            'success'    => false,
+            'bloqueoIcd' => true,
+            'error'      => "⚠️ No se puede guardar el cierre.\n\n" . implode("\n\n", $problemas) . "\n\nNo se guardó nada."
+        ]);
+        exit;
+    }
+
+    // Hora oficial del cierre: la del ICD en TSD (la más reciente si son varios)
+    $icdsServidor = [];
+    $fechaCierreTsd = null;
+    foreach ($mapaIcd as $r) {
+        $icdsServidor[$r['ICD']] = true;
+        if (!empty($r['PostDate']) && ($fechaCierreTsd === null || $r['PostDate'] > $fechaCierreTsd)) {
+            $fechaCierreTsd = $r['PostDate'];
+        }
+    }
+    $icdsServidor = implode(', ', array_keys($icdsServidor));
 
     // 2. GUARDADO EN BASE DE DATOS LOCAL
     $pdo = Database::connect();
@@ -71,12 +137,12 @@ try {
                   (ICD, Sucursal, UsuarioRegistroTSD, FechaRegistroTSD, EmailUsuario, TotalVerificadoCRC, TotalVerificadoUSD, TransaccionesEscaneadas, TotalTransacciones) 
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
     
-    // Al ser un cierre continuo, usamos la hora actual para FechaRegistroTSD como marca de corte
-    $fechaTSD = date('Y-m-d\TH:i:s');
+    // FechaRegistroTSD = hora oficial de cierre del ICD en TSD (POST_DATE)
+    $fechaTSD = $fechaCierreTsd ? str_replace(' ', 'T', $fechaCierreTsd) : date('Y-m-d\TH:i:s');
 
     $stmtH = $pdo->prepare($sqlHeader);
     $stmtH->execute([
-        $icdsRaw, $sucursalesRaw, 'Múltiples AR', $fechaTSD, 
+        $icdsServidor, $sucursalesRaw, 'Múltiples AR', $fechaTSD,
         $emailUsuario, floatval($data['total_crc'] ?? 0), floatval($data['total_usd'] ?? 0),
         intval($data['total_escaneadas'] ?? 0), intval($data['total_transacciones'] ?? 0)
     ]);
@@ -124,8 +190,8 @@ try {
 
     // Detalle
     $sqlDetail = "INSERT INTO Tbl_CierreCaja_Detalle 
-                  (IdCierre, Numero_Contrato, NombreCliente, Tipo_Tarjeta, Numero_Autorizacion, MontoUSD, TipoCambio, MontoCRC, MatchExitoso, Fecha_Transaccion, ID_Transaccion_TSD) 
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                  (IdCierre, Numero_Contrato, NombreCliente, Tipo_Tarjeta, Numero_Autorizacion, MontoUSD, TipoCambio, MontoCRC, MatchExitoso, Fecha_Transaccion, ID_Transaccion_TSD, ICD_TSD, FechaCierreICD) 
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmtD = $pdo->prepare($sqlDetail);
 
     foreach ($data['transacciones'] as $t) {
@@ -143,7 +209,9 @@ try {
         $stmtD->execute([
             $idCierre, $t['contrato'], $t['nombre'], $t['tarjeta'], $t['autorizacion'],
             $t['monto_usd'], $t['tc'], $t['monto_crc'], $t['match_exitoso'], $fechaSegura,
-            ($idTsdFila !== '' ? $idTsdFila : null)
+            ($idTsdFila !== '' ? $idTsdFila : null),
+            $mapaIcd[$idTsdFila]['ICD'] ?? null,
+            !empty($mapaIcd[$idTsdFila]['PostDate']) ? str_replace(' ', 'T', $mapaIcd[$idTsdFila]['PostDate']) : null
         ]);
     }
 
