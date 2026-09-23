@@ -194,9 +194,6 @@ window.CierreCajasLogic = {
                 <p><b>Para guardar el cierre:</b> todos los ICD deben estar <b>cerrados</b> en TSD. Un ICD abierto impide guardar, porque afecta el registro contable.</p>
             </div>
             <p>Si le aparece un bloqueo: vaya a TSD, cree o cierre el ICD, y vuelva a cargar la facturación.</p>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 pt-2">
-                Mientras concilia no recargue la facturación: el sistema trabaja con la foto que tomó al cargar. Si su sesión expira y debe volver a cargar, los cobros nuevos aparecerán y necesitarán su propio ICD.
-            </p>
         </div>`;
     },
 
@@ -208,7 +205,7 @@ window.CierreCajasLogic = {
                 if (!data.success || data.leido) return;
             }
 
-            const ok = await SysUI.confirmCierre(this.textoAvisoIcd(), "Nuevo procedimiento: ICD obligatorio");
+            const ok = await SysUI.confirmLectura(this.textoAvisoIcd(), "Nuevo procedimiento: ICD obligatorio");
             if (!ok || forzar) return;
 
             await fetch(`api/avisos_cc.php?accion=confirmar&clave=${this.AVISO_ICD}`);
