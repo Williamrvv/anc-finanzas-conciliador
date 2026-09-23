@@ -3,6 +3,8 @@ ini_set('display_errors', 0); // Prohíbe a PHP escupir HTML
 error_reporting(E_ALL);
 
 session_start();
+require_once __DIR__ . '/bitacora_lib.php';
+Bitacora::observar('CIERRE_CAJA', 'CIERRE_GUARDAR', ['globales' => ['idCierre']]);
 header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['user'])) {

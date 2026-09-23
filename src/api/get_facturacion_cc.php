@@ -189,12 +189,10 @@ try {
     }
 
     // ==============================================================
-    // 5A. REGLA DE ICD
-    // En TSD cada ICD nuevo abarca todos los pagos anteriores sin ICD.
-    // Por eso un pago sin ICD pertenece al PRÓXIMO ICD: no se carga,
-    // se informa, y vuelve a aparecer cuando su ICD exista.
-    // Como siempre son los pagos más recientes, el punto de corte no
-    // los pierde.
+    // 5A. REGLA DE ICD (ESTRICTA)
+    // TODOS los contratos deben tener ICD en TSD. Si aunque sea uno no
+    // lo tiene, NO se carga nada: se procesan todos juntos o ninguno.
+    // Ningún pago queda para el próximo cierre.
     // ==============================================================
     $normIcd = function ($v) {
         $s = trim((string)$v);
@@ -211,37 +209,30 @@ try {
 
     $conIcd = [];
     $sinIcd = [];
-    $ultimoConIcdPorSuc = [];
 
     foreach ($transacciones as $t) {
         $t['ICD'] = $normIcd($t['ICD'] ?? '');
-        $suc = trim((string)($t['Sucursal'] ?? ''));
-
         if ($t['ICD'] === '') { $sinIcd[] = $t; continue; }
-
         $conIcd[] = $t;
-        $pd = (string)($t['Pay_Date'] ?? '');
-        if (!isset($ultimoConIcdPorSuc[$suc]) || $pd > $ultimoConIcdPorSuc[$suc]) {
-            $ultimoConIcdPorSuc[$suc] = $pd;
-        }
     }
 
-    $conIcd = [];
-    $sinIcd = [];
-    $ultimoConIcdPorSuc = [];
+    if (count($sinIcd) > 0) {
+        $pagosSinIcd = array_map($filaAviso, $sinIcd);
+        $sucursales  = array_values(array_unique(array_filter(array_column($pagosSinIcd, 'sucursal'))));
 
-    foreach ($transacciones as $t) {
-        $t['ICD'] = $normIcd($t['ICD'] ?? '');
-        $suc = trim((string)($t['Sucursal'] ?? ''));
-
-        if ($t['ICD'] === '') { $sinIcd[] = $t; continue; }
-
-        $conIcd[] = $t;
-        $pd = (string)($t['Pay_Date'] ?? '');
-        if (!isset($ultimoConIcdPorSuc[$suc]) || $pd > $ultimoConIcdPorSuc[$suc]) {
-            $ultimoConIcdPorSuc[$suc] = $pd;
-        }
+        echo json_encode([
+            'success'       => false,
+            'bloqueoIcd'    => 'SIN_ICD',
+            'pagos_sin_icd' => $pagosSinIcd,
+            'sucursales'    => $sucursales,
+            'error'         => count($pagosSinIcd) . " pago(s) no tienen ICD creado en TSD.\n\n"
+                             . "No se cargó la facturación: TODOS los contratos deben tener ICD para poder procesarse.\n\n"
+                             . "Cree en TSD el ICD que los incluya y vuelva a cargar:"
+        ]);
+        exit;
     }
+
+    $transacciones = $conIcd;
 
     // 5B. Analizar los ICDs involucrados para validar si están cerrados (POST_FLAG)
     $icdsInvolucrados = array_unique(array_filter(array_column($transacciones, 'ICD')));
