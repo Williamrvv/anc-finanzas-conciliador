@@ -201,7 +201,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                         <div>
                             <h3 class="text-sm font-black text-purple-700 dark:text-purple-300">Interfase · (Tarjetas)</h3>
                             <p class="text-[10px] text-slate-500 dark:text-slate-400">
-                                Solo se muestran registros que contienen tarjeta.
+                                Solo se muestran registros de la cuenta contable 101-004-003-000-000-000 provistos en el api de interfase.
                             </p>
                         </div>
 
@@ -795,6 +795,10 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const spinner = document.getElementById('spin-dbr');
             const resumen = document.getElementById('dbr-resumen');
 
+            // Cuenta contable que define qué registros son relevantes.
+            // Si cambia el plan de cuentas, se modifica sólo acá.
+            const CUENTA_CONTABLE_INTERFASE = '101-004-003-000-000-000';
+
             // Se consulta vía proxy PHP propio: el certificado de intanc.com no
             // lo valida Chrome y el navegador no permite ignorarlo por código.
             const endpoint = 'api/get_interfase_tarjetas.php';
@@ -838,18 +842,20 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                             throw new Error(json.error || 'La API respondió con error');
                         }
 
-                        const filasConTarjeta = (Array.isArray(json.data) ? json.data : [])
+                        const filasDeLaCuenta = (Array.isArray(json.data) ? json.data : [])
                             .filter(row => {
-                                const tarjeta = row ? row.Tarjeta : null;
+                                // El API no permite filtrar por cuenta contable,
+                                // así que se hace acá. Antes se filtraba por
+                                // presencia de tarjeta; ahora manda la cuenta.
+                                const cuenta = row ? row.Cuenta_Contable : null;
 
-                                return tarjeta !== null &&
-                                    tarjeta !== undefined &&
-                                    String(tarjeta).trim() !== '' &&
-                                    String(tarjeta).trim().toLowerCase() !== 'null';
+                                return cuenta !== null &&
+                                    cuenta !== undefined &&
+                                    String(cuenta).trim() === CUENTA_CONTABLE_INTERFASE;
                             });
 
                         resultados.push(
-                            ...filasConTarjeta.map(row => ({
+                            ...filasDeLaCuenta.map(row => ({
                                 ...row,
                                 id: fecha
                             }))
@@ -873,7 +879,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 
                 if (resumen) {
                     resumen.textContent =
-                        `${resultados.length.toLocaleString('es-CR')} registros con tarjeta` +
+                        `${resultados.length.toLocaleString('es-CR')} registros en la cuenta ${CUENTA_CONTABLE_INTERFASE}` +
                         (errores.length ? ` · ${errores.length} día(s) con error` : '');
                 }
 
