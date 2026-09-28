@@ -167,6 +167,26 @@ try {
         $stmtCerradosDetalle->execute(array_values($contratosTSD));
         $llavesExitosas = $stmtCerradosDetalle->fetchAll(PDO::FETCH_COLUMN);
 
+        // 1B. Filtrar por ID de TSD (misma llave que el candado de save_cierre_caja.php).
+        // Cubre la reserva convertida en contrato: cambia el KNUM, pero el pago (Cpay.ID) es el mismo.
+        $idsYaCerrados = [];
+        $idsTSD = array_values(array_unique(array_filter(array_map(
+            function ($t) { return trim((string)($t['ID_Transaccion'] ?? '')); },
+            $transaccionesTSD
+        ))));
+        foreach (array_chunk($idsTSD, 1000) as $lote) {
+            $inIds = str_repeat('?,', count($lote) - 1) . '?';
+            $stmtCerradosId = $pdoLocal->prepare("
+                SELECT ID_Transaccion_TSD
+                FROM Tbl_CierreCaja_Detalle
+                WHERE ID_Transaccion_TSD IN ($inIds)
+            ");
+            $stmtCerradosId->execute($lote);
+            foreach ($stmtCerradosId->fetchAll(PDO::FETCH_COLUMN) as $id) {
+                $idsYaCerrados[trim((string)$id)] = true;
+            }
+        }
+
         // 2. Filtrar transacciones con Tickets ACTIVOS (Usando llave compuesta: Contrato + ICD)
         $stmtCerradosCasos = $pdoLocal->prepare("
             SELECT NumeroContrato + '|' + ISNULL(ICD_Relacionado, '')
@@ -181,8 +201,10 @@ try {
             $llaveDetalle = $t['Numero_Contrato'] . '|' . $t['Numero_Autorizacion'];
             $llaveCaso = $t['Numero_Contrato'] . '|' . $t['ICD'];
 
-            // Si no está en el detalle exitoso Y no hay un ticket activo estorbando, lo dejamos pasar.
-            if (!in_array($llaveDetalle, $llavesExitosas) && !in_array($llaveCaso, $llavesBloqueadasCasos)) {
+            $yaCerradoPorId = isset($idsYaCerrados[trim((string)($t['ID_Transaccion'] ?? ''))]);
+
+            // Si no está en el detalle (por llave o por ID TSD) Y no hay un ticket activo estorbando, lo dejamos pasar.
+            if (!$yaCerradoPorId && !in_array($llaveDetalle, $llavesExitosas) && !in_array($llaveCaso, $llavesBloqueadasCasos)) {
                 $transacciones[] = $t;
             }
         }
