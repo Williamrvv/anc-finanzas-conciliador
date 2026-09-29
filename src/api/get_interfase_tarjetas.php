@@ -7,6 +7,12 @@ if (!isset($_SESSION['user'])) {
     exit;
 }
 
+// La sesión ya no se vuelve a usar en este script. Se libera de inmediato.
+// Sin esto PHP mantiene el archivo de sesión bloqueado durante toda la
+// llamada externa, y cualquier otra petición del mismo navegador queda
+// esperando en fila (incluidas las consultas que el usuario ya abandonó).
+session_write_close();
+
 $fecha = trim($_GET['fecha'] ?? '');
 
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
@@ -27,6 +33,7 @@ $raw        = false;
 $httpCode   = 0;
 $transporte = null;
 $errDetalle = null;
+$curlExpiro = false;
 
 // 1) cURL primero: reporta el error real y permite enviar User-Agent.
 //    file_get_contents no manda User-Agent y muchos WAF rechazan por eso.
@@ -38,7 +45,10 @@ if (function_exists('curl_init')) {
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS      => 3,
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_TIMEOUT        => 180,
+        // Acepta la respuesta comprimida: los días con mucho detalle
+        // se transfieren bastante más rápido.
+        CURLOPT_ENCODING       => '',
         // El certificado de intanc.com no lo firma una CA reconocida.
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
@@ -48,13 +58,19 @@ if (function_exists('curl_init')) {
     $raw      = curl_exec($ch);
     $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     if ($raw === false) {
-        $errDetalle = 'cURL #' . curl_errno($ch) . ': ' . curl_error($ch);
+        $curlErrNo  = curl_errno($ch);
+        $errDetalle = 'cURL #' . $curlErrNo . ': ' . curl_error($ch);
+        // 28 = se agotó el tiempo de espera. cURL sí llegó al servidor y
+        // esperó su tiempo completo; repetir con fopen sólo duplica la espera.
+        $curlExpiro = ($curlErrNo === 28);
     }
     curl_close($ch);
 }
 
 // 2) Respaldo por si cURL no está compilado en la imagen.
-if ($raw === false) {
+//    No se intenta cuando cURL ya esperó su tiempo completo: en ese caso
+//    el respaldo sólo agrega otros 60 s de espera para fallar igual.
+if ($raw === false && !$curlExpiro) {
     $transporte = ($transporte === 'curl') ? 'curl->fopen' : 'fopen';
     $ctx = stream_context_create([
         'http' => [
