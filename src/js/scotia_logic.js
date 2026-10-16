@@ -447,6 +447,14 @@ window.ScotiaLogic = {
             if (m !== 0) {
                 const desc = String(row[iDesc] || '').trim();
                 
+                // REGLA DE NEGOCIO: en el estado de cuenta sólo los movimientos con "PCA"
+                // son pagos de tarjeta ("PCA 3793754 COMERCIO 61680500").
+                // Se conserva la excepción de ajustes del banco que ya existía.
+                // Cualquier otro movimiento de la cuenta (ej. "FACTS  1487510.") se descarta.
+                const pcaMatch = desc.match(/\bPCA\b\s*(\d+)?/i);
+                const esAjusteBanco = desc.toUpperCase().includes('AJUSTE');
+                if (!pcaMatch && !esAjusteBanco) continue;
+
                 // EXTRACCIÓN INTELIGENTE DE MerID (Soporta "PCA 3793754 COMERCIO 61680500")
                 let extractedID = "SIN_ID";
                 const comercioMatch = desc.match(/COMERCIO\s+(\d+)/i);
@@ -454,13 +462,14 @@ window.ScotiaLogic = {
                 if (comercioMatch) {
                     extractedID = comercioMatch[1]; // Tomar el número exactamente después de "COMERCIO"
                 } else {
-                    // Fallback: Tomar la ÚLTIMA secuencia de números (evita atrapar el número de PCA)
-                    const nums = desc.match(/\b\d{7,15}\b/g);
-                    if (nums && nums.length > 0) extractedID = nums[nums.length - 1];
+                    // Fallback: Tomar la ÚLTIMA secuencia de números, sin tomar el número de PCA
+                    const numPca = (pcaMatch && pcaMatch[1]) ? pcaMatch[1] : '';
+                    const nums = (desc.match(/\b\d{7,15}\b/g) || []).filter(n => n !== numPca);
+                    if (nums.length > 0) extractedID = nums[nums.length - 1];
                 }
 
-                // Si no tiene un MerID válido y no es un ajuste interno del banco, lo omitimos
-                if (extractedID === "SIN_ID" && !desc.toUpperCase().includes('AJUSTE')) continue;
+                // El filtro de movimientos ajenos ahora es la regla PCA de arriba.
+                // Un pago con PCA sin MerID legible entra como SIN_ID para revisarlo a mano.
                 const rowObj = {
                     _uid: 'scopag_' + Math.random().toString(36).substr(2, 9),
                     _enabled: true,
