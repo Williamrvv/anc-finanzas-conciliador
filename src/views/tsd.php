@@ -50,10 +50,10 @@
                         </button>
                         <div class="h-px bg-slate-100 dark:bg-slate-700 my-1"></div>
                         <button onclick="window.TSDLogic.exportSoftland('davi_2')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
-                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Davibank 2% (Comisión)
+                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Davibank 2% (Renta)
                         </button>
                         <button onclick="window.TSDLogic.exportSoftland('davi_5')" class="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-900/30 hover:text-green-600 flex items-center gap-2">
-                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Davibank 5% (IVA)
+                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Davibank 5% (Venta)
                         </button>
                     </div>
                 </div>

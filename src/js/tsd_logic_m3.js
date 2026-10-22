@@ -125,7 +125,11 @@ window.TSDLogic = {
             const json = await res.json();
             
             if (!json.success) throw new Error(json.error);
-            if (!json.data || json.data.length === 0) return window.SysUI.alert("No se encontraron registros pendientes en la base de datos para este cargador.", "Sin datos", "warning");
+            if (!json.data || json.data.length === 0) {
+                // Sin datos no hay nada que descargar: no se debe reclamar al guardar
+                this._registrarCargadorM3(tipo, start, end);
+                return window.SysUI.alert("No se encontraron registros pendientes en la base de datos para este cargador.", "Sin datos", "warning");
+            }
 
             // Traza del servidor: de dónde salió el promedio ponderado
             if (json.diag_tc) {
@@ -139,6 +143,7 @@ window.TSDLogic = {
 
             // 4. Invocar Motor Creador de Excel
             this.generateSoftlandExcel(tipo, asientoId, fechaCargador, json.tc_promedio, json.data);
+            this._registrarCargadorM3(tipo, start, end);
             
             window.SysUI.alert("El archivo Excel ha sido generado y descargado con éxito.", "Cargador Creado", "success");
         } catch (error) {
@@ -349,6 +354,7 @@ window.TSDLogic = {
             XLSX.utils.book_append_sheet(wb, ws2, "Desglose");
 
             XLSX.writeFile(wb, `Cargador_Tarjetas_${asientoId}.xlsx`);
+            this._registrarCargadorM3('tarjetas');
             window.SysUI.alert("El archivo Excel del asiento de tarjetas se generó correctamente con cuadratura automática.", "Cargador Creado", "success");
 
         } catch (e) {
@@ -2657,6 +2663,81 @@ window.TSDLogic = {
     },
 
     // --------------------------------------------------------
+    // CONTROL DE CARGADORES DESCARGADOS (por carga = rango del cruce)
+    // Se guarda en el navegador cada cargador descargado. Al guardar el
+    // consolidado se avisa cuáles faltan. Sólo avisa: nunca detiene.
+    // --------------------------------------------------------
+    CARGADORES_M3: {
+        'tarjetas': 'Tarjetas',
+        'bac_176': 'BAC 1,76% (Renta)',
+        'bac_536': 'BAC 5,36% (Ventas)',
+        'davi_2': 'Davibank 2% (Renta)',
+        'davi_5': 'Davibank 5% (Venta)'
+    },
+    _CLAVE_CARGADORES_M3: 'iri_m3_cargadores_descargados',
+    _cargadoresMemoriaM3: {},
+
+    _rangoCargadoresM3: function(start, end) {
+        if (!start || !end) {
+            const r = this._rangoBorradorM3 || {};
+            if (r.start && r.end) return `${r.start}|${r.end}`;
+            const val = (document.getElementById('tsd-date-picker') || {}).value || '';
+            if (!val) return null;
+            [start, end] = val.includes(' a ') ? val.split(' a ') : [val, val];
+        }
+        return `${String(start).trim()}|${String(end).trim()}`;
+    },
+
+    _leerCargadoresM3: function() {
+        try {
+            const raw = localStorage.getItem(this._CLAVE_CARGADORES_M3);
+            const data = raw ? JSON.parse(raw) : {};
+            return (data && typeof data === 'object') ? data : {};
+        } catch (e) {
+            return Object.assign({}, this._cargadoresMemoriaM3);
+        }
+    },
+
+    _escribirCargadoresM3: function(data) {
+        this._cargadoresMemoriaM3 = data;
+        try {
+            // Se conservan sólo las 20 cargas más recientes
+            const claves = Object.keys(data).sort((a, b) => (data[b].t || 0) - (data[a].t || 0));
+            const recortado = {};
+            claves.slice(0, 20).forEach(k => { recortado[k] = data[k]; });
+            localStorage.setItem(this._CLAVE_CARGADORES_M3, JSON.stringify(recortado));
+        } catch (e) { /* sin almacenamiento: queda sólo en memoria */ }
+    },
+
+    _registrarCargadorM3: function(tipo, start, end) {
+        const clave = this._rangoCargadoresM3(start, end);
+        if (!clave || !this.CARGADORES_M3[tipo]) return;
+        const data = this._leerCargadoresM3();
+        const actual = data[clave] || { tipos: [], t: 0 };
+        if (!actual.tipos.includes(tipo)) actual.tipos.push(tipo);
+        actual.t = Date.now();
+        data[clave] = actual;
+        this._escribirCargadoresM3(data);
+    },
+
+    _cargadoresPendientesM3: function() {
+        const clave = this._rangoCargadoresM3();
+        if (!clave) return Object.values(this.CARGADORES_M3);
+        const hechos = (this._leerCargadoresM3()[clave] || {}).tipos || [];
+        return Object.keys(this.CARGADORES_M3)
+            .filter(t => !hechos.includes(t))
+            .map(t => this.CARGADORES_M3[t]);
+    },
+
+    _limpiarCargadoresM3: function() {
+        const clave = this._rangoCargadoresM3();
+        if (!clave) return;
+        const data = this._leerCargadoresM3();
+        delete data[clave];
+        this._escribirCargadoresM3(data);
+    },
+
+    // --------------------------------------------------------
     // CENTRO DE COSTO TRANSITORIO (LINKS DE PAGO)
     // Los links de pago entran desde M2 con el CC transitorio. Antes de
     // guardar el consolidado o descargar un cargador, el usuario debe
@@ -2931,6 +3012,17 @@ window.TSDLogic = {
             return window.SysUI.alert("No hay registros TSD nuevos (ni conciliados ni pendientes) para guardar.", "Tabla vacía", "warning");
         }
 
+        // AVISO (no bloquea): cargadores de esta carga que todavía no se descargaron
+        const cargadoresFaltantes = this._cargadoresPendientesM3();
+        if (cargadoresFaltantes.length > 0) {
+            await window.SysUI.alert(
+                `Todavía no se ha descargado ${cargadoresFaltantes.length === 1 ? 'este cargador' : 'estos cargadores'} de Softland para esta carga:\n\n` +
+                cargadoresFaltantes.map(n => `• ${n}`).join('\n') +
+                `\n\nPuede continuar con el guardado, pero recuerde descargarlos antes de cerrar el día.`,
+                "Cargadores pendientes", "warning"
+            );
+        }
+
         const confirmado = await window.SysUI.confirm(
             `¿Desea registrar este Cierre en la Base de Datos?\n\n` + 
             `<b>Resumen de Operación:</b>\n` +
@@ -3115,6 +3207,9 @@ window.TSDLogic = {
             }
 
             if (!data.success) throw new Error(data.error);
+
+            // La carga quedó guardada: su control de cargadores ya no se necesita
+            this._limpiarCargadoresM3();
 
             /*
              * save_tsd_m3.php ya hizo COMMIT.
