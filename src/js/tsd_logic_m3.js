@@ -3016,9 +3016,10 @@ window.TSDLogic = {
         const cargadoresFaltantes = this._cargadoresPendientesM3();
         if (cargadoresFaltantes.length > 0) {
             await window.SysUI.alert(
-                `Todavía no se ha descargado ${cargadoresFaltantes.length === 1 ? 'este cargador' : 'estos cargadores'} de Softland para esta carga:\n\n` +
+                `${cargadoresFaltantes.length === 1 ? 'Le falta descargar este cargador:' : 'Le faltan descargar estos cargadores:'}\n\n` +
                 cargadoresFaltantes.map(n => `• ${n}`).join('\n') +
-                `\n\nPuede continuar con el guardado, pero recuerde descargarlos antes de cerrar el día.`,
+                `\n\nPuede continuar si lo desea. Solo tenga presente que, una vez guardado el consolidado TSD, ` +
+                `ya no será posible descargar ${cargadoresFaltantes.length === 1 ? 'este cargador' : 'estos cargadores'} de Softland.`,
                 "Cargadores pendientes", "warning"
             );
         }
