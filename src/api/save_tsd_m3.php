@@ -6,6 +6,7 @@ ini_set('memory_limit', '512M'); // Expandir RAM para procesar el JSON gigante
 
 session_start();
 require_once '../db.php';
+require_once __DIR__ . '/cc_transitoria_lib.php'; // CC transitorio de links de pago
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -103,6 +104,36 @@ $pendientes = $input['pendientes'] ?? [];
 try {
     $pdo = Database::connect();
     $pdo->beginTransaction(); // Iniciamos el Escudo Transaccional
+
+    // ==============================================================
+    // 2.4 CANDADO DE LA TRANSITORIA (links de pago)
+    // Ningún folio de este cruce puede sellarse con transacciones en el
+    // CC transitorio. El navegador ya lo exige antes de enviar; esto es
+    // la última barrera por si alguien llega aquí por otro camino.
+    // ==============================================================
+    $foliosTransitoria = array_values(array_filter($folios, 'is_numeric'));
+    if (count($foliosTransitoria) > 0) {
+        $inTr = implode(',', array_fill(0, count($foliosTransitoria), '?'));
+        $stmtTr = $pdo->prepare("
+            SELECT COUNT(*) FROM (
+                SELECT IdTransaccion FROM Tbl_Detalle_Scotia WHERE IdCierre IN ($inTr) AND CentroCosto = ?
+                UNION ALL
+                SELECT IdTransaccion FROM Tbl_Detalle_BAC WHERE IdCierre IN ($inTr) AND CentroCosto = ?
+            ) x
+        ");
+        $stmtTr->execute(array_merge($foliosTransitoria, [CC_TRANSITORIA], $foliosTransitoria, [CC_TRANSITORIA]));
+        $enTransitoria = (int)$stmtTr->fetchColumn();
+
+        if ($enTransitoria > 0) {
+            $pdo->rollBack();
+            echo json_encode([
+                'success' => false,
+                'error' => "Hay {$enTransitoria} transacción(es) de link de pago en el centro de costo transitorio (" . CC_TRANSITORIA . ").\n\n"
+                         . "Vuelva a ejecutar el cruce y asígneles su centro de costo antes de guardar. No se guardó nada."
+            ]);
+            exit;
+        }
+    }
 
     // ==============================================================
     // 2.5 GUARDIÁN DE CENTROS DE COSTO (Fuente: API del CRM)

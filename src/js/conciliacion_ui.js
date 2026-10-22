@@ -2293,7 +2293,23 @@ window.ConciliacionLogic = {
             loader.classList.add('opacity-0');
             setTimeout(() => loader.classList.add('hidden'), 300);
 
-            await window.SysUI.alert(`Transacciones guardadas: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`, `✅ Cierre Exitoso`, "success");
+            let msgCierre = `Transacciones guardadas: ${data.filas_insertadas}\nID de Cierre: #${data.id_cierre}`;
+
+            // LINKS DE PAGO: se guardaron con el CC transitorio; el M3 obligará a corregirlos
+            const transitorias = Array.isArray(data.transitorias) ? data.transitorias : [];
+            if (transitorias.length > 0) {
+                const fmt = (v) => (parseFloat(v) || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const lista = transitorias.slice(0, 15).map(l =>
+                    `• ${l.fecha || ''} · ${l.comercio || l.afiliado} · Aut. ${l.autorizacion || '-'} · ₡${fmt(l.monto)}`
+                ).join('\n');
+                const extra = transitorias.length > 15 ? `\n… y ${transitorias.length - 15} más` : '';
+                msgCierre += `\n\n<b>🔗 Se detectaron ${transitorias.length} transacción(es) de link de pago.</b>\n` +
+                    `Quedaron en el centro de costo transitorio (${data.cc_transitoria || 'transitoria'}). ` +
+                    `En el Módulo 3 deberá asignarles su centro de costo real antes de guardar el consolidado o descargar un cargador.\n\n` +
+                    lista + extra;
+            }
+
+            await window.SysUI.alert(msgCierre, `✅ Cierre Exitoso`, "success");
             
             // 10. RECARGA SPA (SOFT RESET INTELIGENTE SIN F5)
             this.resetState();

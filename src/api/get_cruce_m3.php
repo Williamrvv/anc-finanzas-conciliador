@@ -2,6 +2,7 @@
 session_start();
 require_once '../db.php';
 require_once 'tsd_db.php'; // Incluimos la conexión dedicada a TSD
+require_once __DIR__ . '/cc_transitoria_lib.php'; // CC transitorio de links de pago
 
 header('Content-Type: application/json');
 
@@ -191,7 +192,8 @@ ORDER BY Folio_Cierre ASC, Banco ASC, TRY_CONVERT(date, Fecha_Pago_Excel, 103) A
     echo json_encode([
         'success' => true,
         'tsd' => $dataTSD,
-        'bancos' => $dataBancos
+        'bancos' => $dataBancos,
+        'cc_transitoria' => CC_TRANSITORIA
     ]);
 
 } catch (PDOException $e) {

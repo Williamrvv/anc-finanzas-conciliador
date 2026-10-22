@@ -13,6 +13,7 @@ if (!isset($_SESSION['user'])) {
 }
 
 require_once '../db.php';
+require_once __DIR__ . '/cc_transitoria_lib.php'; // CC transitorio de links de pago
 
 /**
  * Devuelve la fecha como 'AAAA-MM-DD', o null si no es reconocible.
@@ -130,6 +131,7 @@ try {
     $stmtAjuste = $pdo->prepare("INSERT INTO Tbl_Ajustes_Auditoria (IdTransaccion, TipoAjuste, Justificacion, EvidenciaB64) VALUES (?, ?, ?, ?)");
 
     $filasAfectadas = 0;
+    $transitorias = []; // Links de pago guardados con el CC transitorio (aviso al usuario)
     $auditHashes = []; // Rastreador para transacciones nuevas
     $auditIds = [];    // Rastreador para transacciones históricas
 
@@ -201,6 +203,20 @@ try {
                     // Marcador AFILIADO_SIN_CC: el frontend lo reconoce y muestra un
                     // aviso guiado en vez del error genérico de servidor.
                     throw new \Exception("AFILIADO_SIN_CC:{$afiliado}");
+                }
+
+                // LINK DE PAGO: se guarda con el CC transitorio sin detener nada.
+                // Se avisa en el resumen y el M3 obliga a asignar el CC real.
+                if ($centroCostoValidado === CC_TRANSITORIA) {
+                    $rawLink = ($bancoParaBD === 'BAC') ? ($t['RawBAC'] ?? []) : ($t['RawScotia'] ?? []);
+                    $transitorias[] = [
+                        'banco'        => $bancoParaBD,
+                        'afiliado'     => $afiliado,
+                        'comercio'     => ($bancoParaBD === 'BAC') ? ($rawLink['NOMBRECOMERCIO'] ?? '') : ($rawLink['Nombre'] ?? ''),
+                        'autorizacion' => $t['Autorizacion'] ?? '',
+                        'monto'        => $bruto,
+                        'fecha'        => $fecha
+                    ];
                 }
             }
             // =========================================================================
@@ -295,7 +311,13 @@ try {
     }
     $textoVisualCierres = implode(' | ', $stringCierres);
 
-    echo json_encode(['success' => true, 'filas_insertadas' => $filasAfectadas, 'id_cierre' => $textoVisualCierres]);
+    echo json_encode([
+        'success' => true,
+        'filas_insertadas' => $filasAfectadas,
+        'id_cierre' => $textoVisualCierres,
+        'cc_transitoria' => CC_TRANSITORIA,
+        'transitorias' => $transitorias
+    ]);
 
 } catch (\Throwable $e) { 
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();

@@ -96,6 +96,9 @@ window.TSDLogic = {
     // MOTOR DE EXPORTACIÓN SOFTLAND ERP (ESTRATEGIA CONFIG-DRIVEN)
     // --------------------------------------------------------
     exportSoftland: async function(tipo) {
+        // Ningún cargador sale con links de pago en la transitoria
+        if (!(await this.exigirCCTransitoriasM3('descargar el cargador'))) return;
+
         const dateVal = document.getElementById('tsd-date-picker').value;
         if (!dateVal) return window.SysUI.alert("Seleccione un rango de fechas para promediar el Tipo de Cambio.", "Fechas Requeridas", "warning");
 
@@ -1264,6 +1267,9 @@ window.TSDLogic = {
                 b._id = 'b_' + b.IdTransaccion;
                 return b;
             });
+
+            // CC transitorio de los links de pago (lo define el servidor)
+            this.ccTransitoria = json.cc_transitoria || null;
 
             this.updateFinancialDashboard(
                 this.lastTSD,
@@ -2651,9 +2657,240 @@ window.TSDLogic = {
     },
 
     // --------------------------------------------------------
+    // CENTRO DE COSTO TRANSITORIO (LINKS DE PAGO)
+    // Los links de pago entran desde M2 con el CC transitorio. Antes de
+    // guardar el consolidado o descargar un cargador, el usuario debe
+    // asignarles su CC real. Sólo revisa el cruce actual (lastBancos).
+    // El sistema SUGIERE el CC del contrato TSD con el que cruzó, pero
+    // nunca lo aplica solo: el usuario decide.
+    // --------------------------------------------------------
+    ccTransitoria: null,
+
+    _bancosEnTransitoriaM3: function() {
+        const cc = String(this.ccTransitoria || '').trim();
+        if (!cc) return [];
+        return (this.lastBancos || []).filter(b => String(b.CentroCosto || '').trim() === cc);
+    },
+
+    _sugerenciaCCTransitoria: function(banco) {
+        const id = String(banco.IdTransaccion);
+        const fila = (this.currentMatchedData || []).find(r => {
+            const arrB = (Array.isArray(r._bancoRaw) ? r._bancoRaw : [r._bancoRaw]).filter(Boolean);
+            return arrB.some(b => String(b.IdTransaccion) === id);
+        });
+        if (!fila) return { cc: '', contratos: '' };
+
+        const arrT = (Array.isArray(fila._tsdRaw) ? fila._tsdRaw : [fila._tsdRaw]).filter(Boolean);
+        const contratos = [...new Set(arrT.map(t => String(t.Contrato || '').trim()).filter(Boolean))].join(', ');
+        const ccs = [...new Set(arrT
+            .map(t => String(t.CentroCosto || '').trim())
+            .filter(c => c && c !== '00-00-00' && c !== this.ccTransitoria))];
+
+        // Sólo se sugiere si todos los contratos del cruce apuntan al mismo CC
+        return { cc: ccs.length === 1 ? ccs[0] : '', contratos: contratos };
+    },
+
+    _aplicarCCEnMemoriaM3: function(cambios) {
+        const mapa = {};
+        cambios.forEach(c => { mapa[String(c.idTransaccion)] = c.cc; });
+        const tocar = (b) => {
+            if (b && mapa[String(b.IdTransaccion)] !== undefined) b.CentroCosto = mapa[String(b.IdTransaccion)];
+        };
+        (this.lastBancos || []).forEach(tocar);
+        [this.currentMatchedData, this.currentPendingData].forEach(lista => {
+            (lista || []).forEach(r => {
+                (Array.isArray(r._bancoRaw) ? r._bancoRaw : [r._bancoRaw]).forEach(tocar);
+            });
+        });
+    },
+
+    // Devuelve true si se puede continuar (no hay transitorias o ya se corrigieron)
+    exigirCCTransitoriasM3: async function(accionTexto) {
+        const pendientes = this._bancosEnTransitoriaM3();
+        if (pendientes.length === 0) return true;
+
+        let catalogo = [];
+        try {
+            const res = await fetch('api/cc_transitoria_m3.php?accion=catalogo', { cache: 'no-store' });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || 'Respuesta inválida del servidor.');
+            catalogo = Array.isArray(json.catalogo) ? json.catalogo : [];
+        } catch (e) {
+            await window.SysUI.alert(
+                `Hay ${pendientes.length} transacción(es) de link de pago en el centro de costo transitorio y no se pudo cargar el catálogo de centros de costo.\n\n${e.message}\n\nNo es posible ${accionTexto} hasta asignarles su centro de costo.`,
+                "Transitoria pendiente", "error"
+            );
+            return false;
+        }
+
+        if (catalogo.length === 0) {
+            await window.SysUI.alert(
+                `Hay ${pendientes.length} transacción(es) en la transitoria, pero el catálogo de centros de costo está vacío. Revise el Diccionario Maestro.`,
+                "Transitoria pendiente", "error"
+            );
+            return false;
+        }
+
+        const filas = pendientes.map(b => Object.assign({ banco: b }, this._sugerenciaCCTransitoria(b)));
+        const cambios = await this._modalCCTransitoriasM3(filas, catalogo, accionTexto);
+        if (!cambios) return false;
+
+        try {
+            const res = await fetch('api/cc_transitoria_m3.php?accion=actualizar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cambios: cambios })
+            });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || 'El servidor rechazó la actualización.');
+        } catch (e) {
+            await window.SysUI.alert(`No se actualizó ningún centro de costo.\n\n${e.message}`, "Error al actualizar", "error");
+            return false;
+        }
+
+        this._aplicarCCEnMemoriaM3(cambios);
+
+        await window.SysUI.alert(
+            `Se asignó el centro de costo a ${cambios.length} transacción(es). Ya salieron de la transitoria y el cambio quedó registrado en la bitácora.\n\nAhora se continuará para ${accionTexto}.`,
+            "Transitoria resuelta", "success"
+        );
+        return true;
+    },
+
+    _modalCCTransitoriasM3: function(filas, catalogo, accionTexto) {
+        return new Promise(resolve => {
+            const esc = (v) => String(v === null || v === undefined ? '' : v)
+                .replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+            const money = (v) => (parseFloat(v) || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const opciones = '<option value="">— Elegir —</option>' + catalogo
+                .map(c => `<option value="${esc(c.cc)}">${esc(c.cc)}${c.etiqueta ? ' · ' + esc(c.etiqueta) : ''}</option>`).join('');
+            const haySugerencias = filas.some(f => f.cc);
+            const selClass = 'cct-sel w-full p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500';
+
+            const filasHtml = filas.map((f, i) => {
+                const b = f.banco;
+                return `
+                <tr class="border-b border-slate-100 dark:border-slate-700 align-top">
+                    <td class="p-2 text-center"><input type="checkbox" class="cct-chk w-4 h-4 cursor-pointer" data-i="${i}"></td>
+                    <td class="p-2 font-mono text-[11px] whitespace-nowrap">${esc(b.Fecha_Pago_Excel)}</td>
+                    <td class="p-2 text-[11px]">${esc(b.Nombre_Sucursal_Comercio)}
+                        <div class="text-[10px] text-slate-400">${esc(b.Banco)} · Folio #${esc(b.Folio_Cierre)} · Afiliado ${esc(b.Afiliado_MerID)}</div></td>
+                    <td class="p-2 font-mono text-[11px]">${esc(b.Numero_Autorizacion) || '-'}</td>
+                    <td class="p-2 font-mono text-[11px] text-right whitespace-nowrap">₡${money(b.Monto_Venta_Original)}</td>
+                    <td class="p-2 font-mono text-[11px]">${f.contratos ? esc(f.contratos) : '<span class="text-slate-400 italic">Sin cruce</span>'}</td>
+                    <td class="p-2 min-w-[220px]">
+                        <select class="${selClass}" data-i="${i}">${opciones}</select>
+                        ${f.cc
+                            ? `<button type="button" class="cct-sug mt-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline" data-i="${i}" data-cc="${esc(f.cc)}">Usar sugerido: ${esc(f.cc)}</button>`
+                            : `<div class="mt-1 text-[10px] text-slate-400">Sin sugerencia</div>`}
+                    </td>
+                </tr>`;
+            }).join('');
+
+            const overlay = document.createElement('div');
+            overlay.className = 'fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[999999] flex items-center justify-center p-4';
+            overlay.innerHTML = `
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-6xl flex flex-col max-h-[92vh]">
+                    <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                        <h3 class="text-lg font-bold text-amber-600 dark:text-amber-400">⚠️ Links de pago en la transitoria</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Hay <b>${filas.length}</b> transacción(es) con el centro de costo transitorio (<span class="font-mono">${esc(this.ccTransitoria)}</span>).
+                            Para ${esc(accionTexto)} debe asignar a cada una su centro de costo real.
+                            La sugerencia es el centro de costo de la sucursal del contrato TSD con el que cruzó: revísela antes de usarla.
+                        </p>
+                    </div>
+                    <div class="px-6 py-3 border-b border-slate-100 dark:border-slate-700 flex flex-wrap items-center gap-2 text-xs">
+                        <label class="flex items-center gap-1 font-bold text-slate-600 dark:text-slate-300 cursor-pointer select-none">
+                            <input type="checkbox" id="cct-all" class="w-4 h-4"> Seleccionar todas
+                        </label>
+                        <select id="cct-bulk" class="p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 dark:text-white max-w-[260px]">${opciones}</select>
+                        <button type="button" id="cct-bulk-apply" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-md font-bold">Aplicar a seleccionadas</button>
+                        ${haySugerencias ? '<button type="button" id="cct-sug-all" class="bg-white dark:bg-slate-700 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 px-3 py-1.5 rounded-md font-bold">Usar todas las sugerencias</button>' : ''}
+                    </div>
+                    <div class="overflow-auto flex-1 min-h-0 px-2">
+                        <table class="w-full text-left text-slate-700 dark:text-slate-300">
+                            <thead class="sticky top-0 bg-white dark:bg-slate-800 text-[10px] uppercase text-slate-400">
+                                <tr><th class="p-2"></th><th class="p-2">Fecha</th><th class="p-2">Comercio</th><th class="p-2">Autorización</th><th class="p-2 text-right">Monto</th><th class="p-2">Contrato TSD</th><th class="p-2">Centro de costo</th></tr>
+                            </thead>
+                            <tbody>${filasHtml}</tbody>
+                        </table>
+                    </div>
+                    <div id="cct-error" class="hidden px-6 py-2 text-xs font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border-t border-red-200 dark:border-red-800"></div>
+                    <div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 border-t border-slate-100 dark:border-slate-700">
+                        <button type="button" id="cct-cancel" class="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold">Cancelar</button>
+                        <button type="button" id="cct-save" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-bold shadow-sm">Guardar centros de costo</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            const $ = (sel) => overlay.querySelector(sel);
+            const selects = Array.from(overlay.querySelectorAll('.cct-sel'));
+            const checks = Array.from(overlay.querySelectorAll('.cct-chk'));
+
+            const fijar = (sel, cc) => {
+                if (!cc) return;
+                if (!Array.from(sel.options).some(o => o.value === cc)) {
+                    const op = document.createElement('option');
+                    op.value = cc; op.textContent = cc + ' · sugerido';
+                    sel.appendChild(op);
+                }
+                sel.value = cc;
+                sel.classList.remove('ring-2', 'ring-red-500');
+            };
+
+            $('#cct-all').onchange = (e) => checks.forEach(c => { c.checked = e.target.checked; });
+
+            $('#cct-bulk-apply').onclick = () => {
+                const cc = $('#cct-bulk').value;
+                const marcadas = checks.filter(c => c.checked);
+                if (!cc || marcadas.length === 0) {
+                    $('#cct-error').textContent = 'Elija un centro de costo y marque al menos una transacción.';
+                    $('#cct-error').classList.remove('hidden');
+                    return;
+                }
+                $('#cct-error').classList.add('hidden');
+                marcadas.forEach(c => fijar(selects[parseInt(c.dataset.i, 10)], cc));
+            };
+
+            overlay.querySelectorAll('.cct-sug').forEach(btn => {
+                btn.onclick = () => fijar(selects[parseInt(btn.dataset.i, 10)], btn.dataset.cc);
+            });
+
+            if ($('#cct-sug-all')) {
+                $('#cct-sug-all').onclick = () => filas.forEach((f, i) => { if (f.cc) fijar(selects[i], f.cc); });
+            }
+
+            selects.forEach(s => s.addEventListener('change', () => s.classList.remove('ring-2', 'ring-red-500')));
+
+            const cerrar = (valor) => { overlay.remove(); resolve(valor); };
+
+            $('#cct-cancel').onclick = () => cerrar(null);
+
+            $('#cct-save').onclick = () => {
+                const vacios = selects.filter(s => !s.value);
+                if (vacios.length > 0) {
+                    vacios.forEach(s => s.classList.add('ring-2', 'ring-red-500'));
+                    $('#cct-error').textContent = `Faltan ${vacios.length} transacción(es) sin centro de costo. Todas deben salir de la transitoria para continuar.`;
+                    $('#cct-error').classList.remove('hidden');
+                    vacios[0].focus();
+                    return;
+                }
+                cerrar(filas.map((f, i) => ({
+                    idTransaccion: f.banco.IdTransaccion,
+                    banco: f.banco.Banco,
+                    cc: selects[i].value,
+                    sugerido: f.cc || ''
+                })));
+            };
+        });
+    },
+
+    // --------------------------------------------------------
     // MOTOR DE EMPAQUETADO Y GUARDADO (FASE DE PERSISTENCIA)
     // --------------------------------------------------------
     saveTSDCierre: async function() {
+        // Ningún consolidado se guarda con links de pago en la transitoria
+        if (!(await this.exigirCCTransitoriasM3('guardar el consolidado TSD'))) return; 
         // CLONACIÓN ABSOLUTA: Congelamos el estado visual exacto para que el algoritmo no toque nada
         const dataMatched = this.currentMatchedData ? JSON.parse(JSON.stringify(this.currentMatchedData)) : [];
         const dataPending = this.currentPendingData ? JSON.parse(JSON.stringify(this.currentPendingData)) : [];
