@@ -2743,12 +2743,31 @@ window.TSDLogic = {
             });
             const json = await res.json();
             if (!json.success) throw new Error(json.error || 'El servidor rechazó la actualización.');
+
+            // Comprobación: el servidor relee la base y devuelve el CC que quedó en cada transacción
+            const verificadas = {};
+            (json.verificadas || []).forEach(v => { verificadas[String(v.idTransaccion)] = String(v.cc); });
+            const noCoinciden = cambios.filter(c => verificadas[String(c.idTransaccion)] !== String(c.cc));
+            if (noCoinciden.length > 0) {
+                throw new Error(`El servidor no confirmó el centro de costo de ${noCoinciden.length} transacción(es): ` +
+                    noCoinciden.map(c => c.idTransaccion).join(', ') + '. Vuelva a ejecutar el cruce y revise.');
+            }
         } catch (e) {
             await window.SysUI.alert(`No se actualizó ningún centro de costo.\n\n${e.message}`, "Error al actualizar", "error");
             return false;
         }
 
         this._aplicarCCEnMemoriaM3(cambios);
+
+        // Ninguna transacción del cruce puede seguir en la transitoria
+        const restantes = this._bancosEnTransitoriaM3();
+        if (restantes.length > 0) {
+            await window.SysUI.alert(
+                `Todavía hay ${restantes.length} transacción(es) en la transitoria. Vuelva a ejecutar el cruce.`,
+                "Transitoria pendiente", "error"
+            );
+            return false;
+        }
 
         await window.SysUI.alert(
             `Se asignó el centro de costo a ${cambios.length} transacción(es). Ya salieron de la transitoria y el cambio quedó registrado en la bitácora.\n\nAhora se continuará para ${accionTexto}.`,
@@ -2762,8 +2781,11 @@ window.TSDLogic = {
             const esc = (v) => String(v === null || v === undefined ? '' : v)
                 .replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
             const money = (v) => (parseFloat(v) || 0).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const opciones = '<option value="">— Elegir —</option>' + catalogo
-                .map(c => `<option value="${esc(c.cc)}">${esc(c.cc)}${c.etiqueta ? ' · ' + esc(c.etiqueta) : ''}</option>`).join('');
+            // BUSCADOR: un solo <datalist> para todos los campos. Se escribe parte del
+            // CC o del nombre de la sucursal y el navegador filtra la lista.
+            const datalist = '<datalist id="cct-catalogo">' + catalogo
+                .map(c => `<option value="${esc(c.cc)}" label="${esc(c.etiqueta || '')}">${esc(c.etiqueta || '')}</option>`).join('') + '</datalist>';
+            const ccValidos = new Set(catalogo.map(c => String(c.cc)));
             const haySugerencias = filas.some(f => f.cc);
             const selClass = 'cct-sel w-full p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500';
 
@@ -2779,7 +2801,7 @@ window.TSDLogic = {
                     <td class="p-2 font-mono text-[11px] text-right whitespace-nowrap">₡${money(b.Monto_Venta_Original)}</td>
                     <td class="p-2 font-mono text-[11px]">${f.contratos ? esc(f.contratos) : '<span class="text-slate-400 italic">Sin cruce</span>'}</td>
                     <td class="p-2 min-w-[220px]">
-                        <select class="${selClass}" data-i="${i}">${opciones}</select>
+                        <input type="text" list="cct-catalogo" autocomplete="off" placeholder="Buscar CC o sucursal…" class="${selClass}" data-i="${i}">
                         ${f.cc
                             ? `<button type="button" class="cct-sug mt-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:underline" data-i="${i}" data-cc="${esc(f.cc)}">Usar sugerido: ${esc(f.cc)}</button>`
                             : `<div class="mt-1 text-[10px] text-slate-400">Sin sugerencia</div>`}
@@ -2803,7 +2825,7 @@ window.TSDLogic = {
                         <label class="flex items-center gap-1 font-bold text-slate-600 dark:text-slate-300 cursor-pointer select-none">
                             <input type="checkbox" id="cct-all" class="w-4 h-4"> Seleccionar todas
                         </label>
-                        <select id="cct-bulk" class="p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 dark:text-white max-w-[260px]">${opciones}</select>
+                        <input type="text" id="cct-bulk" list="cct-catalogo" autocomplete="off" placeholder="Buscar CC o sucursal…" class="p-1.5 text-xs font-mono border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-900 dark:text-white w-[260px]">
                         <button type="button" id="cct-bulk-apply" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-md font-bold">Aplicar a seleccionadas</button>
                         ${haySugerencias ? '<button type="button" id="cct-sug-all" class="bg-white dark:bg-slate-700 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 px-3 py-1.5 rounded-md font-bold">Usar todas las sugerencias</button>' : ''}
                     </div>
@@ -2820,6 +2842,7 @@ window.TSDLogic = {
                         <button type="button" id="cct-cancel" class="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold">Cancelar</button>
                         <button type="button" id="cct-save" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-bold shadow-sm">Guardar centros de costo</button>
                     </div>
+                    ${datalist}
                 </div>`;
             document.body.appendChild(overlay);
 
@@ -2829,22 +2852,23 @@ window.TSDLogic = {
 
             const fijar = (sel, cc) => {
                 if (!cc) return;
-                if (!Array.from(sel.options).some(o => o.value === cc)) {
-                    const op = document.createElement('option');
-                    op.value = cc; op.textContent = cc + ' · sugerido';
-                    sel.appendChild(op);
-                }
                 sel.value = cc;
                 sel.classList.remove('ring-2', 'ring-red-500');
+            };
+
+            // Un CC es aceptable si está en el catálogo o es la sugerencia de esa fila
+            const esValido = (i, valor) => {
+                const v = String(valor || '').trim();
+                return v !== '' && (ccValidos.has(v) || (filas[i] && filas[i].cc === v));
             };
 
             $('#cct-all').onchange = (e) => checks.forEach(c => { c.checked = e.target.checked; });
 
             $('#cct-bulk-apply').onclick = () => {
-                const cc = $('#cct-bulk').value;
+                const cc = $('#cct-bulk').value.trim();
                 const marcadas = checks.filter(c => c.checked);
-                if (!cc || marcadas.length === 0) {
-                    $('#cct-error').textContent = 'Elija un centro de costo y marque al menos una transacción.';
+                if (!ccValidos.has(cc) || marcadas.length === 0) {
+                    $('#cct-error').textContent = 'Elija un centro de costo de la lista y marque al menos una transacción.';
                     $('#cct-error').classList.remove('hidden');
                     return;
                 }
@@ -2860,17 +2884,17 @@ window.TSDLogic = {
                 $('#cct-sug-all').onclick = () => filas.forEach((f, i) => { if (f.cc) fijar(selects[i], f.cc); });
             }
 
-            selects.forEach(s => s.addEventListener('change', () => s.classList.remove('ring-2', 'ring-red-500')));
+            selects.forEach(s => s.addEventListener('input', () => s.classList.remove('ring-2', 'ring-red-500')));
 
             const cerrar = (valor) => { overlay.remove(); resolve(valor); };
 
             $('#cct-cancel').onclick = () => cerrar(null);
 
             $('#cct-save').onclick = () => {
-                const vacios = selects.filter(s => !s.value);
+                const vacios = selects.filter((s, i) => !esValido(i, s.value));
                 if (vacios.length > 0) {
                     vacios.forEach(s => s.classList.add('ring-2', 'ring-red-500'));
-                    $('#cct-error').textContent = `Faltan ${vacios.length} transacción(es) sin centro de costo. Todas deben salir de la transitoria para continuar.`;
+                    $('#cct-error').textContent = `Hay ${vacios.length} transacción(es) sin un centro de costo válido de la lista. Todas deben salir de la transitoria para continuar.`;
                     $('#cct-error').classList.remove('hidden');
                     vacios[0].focus();
                     return;
@@ -2878,7 +2902,7 @@ window.TSDLogic = {
                 cerrar(filas.map((f, i) => ({
                     idTransaccion: f.banco.IdTransaccion,
                     banco: f.banco.Banco,
-                    cc: selects[i].value,
+                    cc: selects[i].value.trim(),
                     sugerido: f.cc || ''
                 })));
             };
