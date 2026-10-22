@@ -418,31 +418,39 @@ $nombreReal = $_SESSION['user']['nombre'] ?? ($_SESSION['user']['username'] ?? '
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
+    <?php
+    // Versión = fecha de modificación del archivo: el navegador usa su caché
+    // hasta que el archivo cambia, y entonces descarga el nuevo automáticamente.
+    $jsv = function ($archivo) {
+        $ruta = __DIR__ . '/js/' . $archivo;
+        return 'js/' . $archivo . '?v=' . (is_file($ruta) ? filemtime($ruta) : time());
+    };
+    ?>
     <!-- Motor de Modales Moderno -->
-    <script src="js/sys_ui.js"></script>
+    <script src="<?php echo $jsv('sys_ui.js'); ?>"></script>
     <!-- Cargar nuestro nuevo motor -->
-    <script src="js/vanilla_grid.js"></script>
+    <script src="<?php echo $jsv('vanilla_grid.js'); ?>"></script>
     <!-- SheetJS (Excel) -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Lógica Negocio -->
-    <script src="js/conciliacion_ui.js"></script>
+    <script src="<?php echo $jsv('conciliacion_ui.js'); ?>"></script>
     <!-- Lógica Modular de conciliaciones -->
-    <script src="js/bac_logic.js"></script>
-    <script src="js/scotia_logic.js"></script>
-    <script src="js/tsd_logic_m3.js"></script>
-    <script src="js/auxiliar_logic_m4.js"></script>
-    <script src="js/auxiliar_corte_diario.js"></script>
+    <script src="<?php echo $jsv('bac_logic.js'); ?>"></script>
+    <script src="<?php echo $jsv('scotia_logic.js'); ?>"></script>
+    <script src="<?php echo $jsv('tsd_logic_m3.js'); ?>"></script>
+    <script src="<?php echo $jsv('auxiliar_logic_m4.js'); ?>"></script>
+    <script src="<?php echo $jsv('auxiliar_corte_diario.js'); ?>"></script>
     <!-- Módulo Usuarios -->
-    <script src="js/usuarios_logic.js"></script>
+    <script src="<?php echo $jsv('usuarios_logic.js'); ?>"></script>
     <!-- Lógica Módulo Cierre de Caja -->
-    <script src="js/cierre_cajas_logic.js?v=<?php echo time(); ?>"></script>
+    <script src="<?php echo $jsv('cierre_cajas_logic.js'); ?>"></script>
     <!-- JS SPA -->
-    <script src="js/app.js"></script>
+    <script src="<?php echo $jsv('app.js'); ?>"></script>
     <!-- Bitácora (Login y Cierre de Caja) -->
-    <script src="js/bitacora.js?v=<?php echo time(); ?>"></script>
+    <script src="<?php echo $jsv('bitacora.js'); ?>"></script>
     <!-- Chart.js para Dashboards Animados -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-    <script src="js/dashboard_logic.js?v=1"></script>
+    <script src="<?php echo $jsv('dashboard_logic.js'); ?>"></script>
 </body>
 </html>
