@@ -2907,7 +2907,7 @@ window.TSDLogic = {
                 })));
             };
         });
-    },
+    }, 
 
     // --------------------------------------------------------
     // MOTOR DE EMPAQUETADO Y GUARDADO (FASE DE PERSISTENCIA)
