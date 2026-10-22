@@ -3221,7 +3221,7 @@ window.TSDLogic = {
              */
             let corteAuxiliarGuardado = false;
             let errorCorteAuxiliar = '';
-
+ 
             try {
                 if (
                     !window.AuxiliarLogic ||
