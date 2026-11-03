@@ -1,4 +1,4 @@
-FROM php:8.2-apache
+FROM php:8.3-apache-bookworm
 
 # Instalar dependencias del sistema y gnupg para las llaves de Microsoft
 RUN apt-get update && apt-get install -y \
@@ -16,7 +16,7 @@ RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor
     && echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> ~/.bashrc
 
 # Instalar extensiones PHP para SQL Server
-RUN pecl install sqlsrv-5.11.1 pdo_sqlsrv-5.11.1 \
+RUN pecl install sqlsrv-5.12.0 pdo_sqlsrv-5.12.0 \
     && docker-php-ext-enable sqlsrv pdo_sqlsrv
 
 # Habilitar mod_rewrite de Apache

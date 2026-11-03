@@ -4151,17 +4151,6 @@ window.AuxiliarLogic = {
                     class="w-full p-2.5 text-sm font-bold border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
             </div>
 
-            <div>
-                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                    Referencia Softland *
-                </label>
-                <input id="softland-contable-referencia"
-                    type="text"
-                    maxlength="100"
-                    placeholder="Número o referencia del registro en Softland"
-                    class="w-full p-2.5 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-
             <div id="softland-contable-error"
                 class="hidden text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-2">
             </div>
@@ -4197,16 +4186,14 @@ window.AuxiliarLogic = {
     guardarRegistroSoftland: async function() {
         const montoInput = document.getElementById('softland-contable-monto');
         const fechaInput = document.getElementById('softland-contable-fecha');
-        const referenciaInput = document.getElementById('softland-contable-referencia');
         const errorBox = document.getElementById('softland-contable-error');
         const btn = document.getElementById('softland-contable-save');
 
-        if (!montoInput || !fechaInput || !referenciaInput) return;
+        if (!montoInput || !fechaInput) return;
 
         const montoRaw = montoInput.value.trim();
         const monto = Number(montoRaw);
         const fecha = fechaInput.value;
-        const referencia = referenciaInput.value.trim();
 
         const ahora = new Date();
         const hoy =
@@ -4234,10 +4221,6 @@ window.AuxiliarLogic = {
             return mostrarError('La fecha no puede estar en el futuro.');
         }
 
-        if (!referencia) {
-            return mostrarError('Debe indicar la referencia de Softland.');
-        }
-
         if (btn) {
             btn.disabled = true;
             btn.innerText = 'Guardando...';
@@ -4250,8 +4233,7 @@ window.AuxiliarLogic = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     monto: monto,
-                    fecha: fecha,
-                    referencia: referencia
+                    fecha: fecha
                 })
             });
 

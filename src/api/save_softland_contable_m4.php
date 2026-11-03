@@ -26,7 +26,6 @@ if (!is_array($in)) {
 
 $montoRaw = $in['monto'] ?? null;
 $fecha = trim($in['fecha'] ?? '');
-$referencia = trim($in['referencia'] ?? '');
 $emailUsuario = trim($_SESSION['user']['email'] ?? '');
 
 if ($montoRaw === null || $montoRaw === '' || !is_numeric($montoRaw)) {
@@ -68,22 +67,6 @@ if ($fecha > $hoyCR) {
     exit;
 }
 
-if ($referencia === '') {
-    echo json_encode([
-        'success' => false,
-        'error' => 'Debe indicar la referencia de Softland.'
-    ]);
-    exit;
-}
-
-if (strlen($referencia) > 100) {
-    echo json_encode([
-        'success' => false,
-        'error' => 'La referencia de Softland no puede superar 100 caracteres.'
-    ]);
-    exit;
-}
-
 if ($emailUsuario === '') {
     echo json_encode([
         'success' => false,
@@ -100,17 +83,15 @@ try {
         (
             FechaContable,
             Monto,
-            ReferenciaSoftland,
             EmailUsuario
         )
         OUTPUT INSERTED.IdRegistro
-        VALUES (CONVERT(date, ?, 23), ?, ?, ?)
+        VALUES (CONVERT(date, ?, 23), ?, ?)
     ");
 
     $stmt->execute([
         $fecha,
         $montoRaw,
-        $referencia,
         $emailUsuario
     ]);
 
