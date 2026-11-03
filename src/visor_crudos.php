@@ -1039,15 +1039,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
         }
 
         function historicoDiferencia(montoTSD, montoBanco) {
-            const absT = Math.abs(montoTSD);
-            const absB = Math.abs(montoBanco);
-            const gap = Math.abs(absT - absB);
-
-            if (absT >= absB) {
-                return montoTSD < 0 ? -gap : gap;
-            }
-
-            return montoBanco < 0 ? -gap : gap;
+            return montoBanco - montoTSD;
         }
 
         function historicoDebitoCredito(rows) {

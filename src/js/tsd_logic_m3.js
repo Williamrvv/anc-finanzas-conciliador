@@ -1532,17 +1532,9 @@ window.TSDLogic = {
             const bancoRep = isMulti ? bancoArr.map(b=>b.Banco).join(', ') : (b0.Banco || 'Solo TSD');
             const authBancoRep = isMulti ? bancoArr.map(b=>b.Numero_Autorizacion).join(', ') : (b0.Numero_Autorizacion || '-');
 
-            // Diferencia Contable Real: Tomar el mayor, restarle el menor y conservar el signo del mayor
-            const absT = Math.abs(montoTSD);
-            const absB = Math.abs(montoBanco);
-            const gap = Math.abs(absT - absB);
+            // Diferencia = Banco - TSD
             
-            let diffReal = 0;
-            if (absT >= absB) {
-                diffReal = montoTSD < 0 ? -gap : gap;
-            } else {
-                diffReal = montoBanco < 0 ? -gap : gap;
-            }
+            const diffReal = montoBanco - montoTSD;
 
             gridData.push({
                 _uid: 'row_' + Math.random().toString(36).substr(2, 9),
@@ -1803,7 +1795,7 @@ window.TSDLogic = {
                         valueOf: function() { return this.valor; },
                         toString: function() { return this.valor.toString(); }
                     },
-                    EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: montoTSD
+                    EstadoMatch: 'Pendiente', Banco_Nombre: '-', Banco_Auth: '-', Banco_Monto: 0, Diferencia: 0 - montoTSD
                 });
             }
         });
@@ -1818,7 +1810,7 @@ window.TSDLogic = {
                     Contrato: 'Solo Banco', Cliente: b.Nombre_Sucursal_Comercio,
                     TarjetaTSD: b.Tarjeta_Ultimos4 ? `****${b.Tarjeta_Ultimos4}` : 'S/D',
                     Autorizacion: '-', MontoTSD: 0, // A los bancos no les inyectamos recibo
-                    EstadoMatch: 'Sobrante', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: 0 - m
+                    EstadoMatch: 'Sobrante', Banco_Nombre: b.Banco, Banco_Auth: b.Numero_Autorizacion, Banco_Monto: m, Diferencia: m
                 });
             }
         });
@@ -2435,17 +2427,12 @@ window.TSDLogic = {
                     const sumT = ws.tsd.map(c => parseFloat(c.MontoCRC) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
                     const sumB = ws.bancos.map(c => parseFloat(c.Monto_Venta_Original) || 0).sort((a,b) => Math.abs(b) - Math.abs(a)).reduce((acc, val) => acc + val, 0);
                     
-                    // Diferencia Contable Real: Tomar el mayor, restarle el menor y conservar el signo del mayor
+                    // Diferencia = Banco - TSD. gap (magnitud) se mantiene para las sugerencias
                     const absT = Math.abs(sumT);
                     const absB = Math.abs(sumB);
                     const gap = Math.abs(absT - absB); // Brecha absoluta para buscar sugerencias
                     
-                    let diff = 0;
-                    if (absT >= absB) {
-                        diff = sumT < 0 ? -gap : gap;
-                    } else {
-                        diff = sumB < 0 ? -gap : gap;
-                    }
+                    const diff = sumB - sumT;
                     
                     const diffEl = document.getElementById('ws-diff');
                     diffEl.innerText = fmt(diff);
