@@ -859,7 +859,7 @@ window.ScotiaLogic = {
         const columns = [
             { title: "ID Ref", field: "uuid", visible: false },
             { 
-                title: "MerID / Comercio", field: "id", headerFilter: true, width: 200, 
+                title: "Afiliado", field: "id", headerFilter: true, width: 200,
                 formatter: (cell) => {
                     const r = cell.getRow(); 
                     let content = `<span class="font-bold">${r.id}</span>`;
@@ -963,7 +963,7 @@ window.ScotiaLogic = {
 
         const columns = [
             { title: "Fecha", field: "fecha", width: 90, headerFilter: true, cssClass: "text-slate-500 font-mono text-[10px]" },
-            { title: "MerID / Comercio", field: "id", width: 120, headerFilter: true },
+            { title: "Afiliado", field: "id", width: 120, headerFilter: true },
             { 
                 title: "Diagnóstico", field: "diferencia_val", width: 180, 
                 formatter: (cell) => {
