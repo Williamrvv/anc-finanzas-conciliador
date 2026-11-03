@@ -39,3 +39,4 @@ RUN a2ensite default-ssl
 
 # Copiar configuración (opcional, dejamos el workdir estándar)
 WORKDIR /var/www/html
+
