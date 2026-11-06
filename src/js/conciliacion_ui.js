@@ -6,7 +6,7 @@ window.ConciliacionLogic = {
     // Se usa en TODOS los puntos de comparación de BAC, Davibank y el
     // guardado, para que nunca vuelvan a divergir entre sí.
     // ---------------------------------------------------------------
-    TOLERANCIA: 2000,
+    TOLERANCIA: 100,
     data: { 
         detalle: [], 
         pagado: [], 

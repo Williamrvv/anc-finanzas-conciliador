@@ -1209,7 +1209,7 @@ window.ScotiaLogic = {
         const top = (screen.height - h) / 2;
         const win = window.open("", "_blank", `width=${w},height=${h},top=${top},left=${left}`);
         
-        const isReadOnly = Math.abs(diff) <= (500) || data._isManual === true; //tolerancia popUp
+        const isReadOnly = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA || data._isManual === true;
         
         if(!win) return alert("Ventana bloqueada.");
 
@@ -1857,7 +1857,7 @@ window.ScotiaLogic = {
                         const btn = document.getElementById('btn-manual');
                         // OJO: esto corre DENTRO del popup (window.open), así que la lógica
                         // vive en window.opener. El fallback evita romper si se pierde.
-                        const TOL = (window.opener && window.opener.ConciliacionLogic) ? window.opener.ConciliacionLogic.TOLERANCIA : 2000;
+                        const TOL = (window.opener && window.opener.ConciliacionLogic) ? window.opener.ConciliacionLogic.TOLERANCIA : 100;
                         const isValid = Math.abs(currentFooterDiff) <= TOL && (selCountV > 0 || selCountB > 0);
                         
                         if(isValid) {
