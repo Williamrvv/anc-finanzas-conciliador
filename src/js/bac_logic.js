@@ -740,20 +740,11 @@ window.BACLogic = {
         
         // 2. Destruir Grupos Manuales que contenían elementos de este archivo
         if (this.manualMatches) {
-            this.manualMatches = this.manualMatches.filter(group => {
-                // Si el grupo contiene al menos una venta de este archivo, destruimos el grupo completo
-                const hasDeletedRow = group.rows.some(r => r._type === 'Venta' && r._sourceFile === filename);
-                if (hasDeletedRow) {
-                    // Reactivar los pagados (bancos) que habían sido atrapados por este grupo manual
-                    const pagadosAfectados = group.rows.filter(r => r._type === 'Banco');
-                    pagadosAfectados.forEach(p => {
-                        const original = this.data.pagado.find(o => o._uid === p._uid);
-                        if (original) { original._enabled = true; delete original._manualMatch; }
-                    });
-                    return false; // Eliminar el grupo
-                }
-                return true; // Conservar el grupo
-            });
+            // Revertir completo (ajustes + ventas de otros archivos + pagos) cada grupo con ventas de este archivo
+            this.manualMatches
+                .filter(group => group.rows.some(r => r._type === 'Venta' && r._sourceFile === filename))
+                .map(group => group.id)
+                .forEach(id => this._revertirGrupoManual(id));
             if (typeof this.renderManualMatchesTable === 'function') this.renderManualMatchesTable();
         }
 
@@ -778,14 +769,28 @@ window.BACLogic = {
 
     // Eliminar archivo Pagado y recalcular
     removeFilePagado: async function(filename) {
+        // 1. Revertir grupos manuales que contienen pagos de este archivo
+        if (this.manualMatches) {
+            this.manualMatches
+                .filter(group => group.rows.some(r => r._type === 'Banco' && r._sourceFile === filename))
+                .map(group => group.id)
+                .forEach(id => this._revertirGrupoManual(id));
+            if (typeof this.renderManualMatchesTable === 'function') this.renderManualMatchesTable();
+        }
+
+        // 2. Quitar pagos y diferidos de este archivo
         this.data.pagado = this.data.pagado.filter(row => row._sourceFile !== filename);
         this.data.files.bac_pagado = this.data.files.bac_pagado.filter(f => f !== filename);
+        if (this.deferredRows && this.deferredRows.pag) {
+            this.deferredRows.pag = this.deferredRows.pag.filter(row => row._sourceFile !== filename);
+            if (typeof this.renderDeferredTable === 'function') this.renderDeferredTable();
+        }
 
         const total = this.data.pagado.reduce((acc, r) => acc + (r._enabled ? r._monto : 0), 0);
         document.getElementById('sum-depositos').innerText = this.formatMoney(total);
 
         this.updateFileList('bac_pagado');
-        this.runMatch();
+        this.recalculateDetalle(); // refresca Neto Esperado (ajustes purgados) y ejecuta runMatch
 
         if(this.data.files.bac_pagado.length === 0) {
             const drop = document.getElementById('drop-bac-pagado');
@@ -1080,6 +1085,16 @@ window.BACLogic = {
         container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
 
+    // Revierte un grupo manual sin confirmación: purga sus ajustes ficticios,
+    // reactiva las filas reales y elimina el grupo. No recalcula.
+    _revertirGrupoManual: function(groupID) {
+        this.data.detalle = this.data.detalle.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
+        this.data.pagado = this.data.pagado.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
+        this.data.detalle.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
+        this.data.pagado.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
+        this.manualMatches = this.manualMatches.filter(g => g.id !== groupID);
+    },
+
     // Deshacer conciliación manual
     undoManualMatch: function(groupID) {
         // MODO SÓLO LECTURA: otro usuario tiene el control de esta conciliación
@@ -1089,16 +1104,8 @@ window.BACLogic = {
         }
         if(!confirm("¿Deshacer esta conciliación y restaurar los datos iniciales? Las filas creadas manualmente se eliminarán permanentemente.")) return;
 
-        // 1. DESTRUIR filas de ajuste ficticio (purga total)
-        this.data.detalle = this.data.detalle.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
-        this.data.pagado = this.data.pagado.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
-
-        // 2. Reactivar filas reales originales
-        this.data.detalle.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
-        this.data.pagado.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
-
-        // 2. Eliminar grupo
-        this.manualMatches = this.manualMatches.filter(g => g.id !== groupID);
+        // 1-2. Purgar ajustes, reactivar filas y eliminar grupo
+        this._revertirGrupoManual(groupID);
 
         // 3. Recalcular
         this.recalculateDetalle();

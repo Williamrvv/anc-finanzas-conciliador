@@ -1050,6 +1050,16 @@ window.ScotiaLogic = {
         }, 500);
     },
 
+    // Revierte un grupo manual sin confirmación: purga sus ajustes ficticios,
+    // reactiva las filas reales y elimina el grupo. No recalcula.
+    _revertirGrupoManualScotia: function(groupID) {
+        this.data.scotia_detalle = this.data.scotia_detalle.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
+        this.data.scotia_pagado = this.data.scotia_pagado.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
+        this.data.scotia_detalle.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
+        this.data.scotia_pagado.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
+        this.manualMatchesScotia = this.manualMatchesScotia.filter(g => g.id !== groupID);
+    },
+
     undoManualScotiaMatch: function(groupID) {
         // MODO SÓLO LECTURA: otro usuario tiene el control de esta conciliación
         if (this._soloLectura) {
@@ -1058,15 +1068,7 @@ window.ScotiaLogic = {
         }
         if(!confirm("¿Deshacer esta conciliación y restaurar los datos iniciales? Las filas creadas manualmente se eliminarán.")) return;
 
-        // 1. Destruir ajustes ficticios
-        this.data.scotia_detalle = this.data.scotia_detalle.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
-        this.data.scotia_pagado = this.data.scotia_pagado.filter(r => !(r._manualMatch === groupID && r._isAdjustment));
-
-        // 2. Reactivar filas originales
-        this.data.scotia_detalle.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
-        this.data.scotia_pagado.forEach(r => { if(r._manualMatch === groupID) { r._enabled = true; delete r._manualMatch; } });
-
-        this.manualMatchesScotia = this.manualMatchesScotia.filter(g => g.id !== groupID);
+        this._revertirGrupoManualScotia(groupID);
 
         this.updateScotiaCard();
         this.recalculateScotiaPagado();
@@ -1080,7 +1082,16 @@ window.ScotiaLogic = {
         this.data.scotia_detalle = this.data.scotia_detalle.filter(row => row._sourceFile !== filename);
         this.data.files.scotia_detalle = this.data.files.scotia_detalle.filter(f => f !== filename);
 
-        // 2. Destruir Grupos Manuales que contenían elementos de este archivo
+        // 2a. Revertir completo (ajustes + ventas de otros archivos + pagos) cada grupo con ventas de este archivo
+        if (this.manualMatchesScotia) {
+            this.manualMatchesScotia
+                .filter(group => group.rows.some(r => r._type === 'Venta' && r._sourceFile === filename))
+                .map(group => group.id)
+                .forEach(id => this._revertirGrupoManualScotia(id));
+            if (typeof this.renderScotiaManualTable === 'function') this.renderScotiaManualTable();
+        }
+
+        // 2b. (Respaldo) Destruir Grupos Manuales que contenían elementos de este archivo
         if (this.manualMatchesScotia) {
             this.manualMatchesScotia = this.manualMatchesScotia.filter(group => {
                 const hasDeletedRow = group.rows.some(r => r._type === 'Venta' && r._sourceFile === filename);
@@ -1112,6 +1123,16 @@ window.ScotiaLogic = {
     },
 
     removeFileScotiaPagado: async function(filename) {
+        // Revertir grupos manuales que contienen pagos de este archivo
+        if (this.manualMatchesScotia) {
+            this.manualMatchesScotia
+                .filter(group => group.rows.some(r => r._type === 'Banco' && r._sourceFile === filename))
+                .map(group => group.id)
+                .forEach(id => this._revertirGrupoManualScotia(id));
+            if (typeof this.renderScotiaManualTable === 'function') this.renderScotiaManualTable();
+            if (typeof this.updateScotiaCard === 'function') this.updateScotiaCard(); // refresca neto (ajustes purgados)
+        }
+
         this.data.scotia_pagado = this.data.scotia_pagado.filter(row => row._sourceFile !== filename);
         this.data.files.scotia_pagado = this.data.files.scotia_pagado.filter(f => f !== filename);
 
