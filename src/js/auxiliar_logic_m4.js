@@ -2906,6 +2906,67 @@ window.AuxiliarLogic = {
                 </div>
             </div>
 
+            <!-- MODAL DE OTROS INGRESOS: una sola fila bancaria del Excel, monto positivo -->
+            <div id="ws-otros-modal" class="fixed inset-0 z-[999999] bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4">
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-3xl max-h-full overflow-hidden flex flex-col">
+                    <div class="px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between shrink-0">
+                        <h3 class="text-lg font-bold text-emerald-600 dark:text-emerald-400">💰 Otros ingresos</h3>
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sin TSD</span>
+                    </div>
+
+                    <div class="overflow-auto">
+                        <!-- Datos de la transacción (solo lectura, vienen del Excel del banco) -->
+                        <div class="px-6 py-4 bg-slate-50/60 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700">
+                            <div class="flex justify-between items-start gap-4">
+                                <div class="min-w-0">
+                                    <div id="ws-otros-banco" class="font-bold text-sm text-blue-600 dark:text-blue-400 font-mono"></div>
+                                    <div id="ws-otros-comercio" class="text-xs text-slate-500 dark:text-slate-400 truncate"></div>
+                                </div>
+                                <div id="ws-otros-monto" class="text-2xl font-mono font-black text-slate-800 dark:text-white shrink-0"></div>
+                            </div>
+                            <div id="ws-otros-datos" class="grid grid-cols-4 gap-x-4 gap-y-2 mt-3 text-[10px] text-slate-500 dark:text-slate-400"></div>
+                        </div>
+
+                        <div class="px-6 py-4 grid grid-cols-2 gap-4">
+                            <div class="flex flex-col gap-3">
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Asiento de Softland *</label>
+                                    <input id="ws-otros-softland" maxlength="50" placeholder="AS-2026-04512" class="w-full px-3 py-2 text-sm font-mono border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500">
+                                    <div id="ws-otros-err-softland" class="hidden mt-1 text-[11px] text-red-600 font-bold"></div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Explicación *</label>
+                                    <textarea id="ws-otros-explicacion" maxlength="500" rows="6" placeholder="Por qué este ingreso no tiene contraparte en TSD" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
+                                    <div id="ws-otros-err-explicacion" class="hidden mt-1 text-[11px] text-red-600 font-bold"></div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Aprobación del gerente de país *</label>
+                                <div class="relative flex-1 min-h-[190px] border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg flex items-center justify-center bg-slate-50 dark:bg-slate-900 overflow-hidden">
+                                    <div id="ws-otros-zona-texto" class="text-xs text-center text-slate-400 pointer-events-none">
+                                        <span class="block text-2xl mb-1">📋</span>Pegue la captura<br>
+                                        <kbd class="font-sans font-bold bg-white dark:bg-slate-800 px-1 rounded border border-slate-200 dark:border-slate-600">Ctrl</kbd> + <kbd class="font-sans font-bold bg-white dark:bg-slate-800 px-1 rounded border border-slate-200 dark:border-slate-600">V</kbd>
+                                    </div>
+                                    <img id="ws-otros-preview" alt="Captura de la aprobación" class="absolute inset-0 w-full h-full object-contain hidden bg-slate-100 dark:bg-slate-800">
+                                    <button id="ws-otros-quitar" onclick="quitarCapturaOtros()" title="Quitar captura" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hidden opacity-80 hover:opacity-100">×</button>
+                                </div>
+                                <div id="ws-otros-peso" class="hidden mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold"></div>
+                                <div id="ws-otros-err-captura" class="hidden mt-1 text-[11px] text-red-600 font-bold"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="px-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700 shrink-0">
+                        <div id="ws-otros-err-general" class="hidden mb-2 text-[11px] text-red-600 font-bold"></div>
+                        <div class="flex flex-wrap justify-end gap-2">
+                            <button onclick="cambiarMotivoOtros()" class="mr-auto bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors">Cambiar motivo</button>
+                            <button onclick="cerrarOtros()" class="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 px-4 py-2 rounded-lg font-bold transition-colors">Cancelar</button>
+                            <button id="ws-otros-guardar" onclick="guardarOtros()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors">Guardar otros ingresos</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <script>
                 // Funciones del Mini-Modal
                 function openMiniModal() {
@@ -2944,23 +3005,316 @@ window.AuxiliarLogic = {
                 var btnNar  = 'bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
                 var btnCya  = 'bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
                 var btnFuc  = 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
+                var btnEsm  = 'bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold shadow-sm transition-colors';
 
                 // PASO 1 — una sola fila bancaria
+                // Opciones de motivo. 'var' por la misma razón que parentLogic.
+                var OPCIONES_MOTIVO = {
+                    MENOR: { icono: '✂️', titulo: 'Monto menor', detalle: 'Diferencia pequeña. Justificación opcional.',
+                             chip: 'bg-fuchsia-100 dark:bg-fuchsia-900/40',
+                             hover: 'hover:border-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-900/20',
+                             accion: function() { pedirDatos('MENOR'); } },
+                    DEVOLUCION: { icono: '↩️', titulo: 'Devolución por datáfono', detalle: 'Requiere el asiento de Softland.',
+                             chip: 'bg-orange-100 dark:bg-orange-900/40',
+                             hover: 'hover:border-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20',
+                             accion: function() { pedirDatos('DEVOLUCION'); } },
+                    INTERNO: { icono: '🔄', titulo: 'Ajuste interno entre bancos', detalle: 'Requiere el motivo del ajuste.',
+                             chip: 'bg-cyan-100 dark:bg-cyan-900/40',
+                             hover: 'hover:border-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
+                             accion: function() { pedirDatos('INTERNO'); } },
+                    OTROS: { icono: '💰', titulo: 'Otro ingreso', detalle: 'Requiere asiento, explicación y aprobación.',
+                             chip: 'bg-emerald-100 dark:bg-emerald-900/40',
+                             hover: 'hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20',
+                             accion: function() { abrirOtros(); } }
+                };
+
+                // Selector de motivo: qué se está clasificando y una tarjeta por opción
+                function pintarOpciones(claves) {
+                    pintarMini('¿Qué es este movimiento?', '',
+                        '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>', false);
+
+                    const crear = function(etiqueta, clases, texto) {
+                        const el = document.createElement(etiqueta);
+                        el.className = clases;
+                        if (texto !== undefined) el.textContent = texto;
+                        return el;
+                    };
+
+                    const bancos = parentLogic.ws.bancos;
+                    const neta = bancos.reduce(function(a, b) { return a + (parseFloat(b.Monto_Venta_Original) || 0); }, 0);
+
+                    const cont = document.getElementById('ws-mini-texto');
+                    cont.innerHTML = '';
+
+                    const resumen = crear('div', 'flex items-center justify-between gap-3 mb-3 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700');
+                    resumen.appendChild(crear('span', 'text-xs text-slate-500 dark:text-slate-400 truncate',
+                        bancos.length === 1
+                            ? (bancos[0].Banco || 'Banco') + ' · Aut ' + (bancos[0].Numero_Autorizacion || 's/d')
+                            : bancos.length + ' transacciones · neto'));
+                    resumen.appendChild(crear('span', 'font-mono font-bold text-sm shrink-0 ' + (neta < 0 ? 'text-red-500' : 'text-slate-800 dark:text-white'), fmt(neta)));
+                    cont.appendChild(resumen);
+
+                    const lista = crear('div', 'flex flex-col gap-2');
+                    claves.forEach(function(clave) {
+                        const o = OPCIONES_MOTIVO[clave];
+                        const fila = crear('button', 'w-full flex items-center gap-3 p-3 text-left rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors outline-none focus:ring-2 focus:ring-orange-500 ' + o.hover);
+                        fila.type = 'button';
+                        fila.onclick = o.accion;
+
+                        fila.appendChild(crear('span', 'w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-lg ' + o.chip, o.icono));
+                        const textos = crear('span', 'flex-1 min-w-0 flex flex-col leading-tight');
+                        textos.appendChild(crear('span', 'font-bold text-sm text-slate-800 dark:text-white', o.titulo));
+                        textos.appendChild(crear('span', 'text-[11px] text-slate-500 dark:text-slate-400 mt-0.5', o.detalle));
+                        fila.appendChild(textos);
+                        fila.appendChild(crear('span', 'text-slate-300 dark:text-slate-600 text-lg shrink-0', '›'));
+
+                        lista.appendChild(fila);
+                    });
+                    cont.appendChild(lista);
+                }
+
+                // PASO 1 — una sola fila bancaria de monto bajo
                 function preguntarUno() {
-                    pintarMini('Diferencia neta muy baja',
-                        'Se ha detectado que la transacción tiene un monto muy bajo. Puede tratarse de un ajuste por monto menor o de una devolución a nivel de datáfono.\\n\\nIndique de cuál se trata.',
-                        '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
-                        '<button onclick="pedirDatos(\\'MENOR\\')" class="' + btnFuc + '">Es un monto menor</button>' +
-                        '<button onclick="pedirDatos(\\'DEVOLUCION\\')" class="' + btnNar + '">Es una devolución por datáfono</button>', false);
+                    pintarOpciones(otrosElegible() ? ['MENOR', 'DEVOLUCION', 'OTROS'] : ['MENOR', 'DEVOLUCION']);
+                }
+
+                // PASO 1 — una sola fila bancaria positiva de monto alto
+                function preguntarGrande() {
+                    pintarOpciones(['DEVOLUCION', 'OTROS']);
+                }
+
+                // ============ OTROS INGRESOS ============
+                // 'var' por la misma razón que parentLogic: la ventana se recicla.
+                var otrosEvidencia = null;
+
+                function bancoUnico() {
+                    const ws = parentLogic.ws;
+                    return (ws.bancos.length === 1 && ws.tsd.length === 0) ? ws.bancos[0] : null;
+                }
+
+                // Solo filas del Excel del banco, de monto positivo y sin ajuste previo
+                function otrosElegible() {
+                    const b = bancoUnico();
+                    return !!b && (parseFloat(b.Monto_Venta_Original) || 0) > 0
+                        && !b.TipoAjuste && Number(b.EsAjusteManual) !== 1;
+                }
+
+                // ¿Se reabrió un otro ingreso ya aprobado, con su misma fila?
+                function esOtrosReabierto() {
+                    const ws = parentLogic.ws;
+                    const b = bancoUnico();
+                    return !!b && ws.motivo === 'OTROS' && ws.originalBancos.length === 1
+                        && ws.originalBancos[0]._id === b._id;
+                }
+
+                // texto = null oculta el aviso
+                function errOtros(id, texto) {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.textContent = texto || '';
+                    el.classList.toggle('hidden', !texto);
+                }
+
+                function pesoKB(dataUrl) {
+                    const b64 = dataUrl.substring(dataUrl.indexOf(',') + 1);
+                    return Math.round(b64.length * 3 / 4 / 1024);
+                }
+
+                function pintarCapturaOtros() {
+                    const hay = !!otrosEvidencia;
+                    const img = document.getElementById('ws-otros-preview');
+                    if (hay) img.src = otrosEvidencia; else img.removeAttribute('src');
+                    img.classList.toggle('hidden', !hay);
+                    document.getElementById('ws-otros-quitar').classList.toggle('hidden', !hay);
+                    document.getElementById('ws-otros-zona-texto').classList.toggle('hidden', hay);
+                    const peso = document.getElementById('ws-otros-peso');
+                    peso.textContent = hay ? 'Captura lista · ' + pesoKB(otrosEvidencia) + ' KB' : '';
+                    peso.classList.toggle('hidden', !hay);
+                }
+
+                function quitarCapturaOtros() {
+                    otrosEvidencia = null;
+                    pintarCapturaOtros();
+                }
+
+                function cerrarOtros() {
+                    document.getElementById('ws-otros-modal').classList.add('hidden');
+                }
+
+                function cambiarMotivoOtros() {
+                    cerrarOtros();
+                    const b = bancoUnico();
+                    const monto = b ? Math.abs(parseFloat(b.Monto_Venta_Original) || 0) : 0;
+                    (monto < 10000 ? preguntarUno : preguntarGrande)();
+                }
+
+                function abrirOtros() {
+                    const b = bancoUnico();
+                    if (!b || !otrosElegible()) return;
+
+                    // Se oculta el mini-modal sin su temporizador de cierre
+                    document.getElementById('ws-mini-modal').classList.add('hidden', 'opacity-0');
+                    document.getElementById('ws-mini-card').classList.add('scale-95');
+
+                    // Todo lo que se sabe de la transacción, tal como vino del Excel
+                    document.getElementById('ws-otros-banco').textContent = b.Banco || '-';
+                    document.getElementById('ws-otros-comercio').textContent = b.Nombre_Sucursal_Comercio || '-';
+                    document.getElementById('ws-otros-monto').textContent = fmt(parseFloat(b.Monto_Venta_Original) || 0);
+
+                    const datos = [
+                        ['Autorización', b.Numero_Autorizacion],
+                        ['Tarjeta', b.Tarjeta_Ultimos4 ? '****' + b.Tarjeta_Ultimos4 : ''],
+                        ['Fecha de pago', b.Fecha_Pago_Excel],
+                        ['Folio', b.Folio_Cierre],
+                        ['Afiliado / MerID', b.Afiliado_MerID],
+                        ['Terminal', b.Codigo_Sucursal_Terminal],
+                        ['Archivo de origen', b.ArchivoOrigen],
+                        ['ID de transacción', b.IdTransaccion]
+                    ];
+                    const cont = document.getElementById('ws-otros-datos');
+                    cont.innerHTML = '';
+                    datos.forEach(function(d) {
+                        const vacio = d[1] === null || d[1] === undefined || String(d[1]).trim() === '';
+                        const celda = document.createElement('div');
+                        celda.className = 'min-w-0';
+                        const etiqueta = document.createElement('div');
+                        etiqueta.textContent = d[0];
+                        const valor = document.createElement('div');
+                        valor.className = 'font-mono text-[11px] text-slate-700 dark:text-slate-200 truncate';
+                        valor.textContent = vacio ? '-' : String(d[1]);
+                        valor.title = valor.textContent;
+                        celda.appendChild(etiqueta);
+                        celda.appendChild(valor);
+                        cont.appendChild(celda);
+                    });
+
+                    // Al corregir uno ya aprobado se precarga lo que tenía
+                    let asiento = '';
+                    let explicacion = '';
+                    otrosEvidencia = null;
+                    if (esOtrosReabierto()) {
+                        const j = String(parentLogic.ws.justificacion || '');
+                        const fin = j.indexOf(']');
+                        if (j.indexOf('[SOFTLAND:') === 0 && fin > 0) {
+                            asiento = j.substring(10, fin).trim();
+                            explicacion = j.substring(fin + 1).trim();
+                        }
+                        otrosEvidencia = parentLogic.ws.evidencia || null;
+                    }
+                    document.getElementById('ws-otros-softland').value = asiento;
+                    document.getElementById('ws-otros-explicacion').value = explicacion;
+
+                    ['ws-otros-err-softland', 'ws-otros-err-explicacion', 'ws-otros-err-captura', 'ws-otros-err-general']
+                        .forEach(function(id) { errOtros(id, null); });
+                    pintarCapturaOtros();
+
+                    document.getElementById('ws-otros-modal').classList.remove('hidden');
+                    setTimeout(function() { const i = document.getElementById('ws-otros-softland'); if (i) i.focus(); }, 80);
+                }
+
+                // Comprime la captura y calcula cuánto pesará ANTES de aceptarla
+                function cargarCapturaOtros(archivo) {
+                    errOtros('ws-otros-err-captura', null);
+                    const fallo = function() { errOtros('ws-otros-err-captura', 'No se pudo leer la imagen. Péguela de nuevo.'); };
+
+                    const lector = new FileReader();
+                    lector.onerror = fallo;
+                    lector.onload = function() {
+                        const img = new Image();
+                        img.onerror = fallo;
+                        img.onload = function() {
+                            const tope = parentLogic._OTROS_MAX_EVIDENCIA_M4;
+                            const escala = Math.min(1, 2000 / Math.max(img.width, img.height));
+                            const lienzo = document.createElement('canvas');
+                            lienzo.width = Math.max(1, Math.round(img.width * escala));
+                            lienzo.height = Math.max(1, Math.round(img.height * escala));
+
+                            const ctx = lienzo.getContext('2d');
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+                            ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+
+                            // Se baja la calidad solo si hace falta para entrar en el tope
+                            const calidades = [0.85, 0.7, 0.55];
+                            let salida = '';
+                            for (let i = 0; i < calidades.length; i++) {
+                                salida = lienzo.toDataURL('image/jpeg', calidades[i]);
+                                if (salida.length <= tope) break;
+                            }
+
+                            if (salida.length > tope) {
+                                errOtros('ws-otros-err-captura',
+                                    'La captura pesa ' + pesoKB(salida) + ' KB ya comprimida y el máximo es ' +
+                                    Math.round(tope * 3 / 4 / 1024) + ' KB. Recórtela y péguela de nuevo.');
+                                return;
+                            }
+
+                            otrosEvidencia = salida;
+                            pintarCapturaOtros();
+                        };
+                        img.src = lector.result;
+                    };
+                    lector.readAsDataURL(archivo);
+                }
+
+                // Propiedad y no addEventListener: al reciclarse la ventana no se duplica
+                document.onpaste = function(e) {
+                    const modal = document.getElementById('ws-otros-modal');
+                    if (!modal || modal.classList.contains('hidden')) return;
+
+                    const items = (e.clipboardData && e.clipboardData.items) || [];
+                    for (let i = 0; i < items.length; i++) {
+                        if (items[i].kind === 'file' && items[i].type.indexOf('image/') === 0) {
+                            e.preventDefault();
+                            cargarCapturaOtros(items[i].getAsFile());
+                            return;
+                        }
+                    }
+
+                    // Pegar texto en el asiento o la explicación sigue funcionando normal
+                    const destino = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
+                    if (destino !== 'INPUT' && destino !== 'TEXTAREA') {
+                        errOtros('ws-otros-err-captura', 'Lo que pegó no es una imagen.');
+                    }
+                };
+
+                async function guardarOtros() {
+                    const asiento = document.getElementById('ws-otros-softland').value
+                        .split('[').join('').split(']').join('').trim();
+                    const explicacion = document.getElementById('ws-otros-explicacion').value.trim();
+
+                    errOtros('ws-otros-err-softland', asiento ? null : 'Falta el asiento de Softland');
+                    errOtros('ws-otros-err-explicacion', explicacion ? null : 'Falta la explicación');
+                    if (!otrosEvidencia) errOtros('ws-otros-err-captura', 'Falta la captura de la aprobación');
+                    errOtros('ws-otros-err-general', null);
+                    if (!asiento || !explicacion || !otrosEvidencia) return;
+
+                    const justificacion = '[SOFTLAND:' + asiento + '] ' + explicacion;
+
+                    const faltas = parentLogic._faltasOtrosIngresoM4(
+                        parentLogic.ws.tsd, parentLogic.ws.bancos, justificacion, otrosEvidencia);
+                    if (faltas.length > 0) {
+                        errOtros('ws-otros-err-general', 'No se puede guardar: ' + faltas.join(', ') + '.');
+                        return;
+                    }
+
+                    const peso = JSON.stringify(parentLogic._crearSnapshotBorradorM4()).length + otrosEvidencia.length;
+                    if (peso > parentLogic._LIMITE_PETICION_M4) {
+                        errOtros('ws-otros-err-general',
+                            'Hay demasiadas capturas pendientes. Concilie los otros ingresos ya aprobados antes de agregar más.');
+                        return;
+                    }
+
+                    const boton = document.getElementById('ws-otros-guardar');
+                    boton.disabled = true;
+                    const proceed = await parentLogic.wsSave(justificacion, false, 'OTROS', otrosEvidencia);
+                    if (proceed !== false) window.close();
+                    else boton.disabled = false;
                 }
 
                 // PASO 1 — varias filas bancarias
                 function preguntarVarios() {
-                    pintarMini('Diferencia neta muy baja',
-                        'Se ha detectado que la diferencia neta entre las transacciones es muy baja. Podría tratarse de un ajuste interno entre bancos o de una devolución a nivel de datáfono.\\n\\nIndique de cuál se trata.',
-                        '<button onclick="closeMiniModal()" class="' + btnGris + '">Cancelar</button>' +
-                        '<button onclick="pedirDatos(\\'INTERNO\\')" class="' + btnCya + '">Es un ajuste interno entre bancos</button>' +
-                        '<button onclick="pedirDatos(\\'DEVOLUCION\\')" class="' + btnNar + '">Es una devolución por datáfono</button>', false);
+                    pintarOpciones(['INTERNO', 'DEVOLUCION']);
                 }
 
                 // PASO 2 — captura de la justificación según el motivo
@@ -3197,11 +3551,15 @@ window.AuxiliarLogic = {
 
                     // SOLO BANCOS: nunca se aprueba sin declarar un motivo
                     if (nB >= 1 && nT === 0) {
+                        // Un otro ingreso ya aprobado se reabre directo en su formulario
+                        if (esOtrosReabierto() && otrosElegible()) { abrirOtros(); return; }
+
                         const neta = parentLogic.ws.bancos
                             .reduce((a, b) => a + (parseFloat(b.Monto_Venta_Original) || 0), 0);
                         const diferenciaBaja = Math.abs(neta) < (nB === 1 ? 10000 : 3000);
 
                         if (diferenciaBaja) { (nB === 1 ? preguntarUno : preguntarVarios)(); }
+                        else if (otrosElegible()) { preguntarGrande(); }
                         else { pedirDatos('DEVOLUCION'); }
                         return;
                     }
