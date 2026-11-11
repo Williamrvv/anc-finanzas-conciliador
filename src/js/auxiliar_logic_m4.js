@@ -374,7 +374,8 @@ window.AuxiliarLogic = {
                     .filter(Boolean),
 
                 justificacion: match.justificacion || '',
-                motivo: match.motivo || null
+                motivo: match.motivo || null,
+                evidencia: match.evidencia || null
             })),
 
             blacklist: Array.from(
@@ -452,7 +453,8 @@ window.AuxiliarLogic = {
                 tsdArr: tsdArr,
                 bancoArr: bancoArr,
                 justificacion: match.justificacion || '',
-                motivo: match.motivo || null
+                motivo: match.motivo || null,
+                evidencia: match.evidencia || null
             });
         });
 
@@ -2165,6 +2167,7 @@ window.AuxiliarLogic = {
             const etq = mMatch.motivo === 'DEVOLUCION' ? 'Manual (Devolución Datáfono)'
                       : mMatch.motivo === 'INTERNO'    ? 'Manual (Ajuste Interno Bancos)'
                       : mMatch.motivo === 'MENOR'      ? 'Manual (Monto Menor)'
+                      : mMatch.motivo === 'OTROS'      ? 'Manual (Otros Ingresos)'
                       :                                  'Manual';
             if (arrT.length > 0 || arrB.length > 0) processMatch(arrT, arrB, etq, mMatch.justificacion);
             pendientesTSD = pendientesTSD.filter(t => !mMatch.tsdArr.some(x => x._id === t._id));
@@ -2660,10 +2663,12 @@ window.AuxiliarLogic = {
                             const tipo = m[1];
                             const ico = tipo.includes('Devolución') ? '↩️'
                                       : tipo.includes('Interno')    ? '🔄'
-                                      : tipo.includes('Menor')      ? '✂️' : '✅';
+                                      : tipo.includes('Menor')      ? '✂️'
+                                      : tipo.includes('Ingresos')   ? '💰' : '✅';
                             const col = tipo.includes('Devolución') ? 'text-orange-600 dark:text-orange-400'
                                       : tipo.includes('Interno')    ? 'text-cyan-600 dark:text-cyan-400'
                                       : tipo.includes('Menor')      ? 'text-fuchsia-600 dark:text-fuchsia-400'
+                                      : tipo.includes('Ingresos')   ? 'text-emerald-600 dark:text-emerald-400'
                                       :                               'text-green-700 dark:text-green-400';
                             estado = `<span class="${col} font-bold">${ico} ${tipo}</span>`;
                         } else {
@@ -2784,10 +2789,20 @@ window.AuxiliarLogic = {
             justTexto = estadoRow.split('|').slice(1).join('|');
         }
         
+        // Si la fila ya fue aprobada con un motivo (p. ej. Otros ingresos), se trae
+        // su motivo y su captura para corregirla sin volver a capturar todo.
+        const mmPrev = (this.manualMatches || []).find(m =>
+            m.motivo && m.tsdArr.length === tRaw.length && m.bancoArr.length === bRaw.length &&
+            m.bancoArr.every(x => bRaw.some(b => b && b._id === x._id)) &&
+            m.tsdArr.every(x => tRaw.some(t => t && t._id === x._id))
+        );
+
         this.ws = {
             tsd: [...tRaw], bancos: [...bRaw],
             originalTsd: [...tRaw], originalBancos: [...bRaw],
-            rowUid: row._uid, justificacion: justTexto
+            rowUid: row._uid, justificacion: justTexto,
+            motivo: mmPrev ? mmPrev.motivo : null,
+            evidencia: mmPrev ? (mmPrev.evidencia || null) : null
         };
 
         const isDark = document.documentElement.classList.contains('dark');
@@ -3225,7 +3240,61 @@ window.AuxiliarLogic = {
         else this.ws.bancos = this.ws.bancos.filter(b => b && b._id !== id);
     },
 
-    wsSave: async function(justificacion = '', isAjusteMenor = false, motivo = null) {
+    // ---- OTROS INGRESOS ----------------------------------------------------
+    // Tope de la captura ya comprimida (~500 KB) y de cada envío al servidor
+    // (PHP descarta en silencio lo que pase de 8 MB). save_auxiliar_m4.php
+    // repite estas mismas reglas.
+    _OTROS_MAX_EVIDENCIA_M4: 700000,
+    _LIMITE_PETICION_M4: 7000000,
+
+    _etiquetaBancoM4: function(b) {
+        if (!b) return 'Transacción sin datos';
+        const monto = new Intl.NumberFormat('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            .format(parseFloat(b.Monto_Venta_Original) || 0);
+        return `${b.Banco || 'Banco'} auth ${b.Numero_Autorizacion || 's/d'} (₡${monto})`;
+    },
+
+    // Devuelve lo que le falta a un otro ingreso. Lista vacía = completo.
+    _faltasOtrosIngresoM4: function(tsdArr, bancoArr, justificacion, evidencia) {
+        const faltas = [];
+        const t = (tsdArr || []).filter(Boolean);
+        const b = (bancoArr || []).filter(Boolean);
+
+        if (t.length > 0 || b.length !== 1) {
+            faltas.push('debe ser una sola transacción bancaria sin TSD');
+        } else {
+            if (!((parseFloat(b[0].Monto_Venta_Original) || 0) > 0)) faltas.push('el monto debe ser positivo');
+            if (b[0].TipoAjuste || Number(b[0].EsAjusteManual) === 1) faltas.push('la transacción ya tiene un ajuste registrado');
+        }
+
+        // Formato: "[SOFTLAND:asiento] explicación"
+        const m = String(justificacion || '').trim().match(/^\[SOFTLAND:([^\]]*)\]\s*([\s\S]*)$/);
+        if (!m || !m[1].trim()) faltas.push('falta el asiento de Softland');
+        if (!m || !m[2].trim()) faltas.push('falta la explicación');
+
+        const ev = String(evidencia || '');
+        if (!ev) faltas.push('falta la captura de la aprobación');
+        else if (!/^data:image\/(png|jpeg|webp);base64,/.test(ev)) faltas.push('la captura no es una imagen válida');
+        else if (ev.length > this._OTROS_MAX_EVIDENCIA_M4) faltas.push('la captura excede el tamaño permitido');
+
+        return faltas;
+    },
+
+    wsSave: async function(justificacion = '', isAjusteMenor = false, motivo = null, evidencia = null) {
+        // Otros ingresos: se valida ANTES de tocar blacklist o aprobaciones,
+        // para que un rechazo deje la estación exactamente como estaba.
+        if (motivo === 'OTROS') {
+            const faltas = this._faltasOtrosIngresoM4(this.ws.tsd, this.ws.bancos, justificacion, evidencia);
+            if (faltas.length > 0) {
+                window.SysUI.alert('No se puede aprobar como otros ingresos:\n• ' + faltas.join('\n• '), 'Otros ingresos incompleto', 'warning');
+                return false;
+            }
+            const pesoBorrador = JSON.stringify(this._crearSnapshotBorradorM4()).length + evidencia.length;
+            if (pesoBorrador > this._LIMITE_PETICION_M4) {
+                window.SysUI.alert('Hay demasiadas capturas pendientes. Concilie los otros ingresos ya aprobados antes de agregar más.', 'Límite de capturas', 'warning');
+                return false;
+            }
+        }
         const removedTsd = this.ws.originalTsd.filter(t => !this.ws.tsd.some(x => x._id === t._id));
         const removedBancos = this.ws.originalBancos.filter(b => !this.ws.bancos.some(x => x._id === b._id));
 
@@ -3277,7 +3346,7 @@ window.AuxiliarLogic = {
 
         // Bancos solos: sólo con uno de los tres motivos declarados por el usuario
         const soloBancos = this.ws.bancos.length >= 1 && this.ws.tsd.length === 0;
-        const motivoOk   = ['MENOR', 'DEVOLUCION', 'INTERNO'].includes(motivo);
+        const motivoOk   = ['MENOR', 'DEVOLUCION', 'INTERNO', 'OTROS'].includes(motivo);
         const validBancoJustificado = soloBancos && motivoOk;
 
         if (isAjusteMenor && !justificacion) {
@@ -3289,7 +3358,8 @@ window.AuxiliarLogic = {
         if (isValidMatch) {
             this.manualMatches.push({
                 tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos],
-                justificacion: justificacion, motivo: motivo
+                justificacion: justificacion, motivo: motivo,
+                evidencia: motivo === 'OTROS' ? evidencia : null
             });
         }
 
@@ -3399,6 +3469,25 @@ window.AuxiliarLogic = {
             return window.SysUI.alert("No hay ajustes manuales en la tabla superior para aprobar.\n\nHaga doble clic en una sugerencia de la tabla inferior para auditarla y aprobarla primero.", "Tabla Vacía", "warning");
         }
 
+        // OTROS INGRESOS: si uno solo está incompleto, no se guarda NADA
+        const incompletos = [];
+        this.currentSugData.forEach(row => {
+            const arrB = (Array.isArray(row._bancoRaw) ? row._bancoRaw : [row._bancoRaw]).filter(Boolean);
+            const arrT = (Array.isArray(row._tsdRaw) ? row._tsdRaw : [row._tsdRaw]).filter(Boolean);
+            const mmOtros = (this.manualMatches || []).find(m =>
+                m.motivo === 'OTROS' && m.bancoArr.length === arrB.length &&
+                m.bancoArr.every(x => arrB.some(b => b._id === x._id))
+            );
+            if (!mmOtros) return;
+            const faltas = this._faltasOtrosIngresoM4(arrT, arrB, mmOtros.justificacion, mmOtros.evidencia);
+            if (faltas.length > 0) incompletos.push('• ' + this._etiquetaBancoM4(arrB[0]) + ': ' + faltas.join(', '));
+        });
+        if (incompletos.length > 0) {
+            return window.SysUI.alert(
+                "No se guardó nada. Corrija estos otros ingresos con doble clic en su fila:\n\n" + incompletos.join('\n'),
+                "Otros ingresos incompletos", "warning");
+        }
+
         const confirmado = await window.SysUI.confirm(
             `¿Desea guardar definitivamente estas conciliaciones?\n\n` + 
             `✔️ Se registrarán <b>${this.currentSugData.length}</b> agrupaciones aprobadas manualmente en la Base de Datos.\n\n` +
@@ -3438,6 +3527,20 @@ window.AuxiliarLogic = {
 
             const uid = () => 'aux_tsd_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 10);
 
+            // Otros ingresos: una sola fila bancaria, con su captura
+            if (motivo === 'OTROS') {
+                payloadAprobados.push({
+                    IdMatchTSD: uid(),
+                    TipoCruce: '[AUX] Otros Ingresos (Sin TSD)',
+                    Justificacion: mm.justificacion,
+                    TipoAjuste: 'OTROS-INGRESOS',
+                    EvidenciaB64: mm.evidencia,
+                    TSD: [],
+                    Bancos: idsB
+                });
+                return;
+            }
+
             // Ojo: sólo se desglosa cuando hay filas BANCARIAS. Un ajuste menor de
             // sólo TSD lleva motivo 'MENOR' y debe seguir el camino normal de abajo.
             if (idsB.length > 0 && (motivo === 'DEVOLUCION' || motivo === 'INTERNO' || motivo === 'MENOR')) {
@@ -3471,6 +3574,12 @@ window.AuxiliarLogic = {
             });
         });
 
+        // PHP descarta en silencio las peticiones de más de 8 MB
+        const cuerpo = JSON.stringify({ aprobados: payloadAprobados, fechaConciliacion: fechaConciliacion });
+        if (cuerpo.length > this._LIMITE_PETICION_M4) {
+            return window.SysUI.alert("Hay demasiadas capturas para enviarlas juntas. Devuelva algunos otros ingresos a pendientes y concílielos en otra tanda.", "Envío demasiado grande", "warning");
+        }
+
         // Feedback Visual
         const btn = document.getElementById('btn-save-m4');
         const originalHtml = btn.innerHTML;
@@ -3483,7 +3592,7 @@ window.AuxiliarLogic = {
             const res = await fetch('api/save_auxiliar_m4.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aprobados: payloadAprobados, fechaConciliacion: fechaConciliacion })
+                body: cuerpo
             });
             const data = await res.json();
 
