@@ -2305,10 +2305,11 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const ev = String(aud.EvidenciaB64 || '').trim();
             if (ev) {
                 const src = ev.startsWith('data:') ? ev : 'data:image/png;base64,' + ev;
+                const nombre = aud.TipoAjuste === 'OTROS-INGRESOS' ? 'aprobación' : 'evidencia';
                 if (/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/i.test(src)) {
                     captura = `
-                        <button type="button" onclick="trazaVerCaptura(this)"
-                            class="mt-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">Ver aprobación</button>
+                        <button type="button" onclick="trazaVerCaptura(this)" data-nombre="${nombre}"
+                            class="mt-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">Ver ${nombre}</button>
                         <img alt="Captura de la aprobación" data-src="${trazaEsc(src)}"
                             class="hidden mt-2 max-h-[60vh] w-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white">`;
                 }
@@ -2327,7 +2328,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             if (!img) return;
             if (!img.getAttribute('src')) img.setAttribute('src', img.dataset.src);
             const visible = !img.classList.toggle('hidden');
-            btn.textContent = visible ? 'Ocultar aprobación' : 'Ver aprobación';
+            btn.textContent = (visible ? 'Ocultar ' : 'Ver ') + (btn.dataset.nombre || 'evidencia');
         }
 
         function trazaRecorridoHtml(t) {
@@ -2335,10 +2336,18 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             const d = t.detalle || {};
             const esTSD = String(m.Banco || '').toUpperCase() === 'TSD';
             const esAjusteM4 = String(m.IdTransaccion || '').startsWith('ADJM4-');
+            const esAjusteM2 = !esAjusteM4 && String(m.Origen || '').toUpperCase() === 'AJUSTE';
             const pasos = [];
 
             // 1. Origen
-            if (esAjusteM4) {
+            if (esAjusteM2) {
+                // El ajuste se guarda con el folio: quien guardó el folio lo registró
+                const c = t.cierre || {};
+                pasos.push(trazaPaso('✍️', 'Registrada como ajuste manual en el módulo 2',
+                    t.cierre ? 'Folio ' + trazaEsc(c.Folio || c.IdCierre) : '',
+                    trazaFecha(c.FechaCreacion || m.FechaTransaccion, !!c.FechaCreacion), t.cierre ? c.Usuario : null,
+                    trazaAuditoriaHtml(t.auditoria)));
+            } else if (esAjusteM4) {
                 pasos.push(trazaPaso('🧾', 'Registrada como ajuste manual en el Auxiliar', '',
                     trazaFecha(m.FechaRegistro, false), null, trazaAuditoriaHtml(t.auditoria)));
             } else if (esTSD) {
@@ -2351,7 +2360,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
             }
 
             // 2. Folio (módulo 2 para bancos, consolidado del módulo 3 para TSD)
-            if (t.cierre) {
+            if (t.cierre && !esAjusteM2) {
                 const c = t.cierre;
                 const folio = 'Folio ' + trazaEsc(c.Folio || c.IdCierre);
                 pasos.push(esTSD
@@ -2386,9 +2395,9 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 pasos.push(trazaPaso('✅', enAux ? 'Conciliada en el Auxiliar' : 'Conciliada en el módulo 3',
                     trazaEsc(sello.replace('[AUX] ', '') || 'Conciliado') + ' · fecha contable ' + trazaEsc(trazaFecha(m.FechaConciliacion, false)),
                     trazaFecha(m.FechaRealConciliacion), quien,
-                    nota + (esAjusteM4 ? '' : trazaAuditoriaHtml(t.auditoria))));
+                    nota + (esAjusteM4 || esAjusteM2 ? '' : trazaAuditoriaHtml(t.auditoria))));
             } else {
-                pasos.push(trazaPaso('⚪', 'Sin conciliar', 'Estado: ' + trazaEsc(m.Estado || '-'), '', false));
+                pasos.push(trazaPaso('⚪', 'Sin conciliar contra TSD', 'Estado en IRI: ' + trazaEsc(m.Estado || '-'), '', false));
             }
 
             let extras = '';
@@ -2456,6 +2465,30 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 </section>`;
         }
 
+        // Ajustes manuales del módulo 2 hechos en la misma conciliación bancaria
+        function trazaAjustesM2Html(ajustes, t) {
+            const idMatch = t.maestra.IdMatch;
+            const lista = (ajustes || []).filter(a =>
+                !trazaVacio(idMatch) && a.IdMatch === idMatch && String(a.IdTransaccion) !== t.IdTransaccion);
+            if (!lista.length) return '';
+            const filas = lista.map(a => `
+                <div class="py-2">
+                    <div class="flex justify-between gap-3 text-xs">
+                        <span class="min-w-0 truncate text-slate-600 dark:text-slate-300">
+                            <span class="font-mono">${trazaEsc(trazaFecha(a.FechaTransaccion, false))}</span>
+                            · ${trazaEsc(a.Banco)}${trazaVacio(a.Usuario) ? '' : ' · ' + trazaEsc(a.Usuario)}
+                        </span>
+                        <span class="font-mono font-bold shrink-0">${trazaMonto(a.MontoBruto)}</span>
+                    </div>
+                    ${trazaAuditoriaHtml(a)}
+                </div>`).join('');
+            return `
+                <section class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                    <h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ajustes manuales del módulo 2 · ${lista.length}</h4>
+                    ${filas}
+                </section>`;
+        }
+
         // Todas las columnas, para auditoría
         function trazaTablaHtml(titulo, fila) {
             if (!fila) return '';
@@ -2500,6 +2533,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 (datos.transacciones.length > 1 ? trazaGrupoHtml(datos.transacciones, t.IdTransaccion) : '') +
                 trazaRecorridoHtml(t) +
                 trazaDepositosHtml(datos.pagado, t) +
+                trazaAjustesM2Html(datos.ajustesM2, t) +
                 trazaDatosHtml(t);
         }
 

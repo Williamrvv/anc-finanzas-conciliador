@@ -167,6 +167,28 @@ try {
     }
 
     // ------------------------------------------------------------
+    // 4b. Ajustes manuales del módulo 2 hechos en la misma conciliación
+    //     bancaria (comparten IdMatch). Traen su evidencia.
+    // ------------------------------------------------------------
+    $ajustesM2 = [];
+    $idsMatchM2 = array_values(array_unique(array_filter(array_map(
+        fn($r) => strtoupper((string)$r['Banco']) !== 'TSD' ? $r['IdMatch'] : null, $maestra),
+        fn($v) => $v !== null && $v !== '')));
+    if ($idsMatchM2) {
+        $ajustesM2 = consultar($pdo, "
+            SELECT m.IdTransaccion, m.Banco, m.IdMatch, m.MontoBruto, m.MontoNeto,
+                   CONVERT(varchar(10), m.FechaTransaccion, 23) AS FechaTransaccion,
+                   a.TipoAjuste, a.Justificacion, a.EvidenciaB64,
+                   c.Usuario, CONVERT(varchar(19), c.FechaCreacion, 120) AS FechaCreacion
+            FROM Tbl_Transacciones_Maestra m
+            INNER JOIN Tbl_Ajustes_Auditoria a ON a.IdTransaccion = m.IdTransaccion
+            LEFT JOIN Tbl_Conciliacion_Cierres c ON c.IdCierre = m.IdCierre
+            WHERE m.Origen = 'AJUSTE'
+              AND m.IdTransaccion NOT LIKE 'ADJM4-%'
+              AND m.IdMatch IN (" . marcas($idsMatchM2) . ")", $idsMatchM2);
+    }
+
+    // ------------------------------------------------------------
     // 5. Armado por transacción
     // ------------------------------------------------------------
     $porId = fn(array $filas) => array_column($filas, null, 'IdTransaccion');
@@ -206,7 +228,8 @@ try {
         'encontrada'    => true,
         'semillas'      => $semillas,
         'transacciones' => $transacciones,
-        'pagado'        => $pagado
+        'pagado'        => $pagado,
+        'ajustesM2'     => $ajustesM2
     ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 } catch (\Throwable $e) {
