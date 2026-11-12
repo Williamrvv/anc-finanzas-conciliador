@@ -336,6 +336,9 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                             <p class="text-[10px] text-slate-500 dark:text-slate-400">
                                 Cruces registrados contablemente durante la fecha seleccionada.
                             </p>
+
+                            <!-- Conciliaciones manuales del Auxiliar: solo aparece si hay alguna -->
+                            <div id="historico-kpis-manuales" class="hidden flex-wrap items-center gap-2 mt-2"></div>
                         </div>
 
                         <div
@@ -1146,8 +1149,14 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     'Conciliado'
                 );
 
+                // Tipos manuales del Auxiliar presentes en este grupo
+                const tiposAux = TIPOS_MANUALES_AUX.filter(t => grupo.some(t.prueba));
+
                 return {
-                    _rowClass: 'bg-emerald-50/30 dark:bg-emerald-900/10',
+                    _tiposAux: tiposAux.map(t => t.clave),
+                    _rowClass: tiposAux.length
+                        ? tiposAux[0].fila
+                        : 'bg-emerald-50/30 dark:bg-emerald-900/10',
                     Contrato: historicoValoresUnicos(
                         tsdRows,
                         row => row.ContratoTSD || row.Afiliado_MerID,
@@ -1179,9 +1188,144 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     DetalleTSDCredito: movimiento.DetalleTSDCredito,
 
                     Diferencia: historicoDiferencia(montoTSD, montoBanco),
-                    Antiguedad: antiguedades.length ? Math.max(...antiguedades) : '-'
+                    Antiguedad: antiguedades.length ? Math.max(...antiguedades) : '-',
+
+                    // Para la traza al hacer doble clic
+                    _trazaMatch: grupo[0].IdMatchTSD || null,
+                    _trazaId: String(grupo[0].IdTransaccion)
                 };
             });
+        }
+
+        // ===== Conciliaciones manuales del Auxiliar (M4) =====
+        // Se reconocen por el sello que deja save_auxiliar_m4.php y, el ajuste
+        // manual, por el ID que genera save_ajuste_m4.php. Clases literales
+        // para que Tailwind las encuentre.
+        function esSelloAux(row, texto) {
+            const sello = String(row.TipoCruceTSD || '');
+            return sello.startsWith('[AUX]') && sello.includes(texto);
+        }
+
+        const TIPOS_MANUALES_AUX = [
+            {
+                clave: 'OTROS', nombre: 'Otros ingresos', icono: '💰',
+                prueba: row => esSelloAux(row, 'Otros Ingresos'),
+                fila: 'bg-emerald-100/80 dark:bg-emerald-900/40',
+                etiqueta: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200',
+                on: 'bg-emerald-600 border-emerald-600 text-white',
+                off: 'bg-white dark:bg-slate-800 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30',
+                num: 'bg-emerald-100 dark:bg-emerald-900/60'
+            },
+            {
+                clave: 'DATAFONO', nombre: 'Devolución datáfono', icono: '↩️',
+                prueba: row => esSelloAux(row, 'Devolución Datáfono'),
+                fila: 'bg-orange-100/80 dark:bg-orange-900/40',
+                etiqueta: 'bg-orange-100 text-orange-800 dark:bg-orange-900/60 dark:text-orange-200',
+                on: 'bg-orange-600 border-orange-600 text-white',
+                off: 'bg-white dark:bg-slate-800 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/30',
+                num: 'bg-orange-100 dark:bg-orange-900/60'
+            },
+            {
+                clave: 'MENOR', nombre: 'Monto menor', icono: '✂️',
+                prueba: row => esSelloAux(row, 'Monto Menor'),
+                fila: 'bg-fuchsia-100/80 dark:bg-fuchsia-900/40',
+                etiqueta: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/60 dark:text-fuchsia-200',
+                on: 'bg-fuchsia-600 border-fuchsia-600 text-white',
+                off: 'bg-white dark:bg-slate-800 border-fuchsia-300 dark:border-fuchsia-800 text-fuchsia-700 dark:text-fuchsia-300 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-900/30',
+                num: 'bg-fuchsia-100 dark:bg-fuchsia-900/60'
+            },
+            {
+                clave: 'INTERNO', nombre: 'Ajuste interno', icono: '🔄',
+                prueba: row => esSelloAux(row, 'Ajuste Interno'),
+                fila: 'bg-cyan-100/80 dark:bg-cyan-900/40',
+                etiqueta: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/60 dark:text-cyan-200',
+                on: 'bg-cyan-600 border-cyan-600 text-white',
+                off: 'bg-white dark:bg-slate-800 border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-900/30',
+                num: 'bg-cyan-100 dark:bg-cyan-900/60'
+            },
+            {
+                clave: 'AJUSTE', nombre: 'Ajuste manual', icono: '🧾',
+                prueba: row => String(row.IdTransaccion || '').startsWith('ADJM4-'),
+                fila: 'bg-indigo-100/80 dark:bg-indigo-900/40',
+                etiqueta: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200',
+                on: 'bg-indigo-600 border-indigo-600 text-white',
+                off: 'bg-white dark:bg-slate-800 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30',
+                num: 'bg-indigo-100 dark:bg-indigo-900/60'
+            }
+        ];
+
+        // KPIs activos. Se combinan: se muestra lo que cumpla cualquiera.
+        let filtroTiposAux = new Set();
+
+        function conciliadosVisibles() {
+            const todos = rawData.historicoConciliados || [];
+            if (filtroTiposAux.size === 0) return todos;
+            return todos.filter(row => (row._tiposAux || []).some(t => filtroTiposAux.has(t)));
+        }
+
+        function pintarKpisManuales() {
+            const cont = document.getElementById('historico-kpis-manuales');
+            if (!cont) return;
+
+            const todos = rawData.historicoConciliados || [];
+            const conteo = {};
+            todos.forEach(row => (row._tiposAux || []).forEach(t => {
+                conteo[t] = (conteo[t] || 0) + 1;
+            }));
+
+            // Un KPI activo cuyo tipo no existe en la fecha nueva se suelta
+            filtroTiposAux = new Set([...filtroTiposAux].filter(t => conteo[t]));
+
+            const presentes = TIPOS_MANUALES_AUX.filter(t => conteo[t.clave]);
+            cont.innerHTML = '';
+            cont.classList.toggle('hidden', presentes.length === 0);
+            cont.classList.toggle('flex', presentes.length > 0);
+            if (presentes.length === 0) return;
+
+            presentes.forEach(t => {
+                const activo = filtroTiposAux.has(t.clave);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.setAttribute('aria-pressed', activo ? 'true' : 'false');
+                btn.title = activo ? 'Quitar este filtro' : 'Mostrar solo ' + t.nombre.toLowerCase();
+                btn.className =
+                    'px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-colors ' +
+                    'outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-slate-400 ' +
+                    (activo ? t.on : t.off);
+                btn.innerHTML =
+                    `<span aria-hidden="true">${t.icono}</span>${t.nombre}` +
+                    `<span class="min-w-[1.25rem] px-1.5 rounded-full text-[10px] font-black text-center ${activo ? 'bg-white/25' : t.num}">${conteo[t.clave]}</span>`;
+                btn.onclick = () => {
+                    if (filtroTiposAux.has(t.clave)) filtroTiposAux.delete(t.clave);
+                    else filtroTiposAux.add(t.clave);
+                    aplicarFiltroTiposAux();
+                };
+                cont.appendChild(btn);
+            });
+
+            if (filtroTiposAux.size > 0) {
+                const info = document.createElement('span');
+                info.className = 'text-[10px] text-slate-500 dark:text-slate-400 ml-1';
+                info.textContent = `Mostrando ${conciliadosVisibles().length} de ${todos.length}`;
+                cont.appendChild(info);
+
+                const reset = document.createElement('button');
+                reset.type = 'button';
+                reset.className = 'text-[10px] font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline-offset-2 hover:underline outline-none focus-visible:underline';
+                reset.textContent = 'Restablecer';
+                reset.onclick = () => {
+                    filtroTiposAux.clear();
+                    aplicarFiltroTiposAux();
+                };
+                cont.appendChild(reset);
+            }
+        }
+
+        function aplicarFiltroTiposAux() {
+            pintarKpisManuales();
+            if (grids.historicoConciliados) {
+                grids.historicoConciliados.updateData(conciliadosVisibles());
+            }
         }
 
         function historicoColumns() {
@@ -1234,7 +1378,17 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     title: "Contrato",
                     field: "Contrato",
                     width: 150,
-                    cssClass: "font-mono font-bold"
+                    cssClass: "font-mono font-bold",
+                    // Las conciliaciones manuales del Auxiliar llevan su etiqueta
+                    formatter: cell => {
+                        const row = cell.getRow ? cell.getRow() : {};
+                        const val = cell.getValue ? cell.getValue() : '';
+                        const tipos = TIPOS_MANUALES_AUX.filter(t => (row._tiposAux || []).includes(t.clave));
+                        if (!tipos.length) return val ?? '';
+                        return `<div>${val ?? ''}</div>` + tipos.map(t =>
+                            `<span class="inline-flex items-center gap-1 mt-0.5 mr-1 px-1.5 rounded text-[9px] font-sans font-bold ${t.etiqueta}">${t.icono} ${t.nombre}</span>`
+                        ).join('');
+                    }
                 },
                 {
                     title: "Cliente / Notas",
@@ -1345,7 +1499,7 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
 
             const data = esPendientes
                 ? (rawData.historicoPendientes || [])
-                : (rawData.historicoConciliados || []);
+                : conciliadosVisibles();
 
             const gridKey = esPendientes
                 ? 'historicoPendientes'
@@ -1376,7 +1530,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     historicoColumns(),
                     {
                         threshold: 0,
-                        searchInputId: 'search-historico'
+                        searchInputId: 'search-historico',
+                        onRowDblClick: abrirTrazaFila
                     }
                 );
             }
@@ -1534,6 +1689,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                             ? json.conciliados
                             : []
                     );
+
+                pintarKpisManuales();
 
                 const countPendientes =
                     document.getElementById(
@@ -1879,7 +2036,8 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                     autoGenerateColumns(dataFinal),
                     {
                         threshold: 0,
-                        searchInputId: `search-${tab}`
+                        searchInputId: `search-${tab}`,
+                        onRowDblClick: abrirTrazaFila
                     }
                 );
             });
@@ -1994,6 +2152,389 @@ if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
                 hiddenInput.value = term;
                 // Dispara el evento nativo. VanillaGrid detecta esto y aplica su propio buscador y resaltado permanente
                 hiddenInput.dispatchEvent(new Event('input', { bubbles: true })); 
+            }
+        }
+
+        // =====================================================================
+        // TRAZA DE UNA TRANSACCIÓN — doble clic en BAC, Davibank, TSD e Histórico.
+        // Todo se lee de api/get_traza_transaccion.php (solo lectura).
+        // =====================================================================
+        const traza = { datos: null, peticion: 0 };
+
+        function trazaEsc(v) {
+            return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function trazaVacio(v) {
+            return v === null || v === undefined || String(v).trim() === '';
+        }
+
+        function trazaMonto(v) {
+            const n = parseFloat(v);
+            if (Number.isNaN(n)) return '-';
+            return '₡' + new Intl.NumberFormat('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+        }
+
+        // "2026-10-12 09:41:00.000" → "12/10/2026 09:41"
+        function trazaFecha(v, conHora = true) {
+            const t = String(v ?? '').trim();
+            const m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+            if (!m) return t || '-';
+            return `${m[3]}/${m[2]}/${m[1]}` + (conHora && m[4] ? ` ${m[4]}:${m[5]}` : '');
+        }
+
+        // Qué llave mandar según la tabla donde se hizo doble clic
+        function llaveTraza(row) {
+            if (!row) return null;
+            if (row._trazaMatch) return { match: row._trazaMatch };
+            if (row._trazaId) return { id: row._trazaId };
+            if (row.IdFilaCorte) return { fila: row.IdFilaCorte };
+            const id = row.IdTransaccion ?? row.ID_Transaccion;
+            return trazaVacio(id) ? null : { id: String(id) };
+        }
+
+        function abrirTrazaFila(row) {
+            const llave = llaveTraza(row);
+            if (llave) abrirTraza(llave);
+        }
+
+        // Clases literales para que Tailwind las encuentre
+        const TRAZA_TONOS = {
+            emerald: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200',
+            amber:   'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200',
+            blue:    'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-200',
+            slate:   'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+            indigo:  'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200'
+        };
+
+        function trazaChip(texto, tono) {
+            return `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${TRAZA_TONOS[tono] || tono}">${trazaEsc(texto)}</span>`;
+        }
+
+        function trazaTiposManuales(t) {
+            if (typeof TIPOS_MANUALES_AUX === 'undefined') return [];
+            return TIPOS_MANUALES_AUX.filter(tp => tp.prueba(t.maestra));
+        }
+
+        function trazaModal() {
+            let m = document.getElementById('traza-modal');
+            if (m) return m;
+
+            m = document.createElement('div');
+            m.id = 'traza-modal';
+            m.className = 'fixed inset-0 z-[9999] hidden items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm';
+            m.setAttribute('role', 'dialog');
+            m.setAttribute('aria-modal', 'true');
+            m.setAttribute('aria-labelledby', 'traza-titulo');
+            m.innerHTML = `
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+                    <div id="traza-cabecera" class="px-5 py-3 border-b border-slate-100 dark:border-slate-700 flex items-start justify-between gap-4 shrink-0"></div>
+                    <div id="traza-cuerpo" class="overflow-auto px-5 py-4 text-sm text-slate-700 dark:text-slate-200"></div>
+                </div>`;
+            m.addEventListener('click', e => { if (e.target === m) cerrarTraza(); });
+            document.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && !m.classList.contains('hidden')) cerrarTraza();
+            });
+            document.body.appendChild(m);
+            return m;
+        }
+
+        function cerrarTraza() {
+            const m = document.getElementById('traza-modal');
+            if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+            traza.peticion++; // descarta una respuesta que todavía venga en camino
+        }
+
+        function trazaCabeceraHtml(t) {
+            const cerrar = `<button type="button" onclick="cerrarTraza()" title="Cerrar (Esc)" aria-label="Cerrar"
+                class="shrink-0 w-8 h-8 rounded-full text-xl leading-none text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 dark:hover:text-white">×</button>`;
+            if (!t) {
+                return `<h3 id="traza-titulo" class="font-bold text-slate-700 dark:text-white">Traza de la transacción</h3>${cerrar}`;
+            }
+
+            const m = t.maestra;
+            const d = t.detalle || {};
+            const esTSD = String(m.Banco || '').toUpperCase() === 'TSD';
+            const sub = [
+                esTSD ? 'TSD' : m.Banco,
+                trazaVacio(m.Autorizacion) ? null : 'Aut ' + m.Autorizacion,
+                trazaVacio(m.Tarjeta) ? null : '****' + String(m.Tarjeta).slice(-4),
+                esTSD && !trazaVacio(d.Contrato) ? 'Contrato ' + d.Contrato : null
+            ].filter(Boolean).map(trazaEsc).join(' · ');
+
+            const conciliada = !trazaVacio(m.IdMatchTSD) && !trazaVacio(m.FechaConciliacion);
+            const chips = [conciliada ? trazaChip('Conciliada', 'emerald') : trazaChip('Pendiente', 'amber')]
+                .concat(trazaTiposManuales(t).map(tp => trazaChip(tp.icono + ' ' + tp.nombre, tp.etiqueta)));
+
+            return `
+                <div class="min-w-0">
+                    <div class="text-xs text-slate-500 dark:text-slate-400 truncate">${sub}</div>
+                    <h3 id="traza-titulo" class="text-2xl font-mono font-black text-slate-800 dark:text-white">${trazaMonto(m.MontoBruto)}</h3>
+                </div>
+                <div class="flex items-center gap-1.5 flex-wrap justify-end">${chips.join('')}${cerrar}</div>`;
+        }
+
+        // quien: texto = usuario | null = "Usuario no registrado" | false = no aplica
+        function trazaPaso(icono, titulo, detalle, cuando, quien, extra = '') {
+            return `
+                <li class="relative pl-9 pb-4 last:pb-0">
+                    <span class="absolute left-0 top-0 w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-sm" aria-hidden="true">${icono}</span>
+                    <div class="flex justify-between gap-4">
+                        <div class="min-w-0">
+                            <div class="font-bold text-slate-800 dark:text-white">${trazaEsc(titulo)}</div>
+                            ${detalle ? `<div class="text-xs text-slate-500 dark:text-slate-400 break-words">${detalle}</div>` : ''}
+                        </div>
+                        <div class="text-right text-xs shrink-0">
+                            ${cuando ? `<div class="font-mono text-slate-600 dark:text-slate-300">${trazaEsc(cuando)}</div>` : ''}
+                            ${quien === false ? '' : `<div class="${quien ? 'text-slate-500 dark:text-slate-400' : 'text-slate-300 dark:text-slate-600 italic'}">${quien ? trazaEsc(quien) : 'Usuario no registrado'}</div>`}
+                        </div>
+                    </div>
+                    ${extra}
+                </li>`;
+        }
+
+        // Justificación + captura de la auditoría
+        function trazaAuditoriaHtml(aud) {
+            if (!aud) return '';
+            let texto = String(aud.Justificacion || '').trim();
+            let asiento = '';
+            const mS = texto.match(/^\[SOFTLAND:([^\]]*)\]\s*([\s\S]*)$/);
+            if (mS) { asiento = mS[1].trim(); texto = mS[2].trim(); }
+
+            let captura = '';
+            const ev = String(aud.EvidenciaB64 || '').trim();
+            if (ev) {
+                const src = ev.startsWith('data:') ? ev : 'data:image/png;base64,' + ev;
+                if (/^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+$/i.test(src)) {
+                    captura = `
+                        <button type="button" onclick="trazaVerCaptura(this)"
+                            class="mt-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline">Ver aprobación</button>
+                        <img alt="Captura de la aprobación" data-src="${trazaEsc(src)}"
+                            class="hidden mt-2 max-h-[60vh] w-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white">`;
+                }
+            }
+
+            return `
+                <div class="mt-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 text-xs">
+                    <div class="font-bold text-slate-600 dark:text-slate-300">${trazaEsc(aud.TipoAjuste || 'Justificación')}${asiento ? ' · Asiento ' + trazaEsc(asiento) : ''}</div>
+                    ${texto ? `<div class="mt-0.5 whitespace-pre-line text-slate-600 dark:text-slate-300">${trazaEsc(texto)}</div>` : ''}
+                    ${captura}
+                </div>`;
+        }
+
+        function trazaVerCaptura(btn) {
+            const img = btn.nextElementSibling;
+            if (!img) return;
+            if (!img.getAttribute('src')) img.setAttribute('src', img.dataset.src);
+            const visible = !img.classList.toggle('hidden');
+            btn.textContent = visible ? 'Ocultar aprobación' : 'Ver aprobación';
+        }
+
+        function trazaRecorridoHtml(t) {
+            const m = t.maestra;
+            const d = t.detalle || {};
+            const esTSD = String(m.Banco || '').toUpperCase() === 'TSD';
+            const esAjusteM4 = String(m.IdTransaccion || '').startsWith('ADJM4-');
+            const pasos = [];
+
+            // 1. Origen
+            if (esAjusteM4) {
+                pasos.push(trazaPaso('🧾', 'Registrada como ajuste manual en el Auxiliar', '',
+                    trazaFecha(m.FechaRegistro, false), null, trazaAuditoriaHtml(t.auditoria)));
+            } else if (esTSD) {
+                pasos.push(trazaPaso('📄', 'Tomada del sistema TSD',
+                    [d.Recibo_Detalle, d.Cliente].filter(v => !trazaVacio(v)).map(trazaEsc).join(' · '),
+                    trazaFecha(d.FechaPago || m.FechaTransaccion, false), false));
+            } else {
+                pasos.push(trazaPaso('📄', 'Cargada del Excel del banco',
+                    trazaEsc(m.ArchivoOrigen || ''), trazaFecha(m.FechaTransaccion, false), false));
+            }
+
+            // 2. Folio (módulo 2 para bancos, consolidado del módulo 3 para TSD)
+            if (t.cierre) {
+                const c = t.cierre;
+                const folio = 'Folio ' + trazaEsc(c.Folio || c.IdCierre);
+                pasos.push(esTSD
+                    ? trazaPaso('📦', 'Consolidada en el módulo 3', folio, trazaFecha(c.ConsolidadoTSD || c.FechaCreacion), c.Usuario)
+                    : trazaPaso('🏦', 'Registrada en el módulo 2', folio + (trazaVacio(c.Fuente) ? '' : ' · ' + trazaEsc(c.Fuente)),
+                        trazaFecha(c.FechaCreacion), c.Usuario));
+            }
+
+            // 3. Paso por el Auxiliar
+            const enBandeja = [...new Set((t.cortes || []).filter(c => c.Seccion === 'BANDEJA').map(c => c.FechaRegistro))];
+            if (enBandeja.length) {
+                const lista = enBandeja.slice(0, 6).map(f => trazaFecha(f, false).slice(0, 5)).join(', ')
+                    + (enBandeja.length > 6 ? ` y ${enBandeja.length - 6} más` : '');
+                pasos.push(trazaPaso('⏳', `Pendiente en el Auxiliar ${enBandeja.length} ${enBandeja.length === 1 ? 'día' : 'días'}`,
+                    'Cortes: ' + trazaEsc(lista), '', false));
+            }
+
+            // 4. Conciliación
+            const conciliada = !trazaVacio(m.IdMatchTSD) && !trazaVacio(m.FechaConciliacion);
+            if (conciliada) {
+                const sello = String(m.TipoCruceTSD || '');
+                const enAux = sello.startsWith('[AUX]');
+                const cc = t.corteConciliacion;
+                let quien = null;
+                let nota = '';
+                if (cc && cc.CoincideConConciliacion === true) {
+                    quien = cc.UsuarioUltimo;
+                } else if (cc && !trazaVacio(cc.UsuarioUltimo)) {
+                    nota = `<div class="mt-1 text-[11px] text-slate-400">Corte del día guardado por ${trazaEsc(cc.UsuarioUltimo)} el ${trazaEsc(trazaFecha(cc.FechaCapturaReal))}</div>`;
+                }
+
+                pasos.push(trazaPaso('✅', enAux ? 'Conciliada en el Auxiliar' : 'Conciliada en el módulo 3',
+                    trazaEsc(sello.replace('[AUX] ', '') || 'Conciliado') + ' · fecha contable ' + trazaEsc(trazaFecha(m.FechaConciliacion, false)),
+                    trazaFecha(m.FechaRealConciliacion), quien,
+                    nota + (esAjusteM4 ? '' : trazaAuditoriaHtml(t.auditoria))));
+            } else {
+                pasos.push(trazaPaso('⚪', 'Sin conciliar', 'Estado: ' + trazaEsc(m.Estado || '-'), '', false));
+            }
+
+            let extras = '';
+            if (t.etiqueta || !trazaVacio(m.NotaUsuario)) {
+                extras = `<div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    ${t.etiqueta ? trazaChip('🏷️ ' + t.etiqueta.Nombre, 'slate') : ''}
+                    ${trazaVacio(m.NotaUsuario) ? '' : `<span class="text-slate-500 dark:text-slate-400">Nota: ${trazaEsc(m.NotaUsuario)}</span>`}
+                </div>`;
+            }
+
+            return `
+                <section>
+                    <h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3">Recorrido</h4>
+                    <ol>${pasos.join('')}</ol>
+                    ${extras}
+                </section>`;
+        }
+
+        function trazaGrupoHtml(trans, idSel) {
+            const suma = filas => filas.reduce((a, t) => a + (parseFloat(t.maestra.MontoBruto) || 0), 0);
+            const tsd = trans.filter(t => String(t.maestra.Banco || '').toUpperCase() === 'TSD');
+            const bancos = trans.filter(t => String(t.maestra.Banco || '').toUpperCase() !== 'TSD');
+
+            const filas = trans.map(t => {
+                const m = t.maestra;
+                const activa = t.IdTransaccion === idSel;
+                return `
+                    <button type="button" data-id="${trazaEsc(t.IdTransaccion)}" onclick="pintarTraza(this.dataset.id)"
+                        class="w-full flex items-center justify-between gap-3 px-3 py-1.5 rounded-md text-left text-xs transition-colors
+                        ${activa ? 'bg-blue-50 dark:bg-blue-900/30 ring-1 ring-blue-300 dark:ring-blue-700' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'}">
+                        <span class="font-bold w-16 shrink-0 ${String(m.Banco).toUpperCase() === 'TSD' ? 'text-amber-600' : 'text-blue-600 dark:text-blue-400'}">${trazaEsc(m.Banco)}</span>
+                        <span class="flex-1 min-w-0 truncate text-slate-500 dark:text-slate-400">${trazaEsc(m.Autorizacion || m.IdTransaccion)}</span>
+                        <span class="font-mono font-bold text-slate-700 dark:text-slate-200">${trazaMonto(m.MontoBruto)}</span>
+                    </button>`;
+            }).join('');
+
+            return `
+                <section class="mb-4 pb-4 border-b border-slate-100 dark:border-slate-700">
+                    <div class="flex items-baseline justify-between gap-2 mb-2">
+                        <h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Grupo conciliado · ${trans.length}</h4>
+                        <span class="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                            TSD ${trazaMonto(suma(tsd))} · Bancos ${trazaMonto(suma(bancos))} · Dif ${trazaMonto(suma(tsd) - suma(bancos))}
+                        </span>
+                    </div>
+                    <div class="flex flex-col gap-0.5">${filas}</div>
+                </section>`;
+        }
+
+        function trazaDepositosHtml(pagado, t) {
+            const idMatch = t.maestra.IdMatch;
+            const deps = (pagado || []).filter(p => !trazaVacio(idMatch) && p.IdMatch === idMatch);
+            if (!deps.length) return '';
+            const filas = deps.map(p => `
+                <div class="flex justify-between gap-3 text-xs py-1">
+                    <span class="min-w-0 truncate text-slate-600 dark:text-slate-300">
+                        <span class="font-mono">${trazaEsc(trazaFecha(p.BacFecha || p.ScoFecha, false))}</span>
+                        · ${trazaEsc(p.BacDesc || p.ScoDesc || '-')}
+                    </span>
+                    <span class="font-mono font-bold shrink-0">${trazaMonto(p.MontoBruto)}</span>
+                </div>`).join('');
+            return `
+                <section class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                    <h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Depósito del banco</h4>
+                    ${filas}
+                </section>`;
+        }
+
+        // Todas las columnas, para auditoría
+        function trazaTablaHtml(titulo, fila) {
+            if (!fila) return '';
+            const celdas = Object.keys(fila).map(k => {
+                let v = fila[k];
+                if (k === 'EvidenciaB64' && !trazaVacio(v)) v = '(imagen)';
+                return `
+                    <div class="min-w-0 py-1 border-b border-slate-100 dark:border-slate-700/60">
+                        <div class="text-[10px] text-slate-400">${trazaEsc(k)}</div>
+                        <div class="font-mono text-[11px] text-slate-700 dark:text-slate-200 break-all">${trazaVacio(v) ? '-' : trazaEsc(v)}</div>
+                    </div>`;
+            }).join('');
+            return `
+                <div class="mb-3">
+                    <div class="text-[11px] font-bold text-slate-500 dark:text-slate-300 mb-1">${trazaEsc(titulo)}</div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4">${celdas}</div>
+                </div>`;
+        }
+
+        function trazaDatosHtml(t) {
+            return `
+                <details class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 group">
+                    <summary class="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                        Datos completos
+                    </summary>
+                    <div class="mt-3">
+                        ${trazaTablaHtml('Tbl_Transacciones_Maestra', t.maestra)}
+                        ${trazaTablaHtml(t.tablaDetalle || 'Detalle', t.detalle)}
+                        ${trazaTablaHtml('Tbl_Ajustes_Auditoria', t.auditoria)}
+                        ${trazaTablaHtml('Tbl_Conciliacion_Cierres', t.cierre)}
+                    </div>
+                </details>`;
+        }
+
+        function pintarTraza(idSel) {
+            const datos = traza.datos;
+            if (!datos) return;
+            const t = datos.transacciones.find(x => x.IdTransaccion === String(idSel)) || datos.transacciones[0];
+
+            document.getElementById('traza-cabecera').innerHTML = trazaCabeceraHtml(t);
+            document.getElementById('traza-cuerpo').innerHTML =
+                (datos.transacciones.length > 1 ? trazaGrupoHtml(datos.transacciones, t.IdTransaccion) : '') +
+                trazaRecorridoHtml(t) +
+                trazaDepositosHtml(datos.pagado, t) +
+                trazaDatosHtml(t);
+        }
+
+        async function abrirTraza(llave) {
+            const modal = trazaModal();
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            const cuerpo = document.getElementById('traza-cuerpo');
+            document.getElementById('traza-cabecera').innerHTML = trazaCabeceraHtml(null);
+            cuerpo.innerHTML = '<div class="py-12 text-center text-xs text-slate-400 animate-pulse">Buscando la transacción…</div>';
+
+            const mia = ++traza.peticion;
+            try {
+                const res = await fetch('api/get_traza_transaccion.php?' + new URLSearchParams(llave).toString(), { cache: 'no-store' });
+                const json = await res.json();
+                if (mia !== traza.peticion) return;
+                if (!json.success) throw new Error(json.error || 'Respuesta inválida');
+
+                if (!json.encontrada) {
+                    cuerpo.innerHTML = `
+                        <div class="py-10 text-center">
+                            <div class="text-3xl mb-2" aria-hidden="true">🔎</div>
+                            <div class="font-bold text-slate-700 dark:text-white">Todavía no está en IRI</div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Aparecerá aquí cuando se consolide o se concilie.</div>
+                        </div>`;
+                    return;
+                }
+
+                traza.datos = json;
+                const semilla = json.transacciones.find(t => t.EsSemilla) || json.transacciones[0];
+                pintarTraza(semilla.IdTransaccion);
+            } catch (e) {
+                if (mia !== traza.peticion) return;
+                cuerpo.innerHTML = `<div class="py-10 text-center text-xs font-bold text-red-600">No se pudo consultar la transacción: ${trazaEsc(e.message)}</div>`;
             }
         }
 

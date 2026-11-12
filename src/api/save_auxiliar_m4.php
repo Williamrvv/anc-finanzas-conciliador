@@ -70,7 +70,6 @@ try {
         $just   = trim($match['Justificacion'] ?? '');
         $okJust = preg_match('/^\[SOFTLAND:([^\]]*)\]\s*(.*)$/su', $just, $mJ) === 1;
         if (!$okJust || trim($mJ[1]) === '') $faltas[] = 'falta el asiento de Softland';
-        if (!$okJust || trim($mJ[2]) === '') $faltas[] = 'falta la explicación';
 
         $ev = (string)($match['EvidenciaB64'] ?? '');
         if ($ev === '') {

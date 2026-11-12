@@ -2935,7 +2935,7 @@ window.AuxiliarLogic = {
                                     <div id="ws-otros-err-softland" class="hidden mt-1 text-[11px] text-red-600 font-bold"></div>
                                 </div>
                                 <div>
-                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Explicación *</label>
+                                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Explicación</label>
                                     <textarea id="ws-otros-explicacion" maxlength="500" rows="6" placeholder="Por qué este ingreso no tiene contraparte en TSD" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500 resize-none"></textarea>
                                     <div id="ws-otros-err-explicacion" class="hidden mt-1 text-[11px] text-red-600 font-bold"></div>
                                 </div>
@@ -3284,12 +3284,12 @@ window.AuxiliarLogic = {
                     const explicacion = document.getElementById('ws-otros-explicacion').value.trim();
 
                     errOtros('ws-otros-err-softland', asiento ? null : 'Falta el asiento de Softland');
-                    errOtros('ws-otros-err-explicacion', explicacion ? null : 'Falta la explicación');
                     if (!otrosEvidencia) errOtros('ws-otros-err-captura', 'Falta la captura de la aprobación');
                     errOtros('ws-otros-err-general', null);
-                    if (!asiento || !explicacion || !otrosEvidencia) return;
+                    if (!asiento || !otrosEvidencia) return;
 
-                    const justificacion = '[SOFTLAND:' + asiento + '] ' + explicacion;
+                    // La explicación es opcional
+                    const justificacion = ('[SOFTLAND:' + asiento + '] ' + explicacion).trim();
 
                     const faltas = parentLogic._faltasOtrosIngresoM4(
                         parentLogic.ws.tsd, parentLogic.ws.bancos, justificacion, otrosEvidencia);
@@ -3628,7 +3628,6 @@ window.AuxiliarLogic = {
         // Formato: "[SOFTLAND:asiento] explicación"
         const m = String(justificacion || '').trim().match(/^\[SOFTLAND:([^\]]*)\]\s*([\s\S]*)$/);
         if (!m || !m[1].trim()) faltas.push('falta el asiento de Softland');
-        if (!m || !m[2].trim()) faltas.push('falta la explicación');
 
         const ev = String(evidencia || '');
         if (!ev) faltas.push('falta la captura de la aprobación');
