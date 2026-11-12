@@ -32,6 +32,196 @@ function consultar(PDO $pdo, string $sql, array $params): array {
     return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// ------------------------------------------------------------
+// Presentación: al navegador viajan etiquetas comprensibles,
+// nunca nombres de tablas ni columnas que el modal no usa.
+// ------------------------------------------------------------
+function fmtMonto($v, string $moneda = '₡'): ?string {
+    if ($v === null || $v === '' || !is_numeric($v)) return null;
+    return $moneda === '$'
+        ? '$' . number_format((float)$v, 2, '.', ',')
+        : '₡' . number_format((float)$v, 2, ',', ' ');
+}
+
+function fmtFecha($v, bool $conHora = false): ?string {
+    $t = trim((string)$v);
+    if ($t === '') return null;
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/', $t, $p)) return $t;
+    return "$p[3]/$p[2]/$p[1]" . ($conHora && !empty($p[4]) ? " $p[4]:$p[5]" : '');
+}
+
+// Tarjetas y cuentas: solo los últimos 4 dígitos
+function enmascarar($v): ?string {
+    $d = preg_replace('/\D/', '', (string)$v);
+    return $d === '' ? null : '****' . substr($d, -4);
+}
+
+function nombreTipoAjuste(?string $t): string {
+    $nombres = [
+        'OTROS-INGRESOS'           => 'Otros ingresos',
+        'DEVOLUCION-DATAFONO'      => 'Devolución por datáfono',
+        'AJUSTE-INTERNO-BANCOS'    => 'Ajuste interno entre bancos',
+        'AJUSTE-MONTO-MENOR'       => 'Monto menor',
+        'Aprobación Auxiliar (M4)' => 'Aprobación en el Auxiliar'
+    ];
+    return $nombres[(string)$t] ?? (string)$t;
+}
+
+function soloCampos(?array $fila, array $cols): ?array {
+    return $fila ? array_intersect_key($fila, array_flip($cols)) : null;
+}
+
+// Una sección de la ficha: [etiqueta, campo, formato]. Solo campos con valor.
+function ficha(string $titulo, ?array $fila, array $campos): ?array {
+    if (!$fila) return null;
+    $origenes = ['DETALLADO' => 'Archivo del banco', 'AJUSTE' => 'Ajuste manual', 'PAGADO' => 'Depósito del banco'];
+    $out = [];
+    foreach ($campos as [$etiqueta, $campo, $formato]) {
+        $v = $fila[$campo] ?? null;
+        if ($v === null || trim((string)$v) === '') continue;
+        switch ($formato) {
+            case 'monto':     $v = fmtMonto($v); break;
+            case 'usd':       $v = fmtMonto($v, '$'); break;
+            case 'pct':       $v = is_numeric($v) ? number_format((float)$v, 2, ',', ' ') . ' %' : $v; break;
+            case 'fecha':     $v = fmtFecha($v); break;
+            case 'fechahora': $v = fmtFecha($v, true); break;
+            case 'mascara':   $v = enmascarar($v); break;
+            case 'cruce':     $v = str_replace('[AUX] ', '', (string)$v); break;
+            case 'origen':    $v = $origenes[strtoupper((string)$v)] ?? $v; break;
+            case 'estado':    $v = ucfirst(strtolower((string)$v)); break;
+        }
+        if ($v !== null && $v !== '') $out[] = ['etiqueta' => $etiqueta, 'valor' => (string)$v];
+    }
+    return $out ? ['titulo' => $titulo, 'campos' => $out] : null;
+}
+
+function armarFicha(array $m, ?array $det, ?string $tipoDet, ?array $aud, ?array $cierre): array {
+    $secciones = [];
+
+    $secciones[] = ficha('Transacción', $m, [
+        ['Código de transacción', 'IdTransaccion', 'texto'],
+        ['Banco', 'Banco', 'texto'],
+        ['Origen', 'Origen', 'origen'],
+        ['Estado en IRI', 'Estado', 'estado'],
+        ['Fecha de la transacción', 'FechaTransaccion', 'fecha'],
+        ['Registrada en IRI', 'FechaRegistro', 'fechahora'],
+        ['Afiliado / comercio', 'Afiliado_MerID', 'texto'],
+        ['Autorización', 'Autorizacion', 'texto'],
+        ['Tarjeta', 'Tarjeta', 'mascara'],
+        ['Monto bruto', 'MontoBruto', 'monto'],
+        ['Monto neto', 'MontoNeto', 'monto'],
+        ['Días pendiente', 'DiasAntiguedad', 'texto'],
+        ['Archivo de origen', 'ArchivoOrigen', 'texto'],
+        ['Tipo de cruce', 'TipoCruceTSD', 'cruce'],
+        ['Fecha contable de conciliación', 'FechaConciliacion', 'fecha'],
+        ['Conciliada el', 'FechaRealConciliacion', 'fechahora'],
+        ['Nota', 'NotaUsuario', 'texto']
+    ]);
+
+    if ($tipoDet === 'BAC') {
+        $secciones[] = ficha('Datos del banco (BAC)', $det, [
+            ['Comercio', 'NOMBRECOMERCIO', 'texto'],
+            ['Afiliado', 'NUMERO_AFILIADO', 'texto'],
+            ['Terminal', 'TERMINAL', 'texto'],
+            ['Fecha de la venta', 'FECHA_TRANSACCION', 'texto'],
+            ['Cierre del datáfono', 'FECHA_CIERRE_DATAFONO', 'texto'],
+            ['Fecha de pago', 'FECHA_PAGO', 'texto'],
+            ['Tarjeta', 'NUMERO_DE_TARJETA', 'mascara'],
+            ['Tipo de tarjeta', 'TIPO_TARJETA', 'texto'],
+            ['Autorización', 'AUTORIZACION', 'texto'],
+            ['Monto de la venta', 'MONTO_VENTA', 'monto'],
+            ['Comisión', 'COMISION', 'monto'],
+            ['Retención de ventas', 'RETENCION_VENTAS', 'monto'],
+            ['Retención de renta', 'RETENCION_RENTA', 'monto'],
+            ['Ajuste comisión internacional', 'AJUSTE_COMISION_INTERNACIONAL', 'monto'],
+            ['Monto neto', 'MONTONETO', 'monto'],
+            ['Liquidación', 'NUMERO_LIQUIDACION', 'texto'],
+            ['Cuenta', 'NUMERO_CUENTA', 'mascara'],
+            ['Tipo de cambio', 'TIPO_CAMBIO', 'texto'],
+            ['Centro de costo', 'CentroCosto', 'texto']
+        ]);
+    } elseif ($tipoDet === 'DAVIBANK') {
+        $secciones[] = ficha('Datos del banco (Davibank)', $det, [
+            ['Comercio', 'Nombre', 'texto'],
+            ['Razón social', 'Razon_Social', 'texto'],
+            ['Afiliado', 'MerID', 'texto'],
+            ['Terminal', 'Terminal', 'texto'],
+            ['Tipo de transacción', 'Transaccion', 'texto'],
+            ['Fuente', 'Fuente', 'texto'],
+            ['Moneda', 'Moneda', 'texto'],
+            ['Fecha de pago', 'Fecha_Pago', 'texto'],
+            ['Fecha del lote', 'Fecha_Lote_Ajuste', 'texto'],
+            ['Lote', 'Numero_Lote_Ajuste', 'texto'],
+            ['Número de pago', 'Numero_Pago', 'texto'],
+            ['Autorización', 'Numero_Autorizacion', 'texto'],
+            ['Tarjeta', 'Numero_Tarjeta', 'mascara'],
+            ['Monto original', 'Monto_Orig', 'monto'],
+            ['Monto bruto', 'Monto_Bruto', 'monto'],
+            ['Comisión total', 'Monto_Comision_Total', 'monto'],
+            ['% comisión total', 'Porc_Comision_Total', 'pct'],
+            ['Comisión internacional', 'Monto_Comision_Int', 'monto'],
+            ['% comisión internacional', 'Porc_Comision_Int', 'pct'],
+            ['Retención IVA', 'Monto_Retencion_IVA', 'monto'],
+            ['% retención IVA', 'Porc_Retencion_IVA', 'pct'],
+            ['Retención ISR', 'Monto_Retencion_ISR', 'monto'],
+            ['Monto neto', 'Monto_Neto', 'monto'],
+            ['Monto en dólares', 'Monto_Dolar', 'usd'],
+            ['Estatus', 'Estatus', 'texto'],
+            ['Centro de costo', 'CentroCosto', 'texto']
+        ]);
+    } elseif ($tipoDet === 'TSD') {
+        $secciones[] = ficha('Datos del TSD', $det, [
+            ['Contrato', 'Contrato', 'texto'],
+            ['Cliente', 'Cliente', 'texto'],
+            ['Recibo', 'Recibo_Detalle', 'texto'],
+            ['Fecha de pago', 'FechaPago', 'fecha'],
+            ['Monto en dólares', 'MontoUSD', 'usd'],
+            ['Tipo de cambio', 'TipoCambio', 'texto'],
+            ['Monto en colones', 'MontoCRC', 'monto'],
+            ['Tipo de tarjeta', 'TipoTarjeta', 'texto'],
+            ['Autorización', 'Autorizacion', 'texto'],
+            ['Tarjeta', 'Tarjeta_Ultimos4', 'mascara'],
+            ['Recibido por', 'RecibidoPor', 'texto'],
+            ['ICD', 'ICD', 'texto'],
+            ['Sucursal', 'SucursalNombre', 'texto'],
+            ['Código de sucursal', 'SucursalCod', 'texto'],
+            ['Centro de costo', 'CentroCosto', 'texto']
+        ]);
+    }
+
+    if ($aud) {
+        // "[SOFTLAND:asiento] texto" se muestra como dos campos
+        $just = trim((string)($aud['Justificacion'] ?? ''));
+        $asiento = null;
+        if (preg_match('/^\[SOFTLAND:([^\]]*)\]\s*(.*)$/su', $just, $p)) { $asiento = trim($p[1]); $just = trim($p[2]); }
+        $vista = ['Tipo' => nombreTipoAjuste($aud['TipoAjuste'] ?? ''), 'Asiento' => $asiento, 'Justificacion' => $just];
+
+        $s = ficha('Ajuste o justificación', $vista, [
+            ['Tipo', 'Tipo', 'texto'],
+            ['Asiento de Softland', 'Asiento', 'texto'],
+            ['Justificación', 'Justificacion', 'texto']
+        ]) ?? ['titulo' => 'Ajuste o justificación', 'campos' => []];
+        if (trim((string)($aud['EvidenciaB64'] ?? '')) !== '') {
+            $s['campos'][] = ['etiqueta' => 'Evidencia', 'valor' => 'Adjunta (se abre desde el recorrido)'];
+        }
+        if ($s['campos']) $secciones[] = $s;
+    }
+
+    if ($cierre) {
+        $cierre['FolioVisible'] = $cierre['Folio'] ?: $cierre['IdCierre'];
+        $secciones[] = ficha('Folio', $cierre, [
+            ['Folio', 'FolioVisible', 'texto'],
+            ['Guardado por', 'Usuario', 'texto'],
+            ['Fuente', 'Fuente', 'texto'],
+            ['Creado el', 'FechaCreacion', 'fechahora'],
+            ['Consolidado el', 'ConsolidadoTSD', 'fechahora'],
+            ['Total del folio', 'TotalConciliado', 'monto']
+        ]);
+    }
+
+    return array_values(array_filter($secciones));
+}
+
 try {
     $pdo = Database::connect();
 
@@ -209,14 +399,25 @@ try {
             $corte['CoincideConConciliacion'] = ($tReal && $tCorte) ? abs($tCorte - $tReal) <= 300 : null;
         }
 
+        $detalle = $mBAC[$idT] ?? $mSco[$idT] ?? $mTSD[$idT] ?? null;
+        $tipoDet = isset($mBAC[$idT]) ? 'BAC' : (isset($mSco[$idT]) ? 'DAVIBANK' : (isset($mTSD[$idT]) ? 'TSD' : null));
+        $aud     = $mAud[$idT] ?? null;
+        $cierre  = ($m['IdCierre'] !== null && isset($mCierre[$m['IdCierre']])) ? $mCierre[$m['IdCierre']] : null;
+
+        // Solo lo que el recorrido usa; la tarjeta viaja enmascarada
+        $basico = soloCampos($m, ['IdTransaccion', 'Banco', 'Origen', 'Estado', 'IdMatch', 'IdMatchTSD', 'TipoCruceTSD',
+            'FechaTransaccion', 'Autorizacion', 'Tarjeta', 'MontoBruto', 'ArchivoOrigen', 'FechaRegistro',
+            'FechaConciliacion', 'FechaRealConciliacion', 'NotaUsuario']);
+        $basico['Tarjeta'] = enmascarar($m['Tarjeta'] ?? null);
+
         return [
             'IdTransaccion' => $idT,
             'EsSemilla'     => in_array($idT, $semillas, true),
-            'maestra'       => $m,
-            'detalle'       => $mBAC[$idT] ?? $mSco[$idT] ?? $mTSD[$idT] ?? null,
-            'tablaDetalle'  => isset($mBAC[$idT]) ? 'Tbl_Detalle_BAC' : (isset($mSco[$idT]) ? 'Tbl_Detalle_Scotia' : (isset($mTSD[$idT]) ? 'Tbl_Detalle_TSD' : null)),
-            'auditoria'     => $mAud[$idT] ?? null,
-            'cierre'        => ($m['IdCierre'] !== null && isset($mCierre[$m['IdCierre']])) ? $mCierre[$m['IdCierre']] : null,
+            'maestra'       => $basico,
+            'detalle'       => soloCampos($detalle, ['Contrato', 'Cliente', 'Recibo_Detalle', 'FechaPago']),
+            'auditoria'     => soloCampos($aud, ['TipoAjuste', 'Justificacion', 'EvidenciaB64']),
+            'cierre'        => $cierre,
+            'ficha'         => armarFicha($m, $detalle, $tipoDet, $aud, $cierre),
             'etiqueta'      => isset($mEtiq[$m['ColorEtiqueta'] ?? '']) ? $mEtiq[$m['ColorEtiqueta']] : null,
             'cortes'        => array_values(array_filter($cortesTrx, fn($c) => (string)$c['IdTransaccion'] === $idT)),
             'corteConciliacion' => $corte
@@ -233,6 +434,8 @@ try {
     ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
 } catch (\Throwable $e) {
-    echo json_encode(['success' => false, 'error' => 'Error al consultar la transacción: ' . $e->getMessage()]);
+    // El detalle técnico queda en el log del servidor, no en el navegador
+    error_log('get_traza_transaccion: ' . $e->getMessage());
+    echo json_encode(['success' => false, 'error' => 'No se pudo consultar la transacción. Intente de nuevo o avise a T.I.']);
 }
 ?>
