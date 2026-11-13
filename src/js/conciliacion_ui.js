@@ -6,7 +6,8 @@ window.ConciliacionLogic = {
     // Se usa en TODOS los puntos de comparación de BAC, Davibank y el
     // guardado, para que nunca vuelvan a divergir entre sí.
     // ---------------------------------------------------------------
-    TOLERANCIA: 100,
+    TOLERANCIA: 100,     // Máximo permitido al conciliar a mano (popup)
+    TOLERANCIA_AUTO: 5,  // Máximo para el algoritmo automático y para guardar como CONCILIADO
     data: { 
         detalle: [], 
         pagado: [], 
@@ -1771,7 +1772,7 @@ window.ConciliacionLogic = {
 
         const processGroup = (group, banco) => {
             const diff = group.diferencia_val !== undefined ? group.diferencia_val : group.diff;
-            const isMatch = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA || group._isManual === true;
+            const isMatch = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA_AUTO || group._isManual === true;
             const estado = isMatch ? 'CONCILIADO' : 'PENDIENTE';
             const idMatch = isMatch ? group.uuid : null; 
 

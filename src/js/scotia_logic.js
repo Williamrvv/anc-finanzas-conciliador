@@ -773,7 +773,7 @@ window.ScotiaLogic = {
             const diff = det.neto - pag.sum;
             
             // Comparación financiera estricta (Tolerancia de 1 colón para ajustes de redondeo bancario)
-            const isMatch = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA && Math.abs(det.neto) > 0;
+            const isMatch = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA_AUTO && Math.abs(det.neto) > 0;
 
             const rowData = {
                 uuid: `${timeKey}-${id}`,
@@ -798,7 +798,7 @@ window.ScotiaLogic = {
                 
                 det.rows.forEach(dRow => {
                     // Buscar en pagados una transacción con el mismo monto exacto
-                    const matchIdx = unmatchedPag.findIndex(p => Math.abs(dRow._neto - p._monto) <= window.ConciliacionLogic.TOLERANCIA);
+                    const matchIdx = unmatchedPag.findIndex(p => Math.abs(dRow._neto - p._monto) <= window.ConciliacionLogic.TOLERANCIA_AUTO);
                     
                     if (matchIdx !== -1) {
                         const pRow = unmatchedPag.splice(matchIdx, 1)[0]; // Sacarlo
@@ -1230,7 +1230,7 @@ window.ScotiaLogic = {
         const top = (screen.height - h) / 2;
         const win = window.open("", "_blank", `width=${w},height=${h},top=${top},left=${left}`);
         
-        const isReadOnly = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA || data._isManual === true;
+        const isReadOnly = Math.abs(diff) <= window.ConciliacionLogic.TOLERANCIA_AUTO || data._isManual === true;
         
         if(!win) return alert("Ventana bloqueada.");
 
