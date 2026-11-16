@@ -260,7 +260,8 @@ window.ConciliacionLogic = {
 
         // Tipo de cambio del día en curso, sólo informativo, junto al botón de tema
         if (this.obtenerTipoCambio) {
-            this.obtenerTipoCambio(new Date().toISOString().slice(0, 10))
+            // Silencioso: si falla, solo se oculta el indicador; los links avisan por su cuenta
+            this.obtenerTipoCambio(null, true)
                 .then(tc => { if (tc && this.mostrarTipoCambio) this.mostrarTipoCambio(tc); })
                 .catch(() => {});
         }

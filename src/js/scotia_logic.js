@@ -538,8 +538,9 @@ window.ScotiaLogic = {
     _tcCache: {},
 
     // Un pedido por fecha; el resultado queda en caché mientras dure la sesión
-    obtenerTipoCambio: async function(fechaISO) {
-        if (!fechaISO) fechaISO = new Date().toISOString().slice(0, 10);
+    // silencioso = true: no muestra aviso (lo usa el indicador informativo del día)
+    obtenerTipoCambio: async function(fechaISO, silencioso = false) {
+        if (!fechaISO) fechaISO = this._fechaISO(new Date());   // fecha local, no UTC
         if (this._tcCache[fechaISO]) return this._tcCache[fechaISO];
         try {
             const res = await fetch('api/get_tipo_cambio.php?fecha=' + encodeURIComponent(fechaISO));
@@ -548,7 +549,8 @@ window.ScotiaLogic = {
             this._tcCache[fechaISO] = j.tipoCambio;
             return j.tipoCambio;
         } catch (e) {
-            if (window.SysUI) SysUI.alert('No se pudo obtener el tipo de cambio de TSD para ' + fechaISO + '.\n\nLos links de pago quedarán en dólares hasta que se resuelva.', 'Tipo de cambio', 'error');
+            console.warn('Tipo de cambio ' + fechaISO + ':', e.message);
+            if (!silencioso && window.SysUI) SysUI.alert('No se pudo obtener el tipo de cambio de TSD para ' + fechaISO + '.\n\nLos links de pago quedarán en dólares hasta que se resuelva.', 'Tipo de cambio', 'error');
             return null;
         }
     },

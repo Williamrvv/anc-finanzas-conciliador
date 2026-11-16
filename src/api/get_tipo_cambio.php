@@ -32,6 +32,7 @@ try {
             INNER JOIN dbo.Setup AS S ON Ex.LocCode = S.Location
             WHERE S.Country = :pais
               AND Ex.AsOf <= :fecha
+              AND Ex.Sell > 0   -- un registro del día con tipo de cambio en cero no sirve
             ORDER BY Ex.AsOf DESC";
 
     $st = $pdo->prepare($sql);
