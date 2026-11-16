@@ -489,6 +489,13 @@ window.ScotiaLogic = {
             }
         }
 
+        // Los depósitos de links se guardaron ya en colones: para reconocer los
+        // que ya están en la base hay que convertirlos ANTES de compararlos.
+        const pagadoPrevio = this.data.scotia_pagado || [];
+        this.data.scotia_pagado = pagadoPrevio.concat(newRows);
+        await this._propagarLinksAlPagado(false);
+        this.data.scotia_pagado = pagadoPrevio;
+
         // FILTRO ANTI-DUPLICADOS
         const filteredRows = await window.ConciliacionLogic.filterDuplicates(newRows, 'SCOTIA', 'PAGADO');
         if(filteredRows.length === 0) return;
@@ -645,7 +652,14 @@ window.ScotiaLogic = {
     // El comercio de la descripción puede venir recortado ("COMERCIO 90631"
     // contra MerID "90631045"), así que se acepta por prefijo y se promueve
     // al MerID completo para que el agrupador existente los una.
-    _propagarLinksAlPagado: async function() {
+    //
+    // Cada depósito toma el tipo de cambio de SUS ventas, no del primer link
+    // que aparezca: 1) mismo número de pago (el PCA de la descripción),
+    // 2) misma fecha de pago, 3) tipo de cambio de TSD de la fecha del depósito.
+    // Se recalcula siempre desde el monto original en dólares, así el orden en
+    // que se cargan los archivos no cambia el resultado. Lo que viene de la
+    // base de datos ya está en colones y nunca se vuelve a convertir.
+    _propagarLinksAlPagado: async function(avisar = true) {
         const det = this.data.scotia_detalle || [];
         const pag = this.data.scotia_pagado || [];
         if (!det.length || !pag.length) return;
@@ -654,8 +668,21 @@ window.ScotiaLogic = {
             .map(r => String(r._extractedId || '').trim()).filter(Boolean))];
         if (!merIdsLink.length) return;
 
-        const pendientes = pag.filter(p => !p._tcAplicado);
-        for (const p of pendientes) {
+        const linksConTc = det.filter(r => r._esLink && r._tcAplicado);
+
+        // Número de pago del detalle: es el número que acompaña a "PCA" en el depósito
+        const norm = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const hsDet = (this.data.headers && this.data.headers.scotia_detalle) || [];
+        const iNumPago = hsDet.findIndex(h => /numero\s*(de\s*)?pago/.test(norm(h)));
+        const numPago = r => (iNumPago === -1 ? '' : String(r[String(iNumPago)] ?? '').trim());
+
+        const hsPag = (this.data.headers && this.data.headers.scotia_pagado) || [];
+        const iMonto = hsPag.findIndex(h => h && String(h).toLowerCase().includes('monto'));
+
+        const sinFecha = [];
+        for (const p of pag) {
+            if (p._isFromDB) continue;   // arrastre de días anteriores: ya está en colones
+
             const idPag = String(p._extractedId || '').trim();
             if (!idPag || idPag === 'SIN_ID') continue;
 
@@ -663,24 +690,44 @@ window.ScotiaLogic = {
             const merFull = merIdsLink.find(m => m === idPag || (idPag.length >= 4 && m.startsWith(idPag)));
             if (!merFull) continue;
 
-            // El TC lo HEREDA del detalle con el que emparejó. Nunca se consulta
-            // por separado: dos consultas independientes pueden caer en fechas
-            // distintas y romper un cruce que debe ser exacto.
-            const filaDet = det.find(d => d._esLink && String(d._extractedId).trim() === merFull && d._tcAplicado);
-            const tc = filaDet ? filaDet._tcAplicado
-                               : await this.obtenerTipoCambio(this._fechaISO(p._fecha));
-            if (!tc) continue;
+            const ventas = linksConTc.filter(d => String(d._extractedId).trim() === merFull);
+            const fechaDep = this._fechaISO(p._fecha);
 
+            // 1) Mismo número de pago
+            const pca = ((String(p._desc || '').match(/\bPCA\b\s*(\d+)/i)) || [])[1] || '';
+            let venta = pca ? ventas.find(d => numPago(d) === pca) : null;
+
+            // 2) Misma fecha de pago
+            if (!venta && fechaDep) {
+                venta = ventas.find(d => this._fechaISO(d._fechaPago || d._fecha) === fechaDep);
+            }
+
+            // 3) Sin ventas de ese día cargadas: tipo de cambio de la fecha del depósito.
+            //    Nunca el de hoy: sin fecha legible, el depósito queda en dólares.
+            let tc = venta ? venta._tcAplicado : null;
+            if (!tc) {
+                if (!fechaDep) { sinFecha.push(p); continue; }
+                tc = await this.obtenerTipoCambio(fechaDep);
+                if (!tc) continue;
+            }
+
+            const usd = (p._montoDolar != null) ? p._montoDolar : p._monto;   // siempre el original
             p._esLink = true;
             p._extractedId = merFull;              // se promueve para que agrupe
-            p._montoDolar = p._monto;              // original en dólares
+            p._montoDolar = usd;
             p._tcAplicado = tc;
-            p._monto = this._r2(p._monto * tc);    // ya en colones
+            p._monto = this._r2(usd * tc);         // ya en colones
 
             // La celda cruda del monto también debe viajar convertida
-            const hs = (this.data.headers && this.data.headers.scotia_pagado) || [];
-            const iMonto = hs.findIndex(h => h && String(h).toLowerCase().includes('monto'));
             if (iMonto !== -1) p[String(iMonto)] = p._monto;
+        }
+
+        if (avisar && sinFecha.length && window.SysUI) {
+            window.SysUI.alert(
+                sinFecha.length + ' depósito(s) de link de pago no traen una fecha legible.\n\n' +
+                'Quedaron SIN convertir (siguen en dólares). Revise la columna de fecha del archivo del banco.',
+                'Tipo de cambio', 'warning'
+            );
         }
     },
 
