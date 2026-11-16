@@ -1902,6 +1902,24 @@ window.ScotiaLogic = {
                         }
                     );
 
+                    // LINK DE PAGO: cada fila muestra sus dólares y el tipo de cambio que se le aplicó
+                    function celdaLink(row) {
+                        if (!row || !row._esLink) return '';
+                        if (!row._tcAplicado) {
+                            return '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-600" title="Sin tipo de cambio: el monto sigue en dólares">Sin convertir</span>';
+                        }
+                        const n2 = function(v) { return Number(v).toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+                        const usd = row._montoDolar != null ? 'US$ ' + n2(row._montoDolar) : '';
+                        return '<div class="leading-tight text-right" title="Monto en dólares y tipo de cambio de TSD usado para convertirlo">' +
+                                   '<div class="font-mono text-[11px] text-slate-700 dark:text-slate-200">' + usd + '</div>' +
+                                   '<div class="text-[10px] font-bold text-violet-700 dark:text-violet-300">TC ' + n2(row._tcAplicado) + '</div>' +
+                               '</div>';
+                    }
+                    const colLink = { title: "Link: USD · TC", field: "_tcAplicado", width: 115, hozAlign: "right", formatter: function(cell) { return celdaLink(cell.getRow()); } };
+                    // La columna solo aparece si en esa tabla hay algún link de pago
+                    if (rawVentas.some(function(r) { return r._esLink; })) colsVentas.splice(colsVentas.length - 1, 0, colLink);
+                    if (rawBanco.some(function(r) { return r._esLink; })) colsBanco.splice(colsBanco.length - 1, 0, Object.assign({}, colLink));
+
                     // CALCULADORA
                     let currentFooterDiff = 0;
                     function updateCalc() {
