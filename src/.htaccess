@@ -10,3 +10,9 @@ RewriteRule ^ - [L]
 
 # Todo lo demás, mándalo a index.php
 RewriteRule ^ index.php [QSA,L]
+
+# Vida de la sesión en el servidor, en segundos. Debe ser al menos el doble
+# del límite de inactividad definido en js/app.js (LIMITE_MIN).
+<IfModule php_module>
+    php_value session.gc_maxlifetime 3600
+</IfModule>
