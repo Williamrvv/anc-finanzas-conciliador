@@ -147,8 +147,8 @@ function handleSessionExpired() {
 
 // --- Sesión: expira por inactividad REAL, con un aviso que sí la extiende ---
 (function () {
-    const AVISO_MIN  = 25; // minutos sin actividad antes de mostrar el aviso
-    const LIMITE_MIN = 30; // minutos sin actividad para cerrar la sesión
+    const AVISO_MIN  = 10; // PRUEBA: volver a 25 antes del commit
+    const LIMITE_MIN = 15; // PRUEBA: volver a 30 antes del commit
     const PING_MIN   = 5;  // con actividad, cada cuánto se renueva la sesión en el servidor
     // Regla: session.gc_maxlifetime (.htaccess) debe ser al menos el doble de LIMITE_MIN.
 
