@@ -3,6 +3,7 @@ window.TSDLogic = {
     lastBancos: [],
     blacklist: [], 
     manualMatches: [],
+    fijados: [], // Sugerencias congeladas al editar en la Estación Manual
     ws: { tsd: [], bancos: [], originalTsd: [], originalBancos: [], rowUid: null, isAutoMatch: false }, // Workspace State
     gridMatched: null,
     gridPending: null,
@@ -760,7 +761,13 @@ window.TSDLogic = {
                         .map(item => String(item || ''))
                         .filter(Boolean)
                 )
-            )
+            ),
+
+            fijados: (this.fijados || []).map(f => ({
+                tsdIds: f.tsdIds,
+                bancoIds: f.bancoIds,
+                estado: f.estado
+            }))
         };
     },
 
@@ -783,6 +790,14 @@ window.TSDLogic = {
 
         this.blacklist = Array.isArray(snapshot.blacklist)
             ? Array.from(new Set(snapshot.blacklist.map(String)))
+            : [];
+
+        this.fijados = Array.isArray(snapshot.fijados)
+            ? snapshot.fijados.map(f => ({
+                tsdIds: (f.tsdIds || []).map(String),
+                bancoIds: (f.bancoIds || []).map(String),
+                estado: String(f.estado || '')
+            })).filter(f => f.estado && (f.tsdIds.length > 0 || f.bancoIds.length > 0))
             : [];
 
         this.manualMatches = Array.isArray(snapshot.manualMatches)
@@ -1115,6 +1130,7 @@ window.TSDLogic = {
         this.lastBancos = [];
         this.manualMatches = [];
         this.blacklist = [];
+        this.fijados = [];
         this.currentMatchedData = [];
         this.currentPendingData = [];
 
@@ -1262,6 +1278,7 @@ window.TSDLogic = {
             // que estaban solamente en la RAM del rango anterior.
             this.manualMatches = [];
             this.blacklist = [];
+            this.fijados = [];
 
             // Siempre obtenemos primero la fuente fresca.
             this.lastTSD = json.tsd.map(t => {
@@ -1574,6 +1591,21 @@ window.TSDLogic = {
 
         const blindajeTSD = [...tsdData]; 
         const blindajeBancos = [...bancosData];
+
+        // --- FASE 0.5: SUGERENCIAS FIJADAS ---
+        // Se reponen tal como estaban antes de la última edición manual, con su
+        // mismo tipo de cruce. Si falta algún miembro, el grupo se libera completo.
+        (this.fijados || []).forEach(f => {
+            const arrT = pendientesTSD.filter(t => f.tsdIds.includes(String(t.ID_Transaccion)));
+            const arrB = bancosDisponibles.filter(b => f.bancoIds.includes(String(b.IdTransaccion)));
+
+            if (arrT.length !== f.tsdIds.length || arrB.length !== f.bancoIds.length) return;
+            if (arrT.length === 0 && arrB.length === 0) return;
+
+            processMatch(arrT, arrB, f.estado);
+            pendientesTSD = pendientesTSD.filter(t => !arrT.includes(t));
+            bancosDisponibles = bancosDisponibles.filter(b => !arrB.includes(b));
+        });
 
         // --- HELPERS DE BUSQUEDA PARA FASES 1 A 8 ---
         const run1to1Phase = (keyGetterT, keyGetterB, matchLabel, requireSameMonto, maxTolerance = null) => {
@@ -2599,7 +2631,27 @@ window.TSDLogic = {
             this.manualMatches.push({ tsdArr: [...this.ws.tsd], bancoArr: [...this.ws.bancos], justificacion: justificacion });
         }
 
-        // Re-ejecutar el algoritmo permitiendo que los liberados busquen nuevas parejas
+        // Congelar las sugerencias que NO se tocaron. Así lo liberado sólo busca
+        // pareja entre lo no conciliado (Pendiente, Sobrante y Sugerencia por monto)
+        // y no le quita su banco a otra sugerencia.
+        this.fijados = (this.currentGridData || [])
+            .filter(r => r._uid !== this.ws.rowUid)
+            .filter(r => {
+                const e = String(r.EstadoMatch);
+                return e !== 'Pendiente' && e !== 'Sobrante' &&
+                       e !== 'Sugerencia (Monto)' && !e.startsWith('Manual');
+            })
+            .map(r => {
+                const arrT = r._tsdRaw ? (Array.isArray(r._tsdRaw) ? r._tsdRaw : [r._tsdRaw]) : [];
+                const arrB = r._bancoRaw ? (Array.isArray(r._bancoRaw) ? r._bancoRaw : [r._bancoRaw]) : [];
+                return {
+                    tsdIds: arrT.map(t => String(t.ID_Transaccion)),
+                    bancoIds: arrB.map(b => String(b.IdTransaccion)),
+                    estado: String(r.EstadoMatch)
+                };
+            });
+
+        // Re-ejecutar el algoritmo: lo liberado busca pareja sólo entre lo no conciliado
         this.runMatchingAlgorithm(this.lastTSD, this.lastBancos);
 
         // Cada modificación confirmada en la Estación Manual queda
@@ -3298,6 +3350,7 @@ window.TSDLogic = {
             this.lastBancos = [];
             this.manualMatches = [];
             this.blacklist = [];
+            this.fijados = [];
             this.currentMatchedData = [];
             this.currentPendingData = [];
 
