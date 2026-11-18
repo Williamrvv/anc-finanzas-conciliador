@@ -147,8 +147,8 @@ function handleSessionExpired() {
 
 // --- Sesión: expira por inactividad REAL, con un aviso que sí la extiende ---
 (function () {
-    const AVISO_MIN  = 10; // PRUEBA: volver a 25 antes del commit
-    const LIMITE_MIN = 15; // PRUEBA: volver a 30 antes del commit
+    const AVISO_MIN  = 10; // minutos sin actividad antes de mostrar el aviso
+    const LIMITE_MIN = 15; // minutos sin actividad para cerrar la sesión
     const PING_MIN   = 5;  // con actividad, cada cuánto se renueva la sesión en el servidor
     // Regla: session.gc_maxlifetime (.htaccess) debe ser al menos el doble de LIMITE_MIN.
 
@@ -195,7 +195,11 @@ function handleSessionExpired() {
         );
         const cuenta = document.getElementById('sesion-cuenta');
         const boton = cuenta && cuenta.closest('.fixed').querySelector('button');
-        if (boton) boton.addEventListener('click', () => marcar(true)); // el clic es la actividad que extiende
+        if (boton) boton.addEventListener('click', () => {
+            // Si el límite ya pasó (pestaña congelada o equipo suspendido), el botón ya no extiende
+            if (Date.now() - ultimaActividad() >= LIMITE) { cerrarPorInactividad(); return; }
+            marcar(true); // el clic es la actividad que extiende
+        });
     }
 
     function ocultarAviso() {
@@ -263,6 +267,8 @@ function handleSessionExpired() {
 
     marcar(true); // cargar la página cuenta como actividad y descarta marcas viejas
     EVENTOS.forEach(ev => document.addEventListener(ev, alActuar, true));
+    // Al volver a la pestaña se revisa al instante, sin esperar al reloj (el navegador lo frena en segundo plano)
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) vigilar(); });
     setInterval(vigilar, 1000);
 })();
 
