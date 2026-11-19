@@ -711,7 +711,8 @@ window.CierreCajasLogic = {
                     const coincide = esV2
                         ? listaValida.includes(t.ID_Transaccion)
                         : listaValida.includes(t.Numero_Contrato);
-                    if (coincide) {
+                    // Solo se restauran líneas con autorización y sin voucher repetido
+                    if (coincide && this._puedeConciliarse(t)) {
                         t._selected = true;
                         t._matchTime = Date.now();
                         recuperados++;
@@ -854,6 +855,21 @@ window.CierreCajasLogic = {
         }
     },
 
+    // Clave de un voucher: autorización + monto en colones.
+    // null = la línea no tiene autorización y nunca es conciliable.
+    _claveVoucher: function(t) {
+        const auth = t.Numero_Autorizacion ? String(t.Numero_Autorizacion).trim().toUpperCase() : '';
+        if (auth === '') return null;
+        return auth + '|' + parseFloat(t.Conversion || 0).toFixed(2);
+    },
+
+    // Conciliable = tiene autorización y ese mismo voucher no se usó ya en este cierre.
+    _puedeConciliarse: function(t) {
+        const clave = this._claveVoucher(t);
+        if (clave === null) return false;
+        return !this.transacciones.some(o => o !== t && o._selected && this._claveVoucher(o) === clave);
+    },
+
     handleScanner: function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -863,7 +879,7 @@ window.CierreCajasLogic = {
             const montoVal = parseFloat(inputMonto.value.replace(/,/g, '')); 
             
             if (authVal === '') { inputAuth.focus(); return; }
-            if (isNaN(montoVal)) { inputMonto.focus(); return; }
+            if (isNaN(montoVal) || montoVal === 0) { inputMonto.focus(); return; }
 
             let matchIndex = -1;
             for (let i = 0; i < this.transacciones.length; i++) {
@@ -892,6 +908,19 @@ window.CierreCajasLogic = {
                         console.warn(`Monto ingresado (${montoVal}) fuera del rango permitido (${limiteMinimo.toFixed(2)} a ${limiteMaximo.toFixed(2)}) para la autorización ${authVal}`);
                     }
                 }
+            }
+
+            // Voucher reutilizado: misma autorización y monto ya conciliados en este cierre
+            if (matchIndex !== -1 && !this._puedeConciliarse(this.transacciones[matchIndex])) {
+                const candidata = this.transacciones[matchIndex];
+                const original = this.transacciones.find(o => o._selected && this._claveVoucher(o) === this._claveVoucher(candidata));
+                inputAuth.value = ''; inputMonto.value = '';
+                SysUI.alert(
+                    `La autorización ${authVal} con ese monto ya fue conciliada en el contrato ${original ? original.Numero_Contrato : ''}.\n\n` +
+                    `La línea restante (contrato ${candidata.Numero_Contrato}) es un posible duplicado en TSD y no puede conciliarse con el mismo voucher. Quedará pendiente para su revisión.`,
+                    "Voucher ya utilizado", "warning"
+                ).then(() => inputAuth.focus({ preventScroll: true }));
+                return;
             }
 
             if (matchIndex !== -1) {
